@@ -1,45 +1,60 @@
 # CloudPulse
 
-CloudPulse is an open-source multi-cloud FinOps analytics platform for self-hosted cost ingestion, normalization, anomaly detection, forecasting, reporting, and observability across AWS, OCI, Azure, and GCP.
+CloudPulse is a self-hosted multi-cloud FinOps analytics platform for ingesting billing exports, normalizing cost data, detecting anomalies, forecasting spend, generating reports, and exposing Prometheus-compatible metrics.
 
-## Scope
+CloudPulse now uses PostgreSQL with the TimescaleDB extension as its permanent and only database backend.
+
+## Capabilities
 
 - Daily billing export ingestion
-- Canonical multi-cloud schema normalization
-- Daily, weekly, and monthly cost analytics
+- Canonical multi-cloud normalization
+- Daily, weekly, and monthly Timescale continuous aggregates
 - Anomaly detection using moving averages, z-score, and percentage deviation
-- Forecasting
-- Slack and Discord webhook reporting
+- Rolling forecast generation
+- Slack and Discord webhook delivery
 - Prometheus metrics and Grafana dashboards
-- ClickHouse-backed self-hosted deployment with Docker Compose
-
-OCI is treated as a first-class provider through a dedicated collector module and configuration surface.
+- Self-hosted Docker Compose deployment
 
 ## Architecture
 
 ```text
-cmd/cloudpulse             application entrypoint
-internal/app               bootstrap and dependency wiring
-internal/config            YAML config parsing
-internal/domain            core business models
-internal/core/collect      ingestion orchestration
-internal/core/normalize    canonical schema normalization
-internal/core/analytics    aggregation and anomaly detection
-internal/core/forecasting  baseline forecasting
-internal/core/reporting    report generation
-internal/core/alerting     webhook delivery
-internal/ports             interfaces for HTTP, storage, providers
-internal/adapters          ClickHouse, provider collectors, metrics
-migrations                 ClickHouse schema
-dashboards                 Grafana JSON dashboards
-deploy                     Prometheus and cron examples
+cmd/cloudpulse               application entrypoint
+internal/app                 bootstrap, DB wiring, migrations
+internal/adapters/postgres   pgx repository and migration runner
+internal/adapters/providers  cloud collectors, including OCI Object Storage
+internal/core                collection, normalization, analytics, reporting
+internal/ports               collector and repository contracts
+migrations                   PostgreSQL + Timescale SQL migrations
+configs                      YAML configuration
+deploy                       Prometheus and cron examples
+dashboards                   sample Grafana dashboard JSON
 ```
+
+## Storage Design
+
+- `cost_records` is a Timescale hypertable partitioned on `timestamp`
+- tags and provider metadata are stored in `JSONB`
+- continuous aggregates power daily, weekly, and monthly rollups
+- compression and retention policies are defined in migrations
+- `processed_report_files` tracks incremental billing ingestion and idempotency
+
+## OCI Billing Ingestion
+
+OCI support is production-oriented and first-class. The collector:
+
+- authenticates with the official OCI Go SDK using an OCI config file and API keys
+- lists report objects from OCI Object Storage
+- streams CSV and gzip-compressed exports
+- tolerates schema drift through dynamic header matching
+- normalizes OCI services into Compute, Storage, Networking, Database, Load Balancer, Monitoring, Security, and Kubernetes categories
+- skips files already recorded in `processed_report_files`
+
+Oracle deprecated older usage reports on January 31, 2025, so the parser accepts both older usage-style headers and current OCI cost report layouts.
 
 ## API
 
 - `GET /healthz`
 - `POST /api/v1/ingest`
-- `GET /api/v1/analytics/summary?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/analytics/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&window=daily|weekly|monthly`
 - `GET /api/v1/analytics/anomalies?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/analytics/forecast?from=YYYY-MM-DD&to=YYYY-MM-DD`
@@ -48,35 +63,21 @@ deploy                     Prometheus and cron examples
 - `GET /api/v1/reports/monthly?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /metrics`
 
-## Provider Model
-
-Collectors are isolated behind `internal/ports/providers.Collector`. Each provider adapter is responsible for:
-
-- locating billing exports from its object storage backend
-- decoding provider-specific CSV or export rows
-- mapping raw rows into `domain.RawBillingRecord`
-
-The current scaffold includes provider modules and sample data output so the full pipeline can run locally before object-storage integration is completed.
-
-Recommended next hardening steps:
-
-- add real object storage clients for S3, OCI Object Storage, Azure Blob, and GCP export source
-- implement provider-specific parsers for CUR, OCI usage CSV, Azure export CSV, and GCP billing export
-- add migration runner and scheduled jobs inside the application
-- add deduplication keys and materialized aggregate tables
-
-## Local Run
+## Local Development
 
 ```bash
+make tidy
+make test
 make compose-up
-curl http://localhost:8080/healthz
 curl -X POST http://localhost:8080/api/v1/ingest
-curl "http://localhost:8080/api/v1/analytics/anomalies?from=2026-04-01&to=2026-05-12"
+curl "http://localhost:8080/api/v1/analytics/summary?window=weekly&from=2026-05-01&to=2026-05-31"
 ```
 
-## Notes
+The application applies SQL migrations from `migrations/` on startup.
 
-- ClickHouse tables use `MergeTree` with month partitioning and query-oriented sort keys.
-- Dependencies are intentionally minimal: YAML parsing, ClickHouse driver, Prometheus client.
-- Logging uses the standard library `log/slog` JSON handler.
-- The repository is structured for maintainability and testability rather than provider-specific coupling.
+## Backup and Restore
+
+- Backup: `pg_dump -Fc -h localhost -U cloudpulse cloudpulse > cloudpulse.dump`
+- Restore: `pg_restore -d cloudpulse -h localhost -U cloudpulse --clean cloudpulse.dump`
+
+For local TimescaleDB data resets, use `make compose-down`.

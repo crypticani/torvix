@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/crypticani/cloudpulse/internal/config"
 	common "github.com/crypticani/cloudpulse/internal/adapters/providers"
-	"github.com/crypticani/cloudpulse/internal/domain"
+	"github.com/crypticani/cloudpulse/internal/config"
+	"github.com/crypticani/cloudpulse/internal/ports/providers"
 )
 
 type Collector struct {
@@ -19,8 +19,8 @@ func New(cfg config.Provider) *Collector {
 
 func (c *Collector) Name() string { return "aws" }
 
-func (c *Collector) Collect(ctx context.Context, since time.Time) ([]domain.RawBillingRecord, error) {
+func (c *Collector) Collect(ctx context.Context, since time.Time) (providers.CollectResult, error) {
 	_ = ctx
 	_ = since
-	return common.Sample(domain.ProviderAWS, c.cfg.Account, "AmazonEC2"), nil
+	return common.Sample("aws", c.cfg.Account, "AmazonEC2"), nil
 }

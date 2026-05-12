@@ -8,12 +8,12 @@ import (
 
 	prom "github.com/prometheus/client_golang/prometheus"
 
-	"github.com/crypticani/cloudpulse/internal/adapters/clickhouse"
+	"github.com/crypticani/cloudpulse/internal/adapters/postgres"
+	metricsadapter "github.com/crypticani/cloudpulse/internal/adapters/prometheus"
 	awsadapter "github.com/crypticani/cloudpulse/internal/adapters/providers/aws"
 	azureadapter "github.com/crypticani/cloudpulse/internal/adapters/providers/azure"
 	gcpadapter "github.com/crypticani/cloudpulse/internal/adapters/providers/gcp"
 	ociadapter "github.com/crypticani/cloudpulse/internal/adapters/providers/oci"
-	metricsadapter "github.com/crypticani/cloudpulse/internal/adapters/prometheus"
 	"github.com/crypticani/cloudpulse/internal/config"
 	"github.com/crypticani/cloudpulse/internal/core/alerting"
 	"github.com/crypticani/cloudpulse/internal/core/analytics"
@@ -27,13 +27,20 @@ import (
 
 type App struct {
 	server   *http.Server
-	repo     *clickhouse.Repository
+	repo     *postgres.Repository
 	alerting *alerting.Service
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*App, error) {
-	repo, err := clickhouse.New(cfg.DB.DSN)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	repo, err := postgres.New(ctx, cfg.DB.DSN, cfg.DB.MaxConns, cfg.DB.MinConns)
 	if err != nil {
+		return nil, err
+	}
+	if err := postgres.NewMigrator(repo.Pool(), "migrations").Run(ctx); err != nil {
+		repo.Close()
 		return nil, err
 	}
 
@@ -48,14 +55,18 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		collectors = append(collectors, gcpadapter.New(cfg.Providers.GCP))
 	}
 	if cfg.Providers.OCI.Enabled {
-		collectors = append(collectors, ociadapter.New(cfg.Providers.OCI))
+		ociCollector, err := ociadapter.New(cfg.Providers.OCI, logger, repo)
+		if err != nil {
+			return nil, err
+		}
+		collectors = append(collectors, ociCollector)
 	}
 
 	reg := prom.NewRegistry()
-	_ = metricsadapter.New(cfg.Metrics.Namespace, reg)
+	metrics := metricsadapter.New(cfg.Metrics.Namespace, reg)
 
 	normalizer := normalize.New()
-	collectorSvc := collect.New(logger, repo, normalizer, collectors)
+	collectorSvc := collect.New(logger, repo, normalizer, collectors, metrics)
 	analyticsSvc := analytics.New(repo)
 	forecastingSvc := forecasting.New(repo)
 	reportingSvc := reporting.New(analyticsSvc, forecastingSvc)
@@ -82,7 +93,8 @@ func (a *App) Shutdown(ctx context.Context) error {
 }
 
 func (a *App) Close() error {
-	return a.repo.Close()
+	a.repo.Close()
+	return nil
 }
 
 func requestLogger(logger *slog.Logger, next http.Handler) http.Handler {

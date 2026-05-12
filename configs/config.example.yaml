@@ -4,7 +4,9 @@ http:
   address: ":8080"
 
 db:
-  dsn: "clickhouse://cloudpulse:cloudpulse@clickhouse:9000/cloudpulse"
+  dsn: "postgres://cloudpulse:cloudpulse@postgres:5432/cloudpulse?sslmode=disable"
+  max_conns: 20
+  min_conns: 2
 
 providers:
   aws:
@@ -43,6 +45,9 @@ providers:
     prefix: "reports/"
     account: "oci-tenancy"
     region: "us-ashburn-1"
+    config_file: "/home/cloudpulse/.oci/config"
+    config_profile: "DEFAULT"
+    passphrase: ""
     poll_schedule: "45 2 * * *"
     format: "csv.gz"
     lookback_days: 7

@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`cmd/cloudpulse` contains the application entrypoint. Core business logic lives under `internal/core` with separate packages for collection, normalization, analytics, forecasting, reporting, and alerting. Shared models and configuration are in `internal/domain`, `internal/config`, and `internal/logging`. Infrastructure adapters live in `internal/adapters` for ClickHouse, Prometheus, and cloud providers. HTTP handlers are in `internal/ports/http`, schema migrations are in `migrations`, and deployment assets are under `deploy`, `docker`, `dashboards`, and `configs`. Unit tests live in `tests/unit`.
+`cmd/cloudpulse` contains the application entrypoint. Core business logic lives under `internal/core` with separate packages for collection, normalization, analytics, forecasting, reporting, and alerting. Shared models and configuration are in `internal/domain`, `internal/config`, and `internal/logging`. Infrastructure adapters live in `internal/adapters` for PostgreSQL/TimescaleDB, Prometheus, and cloud providers. HTTP handlers are in `internal/ports/http`, schema migrations are in `migrations`, and deployment assets are under `deploy`, `docker`, `dashboards`, and `configs`. Unit tests live in `tests/unit`.
 
 ## Build, Test, and Development Commands
 
@@ -11,7 +11,7 @@
 - `make test`: run all Go tests.
 - `make fmt`: format the codebase with `go fmt`.
 - `make tidy`: clean and synchronize module dependencies.
-- `make compose-up`: launch ClickHouse, CloudPulse, Prometheus, and Grafana via Docker Compose.
+- `make compose-up`: launch PostgreSQL + TimescaleDB, CloudPulse, Prometheus, and Grafana via Docker Compose.
 - `make compose-down`: stop the local stack and remove volumes.
 
 ## Coding Style & Naming Conventions

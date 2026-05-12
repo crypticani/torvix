@@ -1,48 +1,51 @@
-CREATE TABLE IF NOT EXISTS billing_canonical
-(
-    date Date,
-    provider LowCardinality(String),
-    account_id String,
-    service LowCardinality(String),
-    region LowCardinality(String),
-    resource_id String,
-    currency LowCardinality(String),
-    cost Float64,
-    usage_amount Float64,
-    usage_unit LowCardinality(String),
-    tags_json String,
-    source_object String,
-    ingested_at DateTime DEFAULT now()
-)
-ENGINE = MergeTree
-PARTITION BY toYYYYMM(date)
-ORDER BY (date, provider, account_id, service, region, resource_id);
+CREATE EXTENSION IF NOT EXISTS timescaledb;
 
-CREATE TABLE IF NOT EXISTS anomalies
+CREATE TABLE IF NOT EXISTS cost_records
 (
-    date Date,
-    provider LowCardinality(String),
-    account_id String,
-    service LowCardinality(String),
-    baseline Float64,
-    actual Float64,
-    z_score Float64,
-    percent_deviation Float64,
-    moving_average_delta Float64,
-    severity LowCardinality(String),
-    created_at DateTime DEFAULT now()
-)
-ENGINE = MergeTree
-PARTITION BY toYYYYMM(date)
-ORDER BY (date, provider, account_id, service, severity);
+    id BIGSERIAL PRIMARY KEY,
+    "timestamp" TIMESTAMPTZ NOT NULL,
+    cloud_provider TEXT NOT NULL,
+    account_id TEXT,
+    service TEXT NOT NULL,
+    category TEXT NOT NULL,
+    resource_id TEXT,
+    region TEXT,
+    usage_quantity DOUBLE PRECISION,
+    usage_unit TEXT,
+    cost NUMERIC(20,8),
+    currency TEXT,
+    tags JSONB NOT NULL DEFAULT '{}'::jsonb,
+    raw_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    source_object TEXT NOT NULL DEFAULT '',
+    meter TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
-CREATE VIEW IF NOT EXISTS billing_daily_mv AS
-SELECT
-    date,
-    provider,
-    account_id,
-    service,
-    sum(cost) AS total_cost,
-    sum(usage_amount) AS total_usage
-FROM billing_canonical
-GROUP BY date, provider, account_id, service;
+SELECT create_hypertable('cost_records', 'timestamp', chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE, create_default_indexes => FALSE);
+
+CREATE INDEX IF NOT EXISTS idx_cost_records_time_provider_service
+    ON cost_records ("timestamp" DESC, cloud_provider, service);
+
+CREATE INDEX IF NOT EXISTS idx_cost_records_account_time
+    ON cost_records (account_id, "timestamp" DESC);
+
+CREATE INDEX IF NOT EXISTS idx_cost_records_category_time
+    ON cost_records (category, "timestamp" DESC);
+
+CREATE INDEX IF NOT EXISTS idx_cost_records_region_time
+    ON cost_records (region, "timestamp" DESC);
+
+CREATE INDEX IF NOT EXISTS idx_cost_records_tags_gin
+    ON cost_records USING GIN (tags);
+
+CREATE INDEX IF NOT EXISTS idx_cost_records_raw_json_gin
+    ON cost_records USING GIN (raw_json jsonb_path_ops);
+
+ALTER TABLE cost_records SET (
+    timescaledb.compress,
+    timescaledb.compress_segmentby = 'cloud_provider,account_id,service,category',
+    timescaledb.compress_orderby = '"timestamp" DESC'
+);
+
+SELECT add_compression_policy('cost_records', INTERVAL '14 days', if_not_exists => TRUE);
+SELECT add_retention_policy('cost_records', INTERVAL '365 days', if_not_exists => TRUE);

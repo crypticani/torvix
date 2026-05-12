@@ -9,9 +9,9 @@ import (
 )
 
 type Config struct {
-	LogLevel string `yaml:"log_level"`
-	HTTP     HTTP   `yaml:"http"`
-	DB       DB     `yaml:"db"`
+	LogLevel  string `yaml:"log_level"`
+	HTTP      HTTP   `yaml:"http"`
+	DB        DB     `yaml:"db"`
 	Providers struct {
 		AWS   Provider `yaml:"aws"`
 		Azure Provider `yaml:"azure"`
@@ -27,7 +27,9 @@ type HTTP struct {
 }
 
 type DB struct {
-	DSN string `yaml:"dsn"`
+	DSN      string `yaml:"dsn"`
+	MaxConns int32  `yaml:"max_conns"`
+	MinConns int32  `yaml:"min_conns"`
 }
 
 type Provider struct {
@@ -40,6 +42,9 @@ type Provider struct {
 	Namespace     string `yaml:"namespace"`
 	Region        string `yaml:"region"`
 	Credentials   string `yaml:"credentials"`
+	ConfigFile    string `yaml:"config_file"`
+	ConfigProfile string `yaml:"config_profile"`
+	Passphrase    string `yaml:"passphrase"`
 	PollSchedule  string `yaml:"poll_schedule"`
 	Format        string `yaml:"format"`
 	LookbackDays  int    `yaml:"lookback_days"`

@@ -23,6 +23,28 @@
         }
       ],
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "OCI Processed Files",
+      "targets": [
+        {
+          "expr": "sum(cloudpulse_processed_files_total{provider=\"oci\"}) by (status)",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "OCI Processed Records",
+      "targets": [
+        {
+          "expr": "sum(cloudpulse_processed_records_total{provider=\"oci\"})",
+          "legendFormat": "records"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 }
     }
   ]
 }

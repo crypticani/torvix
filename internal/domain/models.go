@@ -17,6 +17,7 @@ type RawBillingRecord struct {
 	UsageStart   time.Time
 	UsageEnd     time.Time
 	Service      string
+	Category     string
 	SKU          string
 	Region       string
 	ResourceID   string
@@ -25,14 +26,17 @@ type RawBillingRecord struct {
 	UsageAmount  float64
 	UsageUnit    string
 	Tags         map[string]string
+	Meter        string
+	RawData      map[string]any
 	SourceObject string
 }
 
 type CanonicalCostRecord struct {
-	Date         time.Time
+	Timestamp    time.Time
 	Provider     Provider
 	AccountID    string
 	Service      string
+	Category     string
 	Region       string
 	ResourceID   string
 	Currency     string
@@ -40,7 +44,21 @@ type CanonicalCostRecord struct {
 	UsageAmount  float64
 	UsageUnit    string
 	Tags         map[string]string
+	Meter        string
+	RawData      map[string]any
 	SourceObject string
+}
+
+type ProcessedReportFile struct {
+	Provider     Provider
+	Bucket       string
+	ObjectName   string
+	ETag         string
+	LastModified time.Time
+	ProcessedAt  time.Time
+	RecordCount  int
+	Status       string
+	ErrorMessage string
 }
 
 type AggregatedCost struct {
@@ -66,13 +84,13 @@ type Anomaly struct {
 }
 
 type ForecastPoint struct {
-	Date          time.Time `json:"date"`
-	Provider      Provider  `json:"provider"`
-	AccountID     string    `json:"account_id"`
-	Service       string    `json:"service"`
-	ForecastCost  float64   `json:"forecast_cost"`
-	ConfidenceLow float64   `json:"confidence_low"`
-	ConfidenceHigh float64  `json:"confidence_high"`
+	Date           time.Time `json:"date"`
+	Provider       Provider  `json:"provider"`
+	AccountID      string    `json:"account_id"`
+	Service        string    `json:"service"`
+	ForecastCost   float64   `json:"forecast_cost"`
+	ConfidenceLow  float64   `json:"confidence_low"`
+	ConfidenceHigh float64   `json:"confidence_high"`
 }
 
 type Report struct {

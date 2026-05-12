@@ -9,8 +9,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/crypticani/cloudpulse/internal/core/analytics"
 	"github.com/crypticani/cloudpulse/internal/core/alerting"
+	"github.com/crypticani/cloudpulse/internal/core/analytics"
 	"github.com/crypticani/cloudpulse/internal/core/collect"
 	"github.com/crypticani/cloudpulse/internal/core/forecasting"
 	"github.com/crypticani/cloudpulse/internal/core/reporting"
