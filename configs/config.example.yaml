@@ -1,0 +1,63 @@
+log_level: info
+
+http:
+  address: ":8080"
+
+db:
+  dsn: "clickhouse://cloudpulse:cloudpulse@clickhouse:9000/cloudpulse"
+
+providers:
+  aws:
+    enabled: true
+    bucket: "cur-bucket"
+    prefix: "cur/"
+    account: "aws-root"
+    region: "us-east-1"
+    poll_schedule: "0 2 * * *"
+    format: "csv"
+    lookback_days: 7
+    max_object_scan: 1000
+  azure:
+    enabled: true
+    container: "cost-export"
+    prefix: "daily/"
+    account: "azure-subscription"
+    poll_schedule: "15 2 * * *"
+    format: "csv"
+    lookback_days: 7
+    max_object_scan: 1000
+  gcp:
+    enabled: true
+    bucket: "gcp-billing-export"
+    prefix: "billing/"
+    account: "gcp-billing-account"
+    project: "finops-project"
+    poll_schedule: "30 2 * * *"
+    format: "bigquery-export"
+    lookback_days: 7
+    max_object_scan: 1000
+  oci:
+    enabled: true
+    bucket: "oci-usage-reports"
+    namespace: "example-namespace"
+    prefix: "reports/"
+    account: "oci-tenancy"
+    region: "us-ashburn-1"
+    poll_schedule: "45 2 * * *"
+    format: "csv.gz"
+    lookback_days: 7
+    max_object_scan: 1000
+
+reporting:
+  webhooks:
+    - name: slack-finops
+      type: slack
+      url: "https://hooks.slack.com/services/replace/me"
+      enabled: false
+    - name: discord-finops
+      type: discord
+      url: "https://discord.com/api/webhooks/replace/me"
+      enabled: false
+
+metrics:
+  namespace: cloudpulse

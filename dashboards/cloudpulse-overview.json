@@ -1,0 +1,28 @@
+{
+  "title": "CloudPulse Overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Collector Runs",
+      "targets": [
+        {
+          "expr": "sum(cloudpulse_collector_runs_total) by (provider, status)",
+          "legendFormat": "{{provider}} {{status}}"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+    },
+    {
+      "type": "stat",
+      "title": "Anomalies Found",
+      "targets": [
+        {
+          "expr": "cloudpulse_anomalies_found_total"
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+    }
+  ]
+}

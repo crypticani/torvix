@@ -1,0 +1,4 @@
+0 3 * * * curl -X POST http://localhost:8080/api/v1/ingest
+10 3 * * * curl http://localhost:8080/api/v1/reports/daily
+10 3 * * 1 curl http://localhost:8080/api/v1/reports/weekly
+10 3 1 * * curl http://localhost:8080/api/v1/reports/monthly
