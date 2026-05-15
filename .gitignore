@@ -2,3 +2,7 @@ bin/
 dist/
 .DS_Store
 configs/config.yaml
+configs/oci_config
+configs/oci_privkey.pem
+deploy.sh
+postgres_data/

@@ -3,13 +3,13 @@ APP=cloudpulse
 .PHONY: build run test fmt tidy compose-up compose-down
 
 build:
-	go build ./...
+	go build ./cmd/... ./internal/...
 
 run:
-	go run ./cmd/cloudpulse -config configs/config.example.yaml
+	go run ./cmd/cloudpulse -config configs/config.yaml
 
 test:
-	go test ./...
+	go test ./cmd/... ./internal/... ./tests/...
 
 fmt:
 	go fmt ./...
