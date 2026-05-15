@@ -1,3 +1,6 @@
+-- Ingestion deduplication table (regular OLTP table, not a hypertable).
+-- Tracks which cloud billing report files have already been processed to
+-- prevent duplicate ingestion.
 CREATE TABLE IF NOT EXISTS processed_report_files
 (
     id BIGSERIAL PRIMARY KEY,
@@ -17,6 +20,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_processed_report_files_identity
 
 CREATE INDEX IF NOT EXISTS idx_processed_report_files_processed_at
     ON processed_report_files (processed_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_processed_report_files_status
+    ON processed_report_files (status);
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS cost_summary_daily
 WITH (timescaledb.continuous) AS

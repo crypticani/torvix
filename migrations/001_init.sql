@@ -1,8 +1,12 @@
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
+-- Analytical hypertable: append-only billing records.
+-- No PRIMARY KEY — TimescaleDB partitions by "timestamp" and unique
+-- constraints must include the partition column, which is unnecessary
+-- for an analytical/FinOps workload.
 CREATE TABLE IF NOT EXISTS cost_records
 (
-    id BIGSERIAL PRIMARY KEY,
+    id BIGSERIAL,
     "timestamp" TIMESTAMPTZ NOT NULL,
     cloud_provider TEXT NOT NULL,
     account_id TEXT,
@@ -23,17 +27,26 @@ CREATE TABLE IF NOT EXISTS cost_records
 
 SELECT create_hypertable('cost_records', 'timestamp', chunk_time_interval => INTERVAL '1 day', if_not_exists => TRUE, create_default_indexes => FALSE);
 
-CREATE INDEX IF NOT EXISTS idx_cost_records_time_provider_service
-    ON cost_records ("timestamp" DESC, cloud_provider, service);
+-- Optimized indexes for analytical queries.
+-- Each leading column is a common filter dimension; timestamp is always
+-- included for chunk exclusion during query planning.
+CREATE INDEX IF NOT EXISTS idx_cost_records_timestamp
+    ON cost_records ("timestamp" DESC);
 
-CREATE INDEX IF NOT EXISTS idx_cost_records_account_time
-    ON cost_records (account_id, "timestamp" DESC);
+CREATE INDEX IF NOT EXISTS idx_cost_records_provider_time
+    ON cost_records (cloud_provider, "timestamp" DESC);
+
+CREATE INDEX IF NOT EXISTS idx_cost_records_service_time
+    ON cost_records (service, "timestamp" DESC);
 
 CREATE INDEX IF NOT EXISTS idx_cost_records_category_time
     ON cost_records (category, "timestamp" DESC);
 
 CREATE INDEX IF NOT EXISTS idx_cost_records_region_time
     ON cost_records (region, "timestamp" DESC);
+
+CREATE INDEX IF NOT EXISTS idx_cost_records_account_time
+    ON cost_records (account_id, "timestamp" DESC);
 
 CREATE INDEX IF NOT EXISTS idx_cost_records_tags_gin
     ON cost_records USING GIN (tags);
