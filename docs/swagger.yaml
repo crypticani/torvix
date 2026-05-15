@@ -1,0 +1,375 @@
+basePath: /
+definitions:
+  github_com_crypticani_cloudpulse_internal_domain.AggregatedCost:
+    properties:
+      account_id:
+        type: string
+      provider:
+        $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Provider'
+      service:
+        type: string
+      total_cost:
+        type: number
+      window_end:
+        type: string
+      window_start:
+        type: string
+    type: object
+  github_com_crypticani_cloudpulse_internal_domain.Anomaly:
+    properties:
+      account_id:
+        type: string
+      actual:
+        type: number
+      baseline:
+        type: number
+      date:
+        type: string
+      moving_average_delta:
+        type: number
+      percent_deviation:
+        type: number
+      provider:
+        $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Provider'
+      service:
+        type: string
+      severity:
+        type: string
+      z_score:
+        type: number
+    type: object
+  github_com_crypticani_cloudpulse_internal_domain.ForecastPoint:
+    properties:
+      account_id:
+        type: string
+      confidence_high:
+        type: number
+      confidence_low:
+        type: number
+      date:
+        type: string
+      forecast_cost:
+        type: number
+      provider:
+        $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Provider'
+      service:
+        type: string
+    type: object
+  github_com_crypticani_cloudpulse_internal_domain.Provider:
+    enum:
+    - aws
+    - azure
+    - gcp
+    - oci
+    type: string
+    x-enum-varnames:
+    - ProviderAWS
+    - ProviderAzure
+    - ProviderGCP
+    - ProviderOCI
+  github_com_crypticani_cloudpulse_internal_domain.Report:
+    properties:
+      anomalies:
+        items:
+          $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Anomaly'
+        type: array
+      forecast:
+        items:
+          $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.ForecastPoint'
+        type: array
+      generated:
+        type: string
+      period:
+        type: string
+      summary:
+        items:
+          $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.AggregatedCost'
+        type: array
+    type: object
+  internal_ports_http.ErrorResponse:
+    description: Error response returned when an operation fails.
+    properties:
+      error:
+        example: internal server error
+        type: string
+    type: object
+  internal_ports_http.StatusResponse:
+    description: Generic status response for operations.
+    properties:
+      status:
+        example: ok
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: CloudPulse Team
+  description: Multi-cloud FinOps cost analytics platform. Collects billing data from
+    AWS, Azure, GCP, and OCI, normalises it into a canonical schema, and provides
+    real-time cost summaries, anomaly detection, forecasting, and automated reporting.
+  title: CloudPulse API
+  version: "1.0"
+paths:
+  /api/v1/analytics/anomalies:
+    get:
+      description: Analyses cost data over a time range and returns any detected anomalies
+        with severity, z-score, and deviation metrics.
+      parameters:
+      - description: Start date (YYYY-MM-DD). Defaults to 30 days ago.
+        example: "2025-01-01"
+        in: query
+        name: from
+        type: string
+      - description: End date (YYYY-MM-DD). Defaults to today.
+        example: "2025-01-31"
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Detected anomalies
+          schema:
+            items:
+              $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Anomaly'
+            type: array
+        "500":
+          description: Detection failed
+          schema:
+            $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      summary: Detect cost anomalies
+      tags:
+      - Analytics
+  /api/v1/analytics/forecast:
+    get:
+      description: Generates a 7-day cost forecast based on historical data within
+        the specified time range.
+      parameters:
+      - description: Start date (YYYY-MM-DD). Defaults to 30 days ago.
+        example: "2025-01-01"
+        in: query
+        name: from
+        type: string
+      - description: End date (YYYY-MM-DD). Defaults to today.
+        example: "2025-01-31"
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Forecast data points
+          schema:
+            items:
+              $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.ForecastPoint'
+            type: array
+        "500":
+          description: Forecast generation failed
+          schema:
+            $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      summary: Get cost forecast
+      tags:
+      - Forecasting
+  /api/v1/analytics/summary:
+    get:
+      description: Returns aggregated cost data over a time range, grouped by the
+        specified window (daily, weekly, or monthly).
+      parameters:
+      - description: Start date (YYYY-MM-DD). Defaults to 30 days ago.
+        example: "2025-01-01"
+        in: query
+        name: from
+        type: string
+      - description: End date (YYYY-MM-DD). Defaults to today.
+        example: "2025-01-31"
+        in: query
+        name: to
+        type: string
+      - default: daily
+        description: 'Aggregation window: daily, weekly, or monthly.'
+        enum:
+        - daily
+        - weekly
+        - monthly
+        in: query
+        name: window
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Cost aggregation results
+          schema:
+            items:
+              $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.AggregatedCost'
+            type: array
+        "500":
+          description: Aggregation failed
+          schema:
+            $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      summary: Get cost summary
+      tags:
+      - Analytics
+  /api/v1/ingest:
+    post:
+      description: Triggers collection of billing data from all enabled cloud providers
+        for the last 24 hours.
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Ingestion completed successfully
+          schema:
+            $ref: '#/definitions/internal_ports_http.StatusResponse'
+        "405":
+          description: Method not allowed
+          schema:
+            type: string
+        "500":
+          description: Ingestion failed
+          schema:
+            $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      summary: Trigger billing data ingestion
+      tags:
+      - Ingestion
+  /api/v1/reports/daily:
+    get:
+      description: Builds a daily cost report including summary, anomalies, and forecast.
+        Optionally delivers via configured webhooks.
+      parameters:
+      - description: Start date (YYYY-MM-DD). Defaults to 30 days ago.
+        example: "2025-01-01"
+        in: query
+        name: from
+        type: string
+      - description: End date (YYYY-MM-DD). Defaults to today.
+        example: "2025-01-31"
+        in: query
+        name: to
+        type: string
+      - default: "false"
+        description: Set to 'true' to send report via webhooks.
+        enum:
+        - "true"
+        - "false"
+        in: query
+        name: deliver
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Daily report
+          schema:
+            $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Report'
+        "500":
+          description: Report generation failed
+          schema:
+            $ref: '#/definitions/internal_ports_http.ErrorResponse'
+        "502":
+          description: Webhook delivery failed
+          schema:
+            $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      summary: Generate daily report
+      tags:
+      - Reports
+  /api/v1/reports/monthly:
+    get:
+      description: Builds a monthly cost report including summary, anomalies, and
+        forecast. Optionally delivers via configured webhooks.
+      parameters:
+      - description: Start date (YYYY-MM-DD). Defaults to 30 days ago.
+        example: "2025-01-01"
+        in: query
+        name: from
+        type: string
+      - description: End date (YYYY-MM-DD). Defaults to today.
+        example: "2025-01-31"
+        in: query
+        name: to
+        type: string
+      - default: "false"
+        description: Set to 'true' to send report via webhooks.
+        enum:
+        - "true"
+        - "false"
+        in: query
+        name: deliver
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Monthly report
+          schema:
+            $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Report'
+        "500":
+          description: Report generation failed
+          schema:
+            $ref: '#/definitions/internal_ports_http.ErrorResponse'
+        "502":
+          description: Webhook delivery failed
+          schema:
+            $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      summary: Generate monthly report
+      tags:
+      - Reports
+  /api/v1/reports/weekly:
+    get:
+      description: Builds a weekly cost report including summary, anomalies, and forecast.
+        Optionally delivers via configured webhooks.
+      parameters:
+      - description: Start date (YYYY-MM-DD). Defaults to 30 days ago.
+        example: "2025-01-01"
+        in: query
+        name: from
+        type: string
+      - description: End date (YYYY-MM-DD). Defaults to today.
+        example: "2025-01-31"
+        in: query
+        name: to
+        type: string
+      - default: "false"
+        description: Set to 'true' to send report via webhooks.
+        enum:
+        - "true"
+        - "false"
+        in: query
+        name: deliver
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Weekly report
+          schema:
+            $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Report'
+        "500":
+          description: Report generation failed
+          schema:
+            $ref: '#/definitions/internal_ports_http.ErrorResponse'
+        "502":
+          description: Webhook delivery failed
+          schema:
+            $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      summary: Generate weekly report
+      tags:
+      - Reports
+  /healthz:
+    get:
+      description: Returns the health status of the CloudPulse API server.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Service is healthy
+          schema:
+            $ref: '#/definitions/internal_ports_http.StatusResponse'
+      summary: Health check
+      tags:
+      - Health
+schemes:
+- http
+swagger: "2.0"

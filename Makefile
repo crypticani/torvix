@@ -1,9 +1,12 @@
 APP=cloudpulse
 
-.PHONY: build run test fmt tidy compose-up compose-down
+.PHONY: build run test fmt tidy compose-up compose-down swagger
 
 build:
 	go build ./cmd/... ./internal/...
+
+swagger:
+	swag init -g cmd/cloudpulse/main.go -o docs --parseDependency --parseInternal
 
 run:
 	go run ./cmd/cloudpulse -config configs/config.yaml

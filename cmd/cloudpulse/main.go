@@ -10,10 +10,21 @@ import (
 	"syscall"
 	"time"
 
+	_ "github.com/crypticani/cloudpulse/docs"
 	"github.com/crypticani/cloudpulse/internal/app"
 	"github.com/crypticani/cloudpulse/internal/config"
 	"github.com/crypticani/cloudpulse/internal/logging"
 )
+
+//	@title			CloudPulse API
+//	@version		1.0
+//	@description	Multi-cloud FinOps cost analytics platform. Collects billing data from AWS, Azure, GCP, and OCI, normalises it into a canonical schema, and provides real-time cost summaries, anomaly detection, forecasting, and automated reporting.
+
+//	@contact.name	CloudPulse Team
+
+//	@host			localhost:8080
+//	@BasePath		/
+//	@schemes		http
 
 func main() {
 	cfgPath := flag.String("config", "configs/config.yaml", "path to YAML config")
