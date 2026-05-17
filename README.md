@@ -117,6 +117,14 @@ If only OCI is enabled, `/api/v1/ingest` returns one object:
 - `GET /api/v1/reports/monthly?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /metrics`
 
+Report endpoints use operational FinOps windows by default:
+
+- Daily: yesterday.
+- Weekly: the last completed Monday-to-Monday week.
+- Monthly: the last completed calendar month.
+
+Pass `from=YYYY-MM-DD&to=YYYY-MM-DD` to override those defaults. Add `deliver=true` to send the report to enabled alerting targets.
+
 ## Local Development
 
 ```bash
@@ -144,14 +152,43 @@ In `configs/config.yaml`:
     enabled: true
     ingest_interval: "6h"
   ```
-- **Alerting:** Set up Slack or Discord webhooks to receive properly formatted daily/weekly/monthly cost reports.
+- **Alerting:** Set up Slack, Microsoft Teams, Telegram, Discord, or SMTP email targets to receive daily/weekly/monthly cost reports. Targets are disabled by default; keep credentials in local or deployment-specific config. Notifications include the top 5 anomalies and leave the full anomaly list in Grafana/API views.
   ```yaml
   reporting:
     webhooks:
       - name: slack-finops
         type: slack
         url: "https://hooks.slack.com/services/..."
-        enabled: true
+        currency: INR
+        enabled: false
+      - name: teams-finops
+        type: teams
+        url: "https://outlook.office.com/webhook/..."
+        currency: INR
+        enabled: false
+      - name: telegram-finops
+        type: telegram
+        bot_token: "..."
+        chat_id: "..."
+        currency: INR
+        enabled: false
+      - name: discord-finops
+        type: discord
+        url: "https://discord.com/api/webhooks/..."
+        currency: INR
+        enabled: false
+      - name: email-finops
+        type: email
+        smtp_host: "smtp.example.com"
+        smtp_port: 587
+        username: "..."
+        password: "..."
+        from: "cloudpulse@example.com"
+        to:
+          - "finops@example.com"
+        subject_prefix: "[CloudPulse]"
+        currency: INR
+        enabled: false
   ```
 
 ## Backup and Restore

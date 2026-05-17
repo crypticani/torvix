@@ -5,159 +5,296 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/http"
+	"net/smtp"
+	"net/url"
+	"strings"
 
 	"github.com/crypticani/cloudpulse/internal/config"
 	"github.com/crypticani/cloudpulse/internal/domain"
 )
 
+type smtpSender func(addr string, auth smtp.Auth, from string, to []string, msg []byte) error
+
+const maxNotifiedAnomalies = 5
+
 type Service struct {
 	client   *http.Client
 	webhooks []config.Webhook
+	sendMail smtpSender
 }
 
 func New(client *http.Client, webhooks []config.Webhook) *Service {
-	return &Service{client: client, webhooks: webhooks}
+	if client == nil {
+		client = http.DefaultClient
+	}
+	return &Service{client: client, webhooks: webhooks, sendMail: smtp.SendMail}
 }
 
 func (s *Service) SendReport(ctx context.Context, report domain.Report) error {
-	rawBody, err := json.Marshal(report)
-	if err != nil {
-		return err
-	}
-
-	for _, wh := range s.webhooks {
-		if !wh.Enabled {
+	for _, target := range s.webhooks {
+		if !target.Enabled {
 			continue
 		}
-
-		var body []byte
-		switch wh.Type {
-		case "slack":
-			body, _ = formatSlack(report)
-		case "discord":
-			body, _ = formatDiscord(report)
-		default:
-			body = rawBody
-		}
-
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, wh.URL, bytes.NewReader(body))
-		if err != nil {
+		if err := s.sendReport(ctx, target, report); err != nil {
 			return err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		
-		resp, err := s.client.Do(req)
-		if err != nil {
-			return fmt.Errorf("%s webhook: %w", wh.Name, err)
-		}
-		resp.Body.Close()
-		
-		if resp.StatusCode >= 300 {
-			return fmt.Errorf("%s webhook status: %s", wh.Name, resp.Status)
 		}
 	}
 	return nil
 }
 
-func formatSlack(report domain.Report) ([]byte, error) {
-	var total float64
-	for _, s := range report.Summary {
-		total += s.TotalCost
+func (s *Service) sendReport(ctx context.Context, target config.Webhook, report domain.Report) error {
+	switch strings.ToLower(target.Type) {
+	case "slack":
+		return s.postJSON(ctx, target, target.URL, formatSlack(target, report))
+	case "discord":
+		return s.postJSON(ctx, target, target.URL, formatDiscord(target, report))
+	case "teams", "msteams", "microsoft_teams":
+		return s.postJSON(ctx, target, target.URL, formatTeams(target, report))
+	case "telegram":
+		endpoint, body, err := formatTelegram(target, report)
+		if err != nil {
+			return err
+		}
+		return s.postJSON(ctx, target, endpoint, body)
+	case "email", "smtp":
+		return s.sendEmail(target, report)
+	default:
+		return fmt.Errorf("%s notifier type %q is not supported", target.Name, target.Type)
+	}
+}
+
+func (s *Service) postJSON(ctx context.Context, target config.Webhook, endpoint string, payload any) error {
+	if endpoint == "" {
+		return fmt.Errorf("%s notifier url is required", target.Name)
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("%s notifier payload: %w", target.Name, err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("%s notifier request: %w", target.Name, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("%s notifier post: %w", target.Name, err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("%s notifier status: %s", target.Name, resp.Status)
+	}
+	slog.Info("alert report delivered", "target", target.Name, "type", target.Type)
+	return nil
+}
+
+func (s *Service) sendEmail(target config.Webhook, report domain.Report) error {
+	if target.SMTPHost == "" {
+		return fmt.Errorf("%s email smtp_host is required", target.Name)
+	}
+	if target.From == "" {
+		return fmt.Errorf("%s email from is required", target.Name)
+	}
+	if len(target.To) == 0 {
+		return fmt.Errorf("%s email to is required", target.Name)
+	}
+	port := target.SMTPPort
+	if port == 0 {
+		port = 587
+	}
+	addr := fmt.Sprintf("%s:%d", target.SMTPHost, port)
+	var auth smtp.Auth
+	if target.Username != "" || target.Password != "" {
+		auth = smtp.PlainAuth("", target.Username, target.Password, target.SMTPHost)
 	}
 
+	msg := formatEmail(target, report)
+	if err := s.sendMail(addr, auth, target.From, target.To, msg); err != nil {
+		return fmt.Errorf("%s email send: %w", target.Name, err)
+	}
+	slog.Info("alert report delivered", "target", target.Name, "type", target.Type, "recipients", len(target.To))
+	return nil
+}
+
+func formatSlack(target config.Webhook, report domain.Report) any {
+	summary := summarize(target, report)
 	blocks := []map[string]any{
 		{
 			"type": "header",
-			"text": map[string]string{
-				"type": "plain_text",
-				"text": fmt.Sprintf("CloudPulse %s Report", title(report.Period)),
-			},
+			"text": map[string]string{"type": "plain_text", "text": summary.Title},
 		},
 		{
 			"type": "section",
 			"text": map[string]string{
 				"type": "mrkdwn",
-				"text": fmt.Sprintf("*Total Cost:* $%.2f\n*Anomalies Detected:* %d", total, len(report.Anomalies)),
+				"text": fmt.Sprintf("*Total Cost:* %s\n*Anomalies Detected:* %d", summary.TotalCost, summary.AnomalyCount),
 			},
 		},
 	}
-
-	if len(report.Anomalies) > 0 {
-		var anomalyText string
-		// Limit to top 10 anomalies
-		count := len(report.Anomalies)
-		if count > 10 {
-			count = 10
-		}
-		for i := 0; i < count; i++ {
-			a := report.Anomalies[i]
-			anomalyText += fmt.Sprintf("• [%s] %s %s: $%.2f (%.1f%% deviation)\n", a.Severity, a.Provider, a.Service, a.Actual, a.PercentDeviation)
-		}
-		if len(report.Anomalies) > 10 {
-			anomalyText += fmt.Sprintf("...and %d more\n", len(report.Anomalies)-10)
-		}
+	if summary.AnomalyText != "" {
 		blocks = append(blocks, map[string]any{
 			"type": "section",
-			"text": map[string]string{
-				"type": "mrkdwn",
-				"text": "*Top Anomalies:*\n" + anomalyText,
-			},
+			"text": map[string]string{"type": "mrkdwn", "text": "*Top Anomalies:*\n" + summary.AnomalyText},
 		})
 	}
-
-	return json.Marshal(map[string]any{"blocks": blocks})
+	return map[string]any{"blocks": blocks}
 }
 
-func formatDiscord(report domain.Report) ([]byte, error) {
+func formatDiscord(target config.Webhook, report domain.Report) any {
+	summary := summarize(target, report)
+	fields := []map[string]any{
+		{"name": "Total Cost", "value": summary.TotalCost, "inline": true},
+		{"name": "Anomalies Detected", "value": fmt.Sprintf("%d", summary.AnomalyCount), "inline": true},
+	}
+	if summary.AnomalyText != "" {
+		fields = append(fields, map[string]any{"name": "Top Anomalies", "value": summary.AnomalyText})
+	}
+	color := 3447003
+	if summary.AnomalyCount > 0 {
+		color = 15158332
+	}
+	return map[string]any{
+		"embeds": []map[string]any{{
+			"title":  summary.Title,
+			"color":  color,
+			"fields": fields,
+		}},
+	}
+}
+
+func formatTeams(target config.Webhook, report domain.Report) any {
+	summary := summarize(target, report)
+	section := map[string]any{
+		"facts": []map[string]string{
+			{"name": "Total Cost", "value": summary.TotalCost},
+			{"name": "Anomalies Detected", "value": fmt.Sprintf("%d", summary.AnomalyCount)},
+		},
+	}
+	if summary.AnomalyText != "" {
+		section["text"] = "Top anomalies:\n\n" + summary.AnomalyText
+	}
+	return map[string]any{
+		"@type":      "MessageCard",
+		"@context":   "https://schema.org/extensions",
+		"summary":    summary.Title,
+		"themeColor": teamsColor(summary.AnomalyCount),
+		"title":      summary.Title,
+		"sections":   []map[string]any{section},
+	}
+}
+
+func formatTelegram(target config.Webhook, report domain.Report) (string, any, error) {
+	endpoint := target.URL
+	if endpoint == "" {
+		if target.BotToken == "" {
+			return "", nil, fmt.Errorf("%s telegram bot_token or url is required", target.Name)
+		}
+		endpoint = "https://api.telegram.org/bot" + url.PathEscape(target.BotToken) + "/sendMessage"
+	}
+	if target.ChatID == "" {
+		return "", nil, fmt.Errorf("%s telegram chat_id is required", target.Name)
+	}
+	summary := summarize(target, report)
+	text := summary.Title + "\n" +
+		"Total Cost: " + summary.TotalCost + "\n" +
+		fmt.Sprintf("Anomalies Detected: %d", summary.AnomalyCount)
+	if summary.AnomalyText != "" {
+		text += "\n\nTop Anomalies:\n" + summary.AnomalyText
+	}
+	body := map[string]any{
+		"chat_id": target.ChatID,
+		"text":    text,
+	}
+	if target.ParseMode != "" {
+		body["parse_mode"] = target.ParseMode
+	}
+	return endpoint, body, nil
+}
+
+func formatEmail(target config.Webhook, report domain.Report) []byte {
+	summary := summarize(target, report)
+	subject := summary.Title
+	if target.SubjectPrefix != "" {
+		subject = strings.TrimSpace(target.SubjectPrefix) + " " + subject
+	}
+	body := summary.Title + "\n\n" +
+		"Total Cost: " + summary.TotalCost + "\n" +
+		fmt.Sprintf("Anomalies Detected: %d\n", summary.AnomalyCount)
+	if summary.AnomalyText != "" {
+		body += "\nTop Anomalies:\n" + summary.AnomalyText
+	}
+	headers := []string{
+		"From: " + target.From,
+		"To: " + strings.Join(target.To, ", "),
+		"Subject: " + subject,
+		"MIME-Version: 1.0",
+		"Content-Type: text/plain; charset=UTF-8",
+	}
+	return []byte(strings.Join(headers, "\r\n") + "\r\n\r\n" + body)
+}
+
+type reportSummary struct {
+	Title        string
+	TotalCost    string
+	AnomalyCount int
+	AnomalyText  string
+}
+
+func summarize(target config.Webhook, report domain.Report) reportSummary {
 	var total float64
 	for _, s := range report.Summary {
 		total += s.TotalCost
 	}
-
-	embed := map[string]any{
-		"title": fmt.Sprintf("CloudPulse %s Report", title(report.Period)),
-		"color": 3447003, // blue
-		"fields": []map[string]any{
-			{
-				"name":   "Total Cost",
-				"value":  fmt.Sprintf("$%.2f", total),
-				"inline": true,
-			},
-			{
-				"name":   "Anomalies Detected",
-				"value":  fmt.Sprintf("%d", len(report.Anomalies)),
-				"inline": true,
-			},
-		},
+	return reportSummary{
+		Title:        fmt.Sprintf("CloudPulse %s Report", title(report.Period)),
+		TotalCost:    formatCost(target.Currency, total),
+		AnomalyCount: len(report.Anomalies),
+		AnomalyText:  formatAnomalies(target.Currency, report.Anomalies),
 	}
+}
 
-	if len(report.Anomalies) > 0 {
-		var anomalyText string
-		count := len(report.Anomalies)
-		if count > 10 {
-			count = 10
-		}
-		for i := 0; i < count; i++ {
-			a := report.Anomalies[i]
-			anomalyText += fmt.Sprintf("• [%s] %s %s: $%.2f (%.1f%%)\n", a.Severity, a.Provider, a.Service, a.Actual, a.PercentDeviation)
-		}
-		if len(report.Anomalies) > 10 {
-			anomalyText += fmt.Sprintf("...and %d more\n", len(report.Anomalies)-10)
-		}
-		embed["fields"] = append(embed["fields"].([]map[string]any), map[string]any{
-			"name":  "Top Anomalies",
-			"value": anomalyText,
-		})
-		embed["color"] = 15158332 // red
+func formatAnomalies(currency string, anomalies []domain.Anomaly) string {
+	if len(anomalies) == 0 {
+		return ""
 	}
+	var b strings.Builder
+	count := len(anomalies)
+	if count > maxNotifiedAnomalies {
+		count = maxNotifiedAnomalies
+	}
+	for i := 0; i < count; i++ {
+		a := anomalies[i]
+		b.WriteString(fmt.Sprintf("- [%s] %s %s: %s (%.1f%% deviation)\n", a.Severity, a.Provider, a.Service, formatCost(currency, a.Actual), a.PercentDeviation))
+	}
+	if len(anomalies) > count {
+		b.WriteString(fmt.Sprintf("...and %d more\n", len(anomalies)-count))
+	}
+	return b.String()
+}
 
-	return json.Marshal(map[string]any{"embeds": []map[string]any{embed}})
+func formatCost(currency string, amount float64) string {
+	if currency == "" {
+		return fmt.Sprintf("%.2f", amount)
+	}
+	return fmt.Sprintf("%s %.2f", strings.ToUpper(currency), amount)
+}
+
+func teamsColor(anomalyCount int) string {
+	if anomalyCount > 0 {
+		return "E81123"
+	}
+	return "0076D7"
 }
 
 func title(s string) string {
 	if s == "" {
 		return ""
 	}
-	return string(bytes.ToUpper([]byte{s[0]})) + s[1:]
+	return strings.ToUpper(s[:1]) + s[1:]
 }
