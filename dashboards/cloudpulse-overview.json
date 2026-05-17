@@ -8,11 +8,30 @@
     "from": "now-7d",
     "to": "now"
   },
+  "templating": {
+    "list": [
+      {
+        "name": "currency",
+        "type": "query",
+        "label": "Currency",
+        "datasource": {
+          "type": "postgres",
+          "uid": "PostgreSQL"
+        },
+        "definition": "SELECT DISTINCT currency AS __text, currency AS __value FROM cost_records WHERE currency IS NOT NULL AND currency <> '' ORDER BY currency",
+        "query": "SELECT DISTINCT currency AS __text, currency AS __value FROM cost_records WHERE currency IS NOT NULL AND currency <> '' ORDER BY currency",
+        "refresh": 1,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  },
   "panels": [
     {
       "id": 1,
       "type": "stat",
-      "title": "Selected Range Cost",
+      "title": "Selected Range Cost ($currency)",
       "datasource": {
         "type": "postgres",
         "uid": "PostgreSQL"
@@ -25,7 +44,7 @@
             "uid": "PostgreSQL"
           },
           "format": "table",
-          "rawSql": "SELECT COALESCE(SUM(cost), 0) AS total_cost FROM cost_records WHERE $__timeFilter(\"timestamp\")",
+          "rawSql": "SELECT COALESCE(SUM(cost), 0) AS total_cost FROM cost_records WHERE $__timeFilter(\"timestamp\") AND currency = ${currency:sqlstring}",
           "rawQuery": true
         }
       ],
@@ -37,7 +56,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "currencyUSD"
+          "unit": "short"
         }
       },
       "options": {
@@ -55,7 +74,7 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "Latest Day Delta",
+      "title": "Latest Day Delta ($currency)",
       "datasource": {
         "type": "postgres",
         "uid": "PostgreSQL"
@@ -68,7 +87,7 @@
             "uid": "PostgreSQL"
           },
           "format": "table",
-          "rawSql": "WITH anchor AS (SELECT date_trunc('day', MAX(\"timestamp\")) AS day FROM cost_records), current_period AS (SELECT COALESCE(SUM(cost), 0)::double precision AS cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.day AND \"timestamp\" < anchor.day + INTERVAL '1 day'), previous_period AS (SELECT COALESCE(SUM(cost), 0)::double precision AS cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.day - INTERVAL '1 day' AND \"timestamp\" < anchor.day) SELECT current_period.cost - previous_period.cost AS delta FROM current_period, previous_period",
+          "rawSql": "WITH anchor AS (SELECT date_trunc('day', MAX(\"timestamp\")) AS day FROM cost_records WHERE currency = ${currency:sqlstring}), current_period AS (SELECT COALESCE(SUM(cost), 0)::double precision AS cost FROM cost_records, anchor WHERE currency = ${currency:sqlstring} AND \"timestamp\" >= anchor.day AND \"timestamp\" < anchor.day + INTERVAL '1 day'), previous_period AS (SELECT COALESCE(SUM(cost), 0)::double precision AS cost FROM cost_records, anchor WHERE currency = ${currency:sqlstring} AND \"timestamp\" >= anchor.day - INTERVAL '1 day' AND \"timestamp\" < anchor.day) SELECT current_period.cost - previous_period.cost AS delta FROM current_period, previous_period",
           "rawQuery": true
         }
       ],
@@ -80,7 +99,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "currencyUSD"
+          "unit": "short"
         }
       },
       "options": {
@@ -111,7 +130,7 @@
             "uid": "PostgreSQL"
           },
           "format": "table",
-          "rawSql": "WITH daily AS (SELECT time_bucket(INTERVAL '1 day', \"timestamp\") AS bucket, cloud_provider, COALESCE(account_id, '') AS account_id, service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, COALESCE(SUM(cost), 0)::double precision AS total_cost FROM cost_records WHERE \"timestamp\" >= $__timeFrom()::timestamptz - INTERVAL '7 days' AND \"timestamp\" < $__timeTo() GROUP BY 1, 2, 3, 4, 5), series AS (SELECT bucket, cloud_provider, account_id, service, compartment, total_cost, AVG(total_cost) OVER w AS baseline, STDDEV_POP(total_cost) OVER w AS stddev FROM daily WINDOW w AS (PARTITION BY cloud_provider, account_id, service, compartment ORDER BY bucket ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING)) SELECT COUNT(*) AS anomaly_candidates FROM series WHERE bucket >= $__timeFrom() AND bucket < $__timeTo() AND baseline IS NOT NULL AND (ABS(CASE WHEN COALESCE(stddev, 0) > 0 THEN (total_cost - baseline) / stddev ELSE 0 END) >= 2 OR ABS(CASE WHEN COALESCE(baseline, 0) > 0 THEN ((total_cost - baseline) / baseline) * 100 ELSE 0 END) >= 30 OR ABS(total_cost - baseline) >= baseline * 0.25)",
+          "rawSql": "WITH daily AS (SELECT time_bucket(INTERVAL '1 day', \"timestamp\") AS bucket, cloud_provider, COALESCE(account_id, '') AS account_id, service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, COALESCE(SUM(cost), 0)::double precision AS total_cost FROM cost_records WHERE currency = ${currency:sqlstring} AND \"timestamp\" >= $__timeFrom()::timestamptz - INTERVAL '7 days' AND \"timestamp\" < $__timeTo() GROUP BY 1, 2, 3, 4, 5), series AS (SELECT bucket, cloud_provider, account_id, service, compartment, total_cost, AVG(total_cost) OVER w AS baseline, STDDEV_POP(total_cost) OVER w AS stddev FROM daily WINDOW w AS (PARTITION BY cloud_provider, account_id, service, compartment ORDER BY bucket ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING)) SELECT COUNT(*) AS anomaly_candidates FROM series WHERE bucket >= $__timeFrom() AND bucket < $__timeTo() AND baseline IS NOT NULL AND (ABS(CASE WHEN COALESCE(stddev, 0) > 0 THEN (total_cost - baseline) / stddev ELSE 0 END) >= 2 OR ABS(CASE WHEN COALESCE(baseline, 0) > 0 THEN ((total_cost - baseline) / baseline) * 100 ELSE 0 END) >= 30 OR ABS(total_cost - baseline) >= baseline * 0.25)",
           "rawQuery": true
         }
       ],
@@ -138,7 +157,7 @@
             "uid": "PostgreSQL"
           },
           "format": "table",
-          "rawSql": "SELECT (EXTRACT(EPOCH FROM MAX(\"timestamp\")) * 1000)::bigint AS latest_cost_record FROM cost_records",
+          "rawSql": "SELECT (EXTRACT(EPOCH FROM MAX(\"timestamp\")) * 1000)::bigint AS latest_cost_record FROM cost_records WHERE currency = ${currency:sqlstring}",
           "rawQuery": true
         }
       ],
@@ -189,7 +208,7 @@
     {
       "id": 6,
       "type": "timeseries",
-      "title": "Daily Cost Trend",
+      "title": "Daily Cost Trend ($currency)",
       "datasource": {
         "type": "postgres",
         "uid": "PostgreSQL"
@@ -202,7 +221,7 @@
             "uid": "PostgreSQL"
           },
           "format": "time_series",
-          "rawSql": "SELECT time_bucket('1 day', \"timestamp\") AS \"time\", SUM(cost) AS value FROM cost_records WHERE $__timeFilter(\"timestamp\") GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT time_bucket('1 day', \"timestamp\") AS \"time\", SUM(cost) AS value FROM cost_records WHERE $__timeFilter(\"timestamp\") AND currency = ${currency:sqlstring} GROUP BY 1 ORDER BY 1",
           "rawQuery": true
         }
       ],
@@ -214,14 +233,14 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "currencyUSD"
+          "unit": "short"
         }
       }
     },
     {
       "id": 7,
       "type": "barchart",
-      "title": "Top Services by Cost",
+      "title": "Top Services by Cost ($currency)",
       "datasource": {
         "type": "postgres",
         "uid": "PostgreSQL"
@@ -234,7 +253,7 @@
             "uid": "PostgreSQL"
           },
           "format": "table",
-          "rawSql": "SELECT service AS metric, SUM(cost) AS value FROM cost_records WHERE $__timeFilter(\"timestamp\") GROUP BY service ORDER BY value DESC LIMIT 15",
+          "rawSql": "SELECT service AS metric, SUM(cost) AS value FROM cost_records WHERE $__timeFilter(\"timestamp\") AND currency = ${currency:sqlstring} GROUP BY service ORDER BY value DESC LIMIT 15",
           "rawQuery": true
         }
       ],
@@ -246,7 +265,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "currencyUSD"
+          "unit": "short"
         }
       },
       "options": {
@@ -257,7 +276,7 @@
     {
       "id": 8,
       "type": "barchart",
-      "title": "Top Compartments by Cost",
+      "title": "Top Compartments by Cost ($currency)",
       "datasource": {
         "type": "postgres",
         "uid": "PostgreSQL"
@@ -270,7 +289,7 @@
             "uid": "PostgreSQL"
           },
           "format": "table",
-          "rawSql": "SELECT COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS metric, SUM(cost) AS value FROM cost_records WHERE $__timeFilter(\"timestamp\") GROUP BY 1 ORDER BY value DESC LIMIT 15",
+          "rawSql": "SELECT COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS metric, SUM(cost) AS value FROM cost_records WHERE $__timeFilter(\"timestamp\") AND currency = ${currency:sqlstring} GROUP BY 1 ORDER BY value DESC LIMIT 15",
           "rawQuery": true
         }
       ],
@@ -282,7 +301,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "currencyUSD"
+          "unit": "short"
         }
       },
       "options": {
@@ -293,7 +312,7 @@
     {
       "id": 9,
       "type": "table",
-      "title": "Top Daily Increases by Service and Compartment",
+      "title": "Top Daily Increases by Service and Compartment ($currency)",
       "datasource": {
         "type": "postgres",
         "uid": "PostgreSQL"
@@ -306,7 +325,7 @@
             "uid": "PostgreSQL"
           },
           "format": "table",
-          "rawSql": "WITH anchor AS (SELECT date_trunc('day', MAX(\"timestamp\")) AS current_start FROM cost_records), current_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS current_cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.current_start AND \"timestamp\" < anchor.current_start + INTERVAL '1 day' GROUP BY 1, 2), previous_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS previous_cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.current_start - INTERVAL '1 day' AND \"timestamp\" < anchor.current_start GROUP BY 1, 2) SELECT COALESCE(c.service, p.service) AS service, COALESCE(c.compartment, p.compartment) AS compartment, COALESCE(c.current_cost, 0) AS current_cost, COALESCE(p.previous_cost, 0) AS previous_cost, COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0) AS delta, CASE WHEN COALESCE(p.previous_cost, 0) > 0 THEN ((COALESCE(c.current_cost, 0) - p.previous_cost) / p.previous_cost) * 100 WHEN COALESCE(c.current_cost, 0) > 0 THEN 100 ELSE 0 END AS pct_change FROM current_period c FULL OUTER JOIN previous_period p ON c.service = p.service AND c.compartment = p.compartment WHERE COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0) > 0 ORDER BY delta DESC LIMIT 15",
+          "rawSql": "WITH anchor AS (SELECT date_trunc('day', MAX(\"timestamp\")) AS current_start FROM cost_records WHERE currency = ${currency:sqlstring}), current_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS current_cost FROM cost_records, anchor WHERE currency = ${currency:sqlstring} AND \"timestamp\" >= anchor.current_start AND \"timestamp\" < anchor.current_start + INTERVAL '1 day' GROUP BY 1, 2), previous_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS previous_cost FROM cost_records, anchor WHERE currency = ${currency:sqlstring} AND \"timestamp\" >= anchor.current_start - INTERVAL '1 day' AND \"timestamp\" < anchor.current_start GROUP BY 1, 2) SELECT COALESCE(c.service, p.service) AS service, COALESCE(c.compartment, p.compartment) AS compartment, COALESCE(c.current_cost, 0) AS current_cost, COALESCE(p.previous_cost, 0) AS previous_cost, COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0) AS delta, CASE WHEN COALESCE(p.previous_cost, 0) > 0 THEN ((COALESCE(c.current_cost, 0) - p.previous_cost) / p.previous_cost) * 100 WHEN COALESCE(c.current_cost, 0) > 0 THEN 100 ELSE 0 END AS pct_change FROM current_period c FULL OUTER JOIN previous_period p ON c.service = p.service AND c.compartment = p.compartment WHERE COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0) > 0 ORDER BY delta DESC LIMIT 15",
           "rawQuery": true
         }
       ],
@@ -318,7 +337,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "currencyUSD"
+          "unit": "short"
         },
         "overrides": [
           {
@@ -339,7 +358,7 @@
     {
       "id": 10,
       "type": "table",
-      "title": "Last Week vs Previous Week",
+      "title": "Last Week vs Previous Week ($currency)",
       "datasource": {
         "type": "postgres",
         "uid": "PostgreSQL"
@@ -352,7 +371,7 @@
             "uid": "PostgreSQL"
           },
           "format": "table",
-          "rawSql": "WITH anchor AS (SELECT date_trunc('week', MAX(\"timestamp\")) - INTERVAL '7 days' AS current_start FROM cost_records), current_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS current_cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.current_start AND \"timestamp\" < anchor.current_start + INTERVAL '7 days' GROUP BY 1, 2), previous_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS previous_cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.current_start - INTERVAL '7 days' AND \"timestamp\" < anchor.current_start GROUP BY 1, 2) SELECT COALESCE(c.service, p.service) AS service, COALESCE(c.compartment, p.compartment) AS compartment, COALESCE(c.current_cost, 0) AS last_week_cost, COALESCE(p.previous_cost, 0) AS previous_week_cost, COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0) AS delta, CASE WHEN COALESCE(p.previous_cost, 0) > 0 THEN ((COALESCE(c.current_cost, 0) - p.previous_cost) / p.previous_cost) * 100 WHEN COALESCE(c.current_cost, 0) > 0 THEN 100 ELSE 0 END AS pct_change FROM current_period c FULL OUTER JOIN previous_period p ON c.service = p.service AND c.compartment = p.compartment ORDER BY ABS(COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0)) DESC LIMIT 15",
+          "rawSql": "WITH anchor AS (SELECT date_trunc('week', MAX(\"timestamp\")) - INTERVAL '7 days' AS current_start FROM cost_records WHERE currency = ${currency:sqlstring}), current_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS current_cost FROM cost_records, anchor WHERE currency = ${currency:sqlstring} AND \"timestamp\" >= anchor.current_start AND \"timestamp\" < anchor.current_start + INTERVAL '7 days' GROUP BY 1, 2), previous_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS previous_cost FROM cost_records, anchor WHERE currency = ${currency:sqlstring} AND \"timestamp\" >= anchor.current_start - INTERVAL '7 days' AND \"timestamp\" < anchor.current_start GROUP BY 1, 2) SELECT COALESCE(c.service, p.service) AS service, COALESCE(c.compartment, p.compartment) AS compartment, COALESCE(c.current_cost, 0) AS last_week_cost, COALESCE(p.previous_cost, 0) AS previous_week_cost, COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0) AS delta, CASE WHEN COALESCE(p.previous_cost, 0) > 0 THEN ((COALESCE(c.current_cost, 0) - p.previous_cost) / p.previous_cost) * 100 WHEN COALESCE(c.current_cost, 0) > 0 THEN 100 ELSE 0 END AS pct_change FROM current_period c FULL OUTER JOIN previous_period p ON c.service = p.service AND c.compartment = p.compartment ORDER BY ABS(COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0)) DESC LIMIT 15",
           "rawQuery": true
         }
       ],
@@ -361,12 +380,31 @@
         "w": 8,
         "x": 8,
         "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pct_change"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          }
+        ]
       }
     },
     {
       "id": 11,
       "type": "table",
-      "title": "Last Month vs Previous Month",
+      "title": "Last Month vs Previous Month ($currency)",
       "datasource": {
         "type": "postgres",
         "uid": "PostgreSQL"
@@ -379,7 +417,7 @@
             "uid": "PostgreSQL"
           },
           "format": "table",
-          "rawSql": "WITH anchor AS (SELECT date_trunc('month', MAX(\"timestamp\")) - INTERVAL '1 month' AS current_start FROM cost_records), current_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS current_cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.current_start AND \"timestamp\" < anchor.current_start + INTERVAL '1 month' GROUP BY 1, 2), previous_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS previous_cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.current_start - INTERVAL '1 month' AND \"timestamp\" < anchor.current_start GROUP BY 1, 2) SELECT COALESCE(c.service, p.service) AS service, COALESCE(c.compartment, p.compartment) AS compartment, COALESCE(c.current_cost, 0) AS last_month_cost, COALESCE(p.previous_cost, 0) AS previous_month_cost, COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0) AS delta, CASE WHEN COALESCE(p.previous_cost, 0) > 0 THEN ((COALESCE(c.current_cost, 0) - p.previous_cost) / p.previous_cost) * 100 WHEN COALESCE(c.current_cost, 0) > 0 THEN 100 ELSE 0 END AS pct_change FROM current_period c FULL OUTER JOIN previous_period p ON c.service = p.service AND c.compartment = p.compartment ORDER BY ABS(COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0)) DESC LIMIT 15",
+          "rawSql": "WITH anchor AS (SELECT date_trunc('month', MAX(\"timestamp\")) - INTERVAL '1 month' AS current_start FROM cost_records WHERE currency = ${currency:sqlstring}), current_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS current_cost FROM cost_records, anchor WHERE currency = ${currency:sqlstring} AND \"timestamp\" >= anchor.current_start AND \"timestamp\" < anchor.current_start + INTERVAL '1 month' GROUP BY 1, 2), previous_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS previous_cost FROM cost_records, anchor WHERE currency = ${currency:sqlstring} AND \"timestamp\" >= anchor.current_start - INTERVAL '1 month' AND \"timestamp\" < anchor.current_start GROUP BY 1, 2) SELECT COALESCE(c.service, p.service) AS service, COALESCE(c.compartment, p.compartment) AS compartment, COALESCE(c.current_cost, 0) AS last_month_cost, COALESCE(p.previous_cost, 0) AS previous_month_cost, COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0) AS delta, CASE WHEN COALESCE(p.previous_cost, 0) > 0 THEN ((COALESCE(c.current_cost, 0) - p.previous_cost) / p.previous_cost) * 100 WHEN COALESCE(c.current_cost, 0) > 0 THEN 100 ELSE 0 END AS pct_change FROM current_period c FULL OUTER JOIN previous_period p ON c.service = p.service AND c.compartment = p.compartment ORDER BY ABS(COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0)) DESC LIMIT 15",
           "rawQuery": true
         }
       ],
@@ -388,12 +426,31 @@
         "w": 8,
         "x": 16,
         "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pct_change"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          }
+        ]
       }
     },
     {
       "id": 12,
       "type": "table",
-      "title": "Anomaly Candidate Details",
+      "title": "Anomaly Candidate Details ($currency)",
       "datasource": {
         "type": "postgres",
         "uid": "PostgreSQL"
@@ -406,7 +463,7 @@
             "uid": "PostgreSQL"
           },
           "format": "table",
-          "rawSql": "WITH daily AS (SELECT time_bucket(INTERVAL '1 day', \"timestamp\") AS day, service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, COALESCE(SUM(cost), 0)::double precision AS actual FROM cost_records WHERE \"timestamp\" >= $__timeFrom()::timestamptz - INTERVAL '7 days' AND \"timestamp\" < $__timeTo() GROUP BY 1, 2, 3), series AS (SELECT day, service, compartment, actual, AVG(actual) OVER w AS baseline, STDDEV_POP(actual) OVER w AS stddev FROM daily WINDOW w AS (PARTITION BY service, compartment ORDER BY day ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING)) SELECT day, service, compartment, actual, baseline, actual - baseline AS delta, CASE WHEN COALESCE(baseline, 0) > 0 THEN ((actual - baseline) / baseline) * 100 ELSE 0 END AS pct_change FROM series WHERE day >= $__timeFrom() AND day < $__timeTo() AND baseline IS NOT NULL AND (ABS(CASE WHEN COALESCE(stddev, 0) > 0 THEN (actual - baseline) / stddev ELSE 0 END) >= 2 OR ABS(CASE WHEN COALESCE(baseline, 0) > 0 THEN ((actual - baseline) / baseline) * 100 ELSE 0 END) >= 30 OR ABS(actual - baseline) >= baseline * 0.25) ORDER BY ABS(actual - baseline) DESC LIMIT 25",
+          "rawSql": "WITH daily AS (SELECT time_bucket(INTERVAL '1 day', \"timestamp\") AS day, service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, COALESCE(SUM(cost), 0)::double precision AS actual FROM cost_records WHERE currency = ${currency:sqlstring} AND \"timestamp\" >= $__timeFrom()::timestamptz - INTERVAL '7 days' AND \"timestamp\" < $__timeTo() GROUP BY 1, 2, 3), series AS (SELECT day, service, compartment, actual, AVG(actual) OVER w AS baseline, STDDEV_POP(actual) OVER w AS stddev FROM daily WINDOW w AS (PARTITION BY service, compartment ORDER BY day ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING)) SELECT day, service, compartment, actual, baseline, actual - baseline AS delta, CASE WHEN COALESCE(baseline, 0) > 0 THEN ((actual - baseline) / baseline) * 100 ELSE 0 END AS pct_change FROM series WHERE day >= $__timeFrom() AND day < $__timeTo() AND baseline IS NOT NULL AND (ABS(CASE WHEN COALESCE(stddev, 0) > 0 THEN (actual - baseline) / stddev ELSE 0 END) >= 2 OR ABS(CASE WHEN COALESCE(baseline, 0) > 0 THEN ((actual - baseline) / baseline) * 100 ELSE 0 END) >= 30 OR ABS(actual - baseline) >= baseline * 0.25) ORDER BY ABS(actual - baseline) DESC LIMIT 25",
           "rawQuery": true
         }
       ],
@@ -415,6 +472,25 @@
         "w": 12,
         "x": 0,
         "y": 21
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pct_change"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          }
+        ]
       }
     },
     {
