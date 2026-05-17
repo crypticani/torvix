@@ -46,3 +46,29 @@ func TestParserHandlesGzipAutomatically(t *testing.T) {
 		t.Fatalf("expected Storage category, got %q", records[0].Category)
 	}
 }
+
+func TestParserParsesOCIUsageReport(t *testing.T) {
+	// The problem format: usage reports have different column names and T03:00Z format timestamps
+	input := strings.Join([]string{
+		"lineItem/intervalUsageStart,product/service,usage/consumedQuantity,cost/myCost,usage/consumedQuantityUnits",
+		"2026-04-22T03:00Z,Compute,15.5,0.0,HOURS", // notice the Z timestamp without seconds
+	}, "\n")
+
+	parser := NewParser()
+	records, err := parser.Parse(io.NopCloser(strings.NewReader(input)), "reports/usage.csv", "ocid")
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+	if records[0].UsageAmount != 15.5 {
+		t.Fatalf("expected UsageAmount 15.5, got %v", records[0].UsageAmount)
+	}
+	if records[0].UsageUnit != "HOURS" {
+		t.Fatalf("expected HOURS, got %v", records[0].UsageUnit)
+	}
+	if records[0].UsageStart.Format("2006-01-02T15:04:05Z") != "2026-04-22T03:00:00Z" {
+		t.Fatalf("expected timestamp 2026-04-22T03:00:00Z, got %v", records[0].UsageStart)
+	}
+}

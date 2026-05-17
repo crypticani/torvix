@@ -51,6 +51,60 @@ OCI support is production-oriented and first-class. The collector:
 
 Oracle deprecated older usage reports on January 31, 2025, so the parser accepts both older usage-style headers and current OCI cost report layouts.
 
+### OCI Setup
+
+1. Create an OCI API key for a user with permission to read usage report objects.
+2. Mount an OCI config file into the container, for example `/app/configs/oci_config`.
+3. Set the OCI provider in `configs/config.yaml`:
+
+```yaml
+providers:
+  aws:
+    enabled: false
+  azure:
+    enabled: false
+  gcp:
+    enabled: false
+  oci:
+    enabled: true
+    namespace: "bling"
+    bucket: "ocid1.tenancy.oc1..replace_with_tenancy_ocid"
+    account: "ocid1.tenancy.oc1..replace_with_tenancy_ocid"
+    prefix: ""
+    config_file: "/app/configs/oci_config"
+    config_profile: "DEFAULT"
+    lookback_days: 7
+```
+
+Validate that reports are visible before starting ingestion:
+
+```bash
+oci os object list \
+  --namespace-name bling \
+  --bucket-name "$TENANCY_OCID" \
+  --all
+```
+
+Trigger ingestion and validate results:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/ingest
+psql "$DATABASE_URL" -c "SELECT count(*) FROM cost_records;"
+curl "http://localhost:8080/api/v1/analytics/summary?window=weekly"
+```
+
+If only OCI is enabled, `/api/v1/ingest` returns one object:
+
+```json
+{
+  "provider": "oci",
+  "files_processed": 1,
+  "records_parsed": 100,
+  "records_inserted": 100,
+  "duration_seconds": 2.4
+}
+```
+
 ## API
 
 - `GET /healthz`
@@ -74,6 +128,31 @@ curl "http://localhost:8080/api/v1/analytics/summary?window=weekly&from=2026-05-
 ```
 
 The application applies SQL migrations from `migrations/` on startup.
+
+- **API:** `http://localhost:8080`
+- **Swagger UI:** `http://localhost:8080/swagger/index.html`
+- **Grafana:** `http://localhost:3000` (PostgreSQL and Prometheus datasources are automatically provisioned)
+- **Prometheus:** `http://localhost:9090`
+
+## Configuration Highlights
+
+In `configs/config.yaml`:
+
+- **Scheduler:** CloudPulse includes an in-process scheduler to run ingestion automatically.
+  ```yaml
+  scheduler:
+    enabled: true
+    ingest_interval: "6h"
+  ```
+- **Alerting:** Set up Slack or Discord webhooks to receive properly formatted daily/weekly/monthly cost reports.
+  ```yaml
+  reporting:
+    webhooks:
+      - name: slack-finops
+        type: slack
+        url: "https://hooks.slack.com/services/..."
+        enabled: true
+  ```
 
 ## Backup and Restore
 

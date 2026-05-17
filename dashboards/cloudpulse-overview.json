@@ -1,50 +1,271 @@
 {
-  "title": "CloudPulse Overview",
+  "title": "CloudPulse FinOps Overview",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
+  "refresh": "1m",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
   "panels": [
     {
+      "id": 1,
+      "type": "stat",
+      "title": "Total Daily Cost",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "format": "table",
+          "rawSql": "SELECT COALESCE(SUM(total_cost), 0) FROM cost_summary_daily WHERE bucket >= $__timeFrom() AND bucket <= $__timeTo()",
+          "rawQuery": true
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": false,
+          "fields": ""
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Active Services",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "format": "table",
+          "rawSql": "SELECT COUNT(DISTINCT service) FROM cost_summary_daily WHERE bucket >= $__timeFrom() AND bucket <= $__timeTo()",
+          "rawQuery": true
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Anomalies Found",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
+      "targets": [
+        {
+          "expr": "cloudpulse_anomalies_found_total",
+          "refId": "A"
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Latest Ingestion",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "format": "table",
+          "rawSql": "SELECT MAX(processed_at) FROM processed_report_files",
+          "rawQuery": true
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Daily Cost Trend",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT bucket AS \"time\", cloud_provider || ' - ' || service AS metric, SUM(total_cost) AS value FROM cost_summary_daily WHERE $__timeFilter(bucket) GROUP BY bucket, cloud_provider, service ORDER BY bucket",
+          "rawQuery": true
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "barchart",
+      "title": "Cost by Service",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "format": "table",
+          "rawSql": "SELECT service AS metric, SUM(total_cost) AS value FROM cost_summary_daily WHERE $__timeFilter(bucket) GROUP BY service ORDER BY value DESC",
+          "rawQuery": true
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "options": {
+        "xTickLabelRotation": -45,
+        "xTickLabelMaxLength": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      }
+    },
+    {
+      "id": 7,
       "type": "timeseries",
       "title": "Collector Runs",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
       "targets": [
         {
           "expr": "sum(cloudpulse_collector_runs_total) by (provider, status)",
-          "legendFormat": "{{provider}} {{status}}"
+          "legendFormat": "{{provider}} {{status}}",
+          "refId": "A"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 12
+      }
     },
     {
-      "type": "stat",
-      "title": "Anomalies Found",
-      "targets": [
-        {
-          "expr": "cloudpulse_anomalies_found_total"
-        }
-      ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
-    },
-    {
+      "id": 8,
       "type": "timeseries",
-      "title": "OCI Processed Files",
+      "title": "Ingestion Duration",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
       "targets": [
         {
-          "expr": "sum(cloudpulse_processed_files_total{provider=\"oci\"}) by (status)",
-          "legendFormat": "{{status}}"
+          "expr": "histogram_quantile(0.95, sum(rate(cloudpulse_ingestion_duration_seconds_bucket[5m])) by (le, provider))",
+          "legendFormat": "p95 {{provider}}",
+          "refId": "A"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 }
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
     },
     {
-      "type": "timeseries",
-      "title": "OCI Processed Records",
+      "id": 9,
+      "type": "table",
+      "title": "Records by Provider",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "Prometheus"
+      },
       "targets": [
         {
-          "expr": "sum(cloudpulse_processed_records_total{provider=\"oci\"})",
-          "legendFormat": "records"
+          "expr": "sum(cloudpulse_processed_records_total) by (provider)",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
         }
       ],
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 }
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 12
+      }
     }
   ]
 }

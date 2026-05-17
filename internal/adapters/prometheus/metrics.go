@@ -12,6 +12,8 @@ type Metrics struct {
 	AnomaliesFound        prometheus.Counter
 	ProcessedFilesTotal   *prometheus.CounterVec
 	ProcessedRecordsTotal *prometheus.CounterVec
+	InsertedBatchesTotal  *prometheus.CounterVec
+	RecordsPerSecond      *prometheus.GaugeVec
 	IngestionFailures     *prometheus.CounterVec
 	IngestionDuration     *prometheus.HistogramVec
 	DatabaseBackendInfo   *prometheus.GaugeVec
@@ -45,6 +47,16 @@ func New(namespace string, reg prometheus.Registerer) *Metrics {
 			Name:      "processed_records_total",
 			Help:      "Total billing records processed.",
 		}, []string{"provider"}),
+		InsertedBatchesTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "inserted_batches_total",
+			Help:      "Total ingestion batches inserted.",
+		}, []string{"provider"}),
+		RecordsPerSecond: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "ingestion_records_per_second",
+			Help:      "Last observed ingestion record rate.",
+		}, []string{"provider"}),
 		IngestionFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: namespace,
 			Name:      "ingestion_failures_total",
@@ -68,6 +80,8 @@ func New(namespace string, reg prometheus.Registerer) *Metrics {
 		m.AnomaliesFound,
 		m.ProcessedFilesTotal,
 		m.ProcessedRecordsTotal,
+		m.InsertedBatchesTotal,
+		m.RecordsPerSecond,
 		m.IngestionFailures,
 		m.IngestionDuration,
 		m.DatabaseBackendInfo,
@@ -94,6 +108,20 @@ func (m *Metrics) ObserveRecords(provider string, count int) {
 		return
 	}
 	m.ProcessedRecordsTotal.WithLabelValues(provider).Add(float64(count))
+}
+
+func (m *Metrics) ObserveBatches(provider string, count int) {
+	if count <= 0 {
+		return
+	}
+	m.InsertedBatchesTotal.WithLabelValues(provider).Add(float64(count))
+}
+
+func (m *Metrics) ObserveRecordsPerSecond(provider string, rate float64) {
+	if rate < 0 {
+		return
+	}
+	m.RecordsPerSecond.WithLabelValues(provider).Set(rate)
 }
 
 func (m *Metrics) ObserveFailure(provider, stage string, count int) {

@@ -10,6 +10,8 @@ import (
 type FileBatch struct {
 	Metadata domain.ProcessedReportFile
 	Records  []domain.RawBillingRecord
+	First    bool
+	Final    bool
 }
 
 type CollectResult struct {
@@ -17,10 +19,18 @@ type CollectResult struct {
 	FilesProcessed   int
 	FilesSkipped     int
 	RecordsProcessed int
+	BatchesInserted  int
 	Failures         int
 }
 
 type Collector interface {
 	Name() string
 	Collect(ctx context.Context, since time.Time) (CollectResult, error)
+}
+
+type BatchHandler func(ctx context.Context, batch FileBatch) error
+
+type StreamCollector interface {
+	Collector
+	CollectStream(ctx context.Context, since time.Time, handle BatchHandler) (CollectResult, error)
 }

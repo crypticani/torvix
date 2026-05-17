@@ -1,8 +1,7 @@
 bin/
 dist/
 .DS_Store
-configs/config.yaml
-configs/oci_config
-configs/oci_privkey.pem
+configs/*
+!configs/config.example.yaml
 deploy.sh
 postgres_data/

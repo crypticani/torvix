@@ -43,11 +43,17 @@ func NewObjectStorageClient(cfg config.Provider) (*SDKObjectStorageClient, error
 	if err != nil {
 		return nil, fmt.Errorf("create object storage client: %w", err)
 	}
-	retryPolicy := common.DefaultRetryPolicy()
+	retryPolicy := boundedRetryPolicy()
 	client.SetCustomClientConfiguration(common.CustomClientConfiguration{
 		RetryPolicy: &retryPolicy,
 	})
 	return &SDKObjectStorageClient{client: client, compartment: cfg.Account}, nil
+}
+
+func boundedRetryPolicy() common.RetryPolicy {
+	retryPolicy := common.DefaultRetryPolicyWithoutEventualConsistency()
+	retryPolicy.MaximumNumberAttempts = 3
+	return retryPolicy
 }
 
 func configurationProvider(cfg config.Provider) (common.ConfigurationProvider, error) {
@@ -62,7 +68,7 @@ func configurationProvider(cfg config.Provider) (common.ConfigurationProvider, e
 }
 
 func (c *SDKObjectStorageClient) GetNamespace(ctx context.Context) (string, error) {
-	retryPolicy := common.DefaultRetryPolicy()
+	retryPolicy := boundedRetryPolicy()
 	req := objectstorage.GetNamespaceRequest{
 		RequestMetadata: common.RequestMetadata{RetryPolicy: &retryPolicy},
 	}
@@ -81,18 +87,26 @@ func (c *SDKObjectStorageClient) GetNamespace(ctx context.Context) (string, erro
 
 func (c *SDKObjectStorageClient) ListObjects(ctx context.Context, namespace, bucket, prefix string, limit int) ([]ObjectInfo, error) {
 	fields := "name,etag,size,timeModified"
-	startAfter := ""
+	start := ""
 	var out []ObjectInfo
+	seenPageStart := map[string]struct{}{}
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		pageLimit := 1000
+		if limit > 0 && limit-len(out) < pageLimit {
+			pageLimit = limit - len(out)
+		}
 		req := objectstorage.ListObjectsRequest{
 			NamespaceName: common.String(namespace),
 			BucketName:    common.String(bucket),
 			Prefix:        common.String(prefix),
 			Fields:        common.String(fields),
-			StartAfter:    nil,
+			Limit:         common.Int(pageLimit),
 		}
-		if startAfter != "" {
-			req.StartAfter = common.String(startAfter)
+		if start != "" {
+			req.Start = common.String(start)
 		}
 		resp, err := c.client.ListObjects(ctx, req)
 		if err != nil {
@@ -116,14 +130,18 @@ func (c *SDKObjectStorageClient) ListObjects(ctx context.Context, namespace, buc
 				info.LastModified = item.TimeModified.Time
 			}
 			out = append(out, info)
-			startAfter = info.Name
 			if limit > 0 && len(out) >= limit {
 				return out, nil
 			}
 		}
-		if len(resp.Objects) == 0 {
+		if resp.NextStartWith == nil || *resp.NextStartWith == "" {
 			break
 		}
+		if _, ok := seenPageStart[*resp.NextStartWith]; ok {
+			return nil, fmt.Errorf("list objects pagination repeated token %q", *resp.NextStartWith)
+		}
+		seenPageStart[*resp.NextStartWith] = struct{}{}
+		start = *resp.NextStartWith
 	}
 	return out, nil
 }

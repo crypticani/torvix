@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math"
 	"time"
 
@@ -66,6 +67,7 @@ func (r *Repository) Pool() *pgxpool.Pool {
 }
 
 func (r *Repository) StoreIngestedBatch(ctx context.Context, file domain.ProcessedReportFile, records []domain.CanonicalCostRecord) error {
+	started := time.Now()
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -76,17 +78,84 @@ func (r *Repository) StoreIngestedBatch(ctx context.Context, file domain.Process
 		}
 	}()
 
+	if err = storeCostRecordsTx(ctx, tx, records); err != nil {
+		return err
+	}
+	if err = markReportProcessedTx(ctx, tx, file); err != nil {
+		return fmt.Errorf("mark processed report file: %w", err)
+	}
+
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	slog.Info("ingested batch committed", "provider", file.Provider, "object", file.ObjectName, "records_inserted", len(records), "duration", time.Since(started).String())
+	return nil
+}
+
+func (r *Repository) StoreCostRecords(ctx context.Context, records []domain.CanonicalCostRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
+	started := time.Now()
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+	if err = storeCostRecordsTx(ctx, tx, records); err != nil {
+		return err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	slog.Info("cost records batch committed", "records_inserted", len(records), "duration", time.Since(started).String())
+	return nil
+}
+
+func (r *Repository) DeleteCostRecordsForSource(ctx context.Context, provider domain.Provider, sourceObject string) error {
+	if sourceObject == "" {
+		return nil
+	}
+	_, err := r.db.Exec(ctx, `
+		DELETE FROM cost_records
+		WHERE cloud_provider = $1 AND source_object = $2
+	`, provider, sourceObject)
+	return err
+}
+
+func (r *Repository) MarkReportProcessed(ctx context.Context, file domain.ProcessedReportFile) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+	if err = markReportProcessedTx(ctx, tx, file); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func storeCostRecordsTx(ctx context.Context, tx pgx.Tx, records []domain.CanonicalCostRecord) error {
 	const insertSQL = `
 		INSERT INTO cost_records
 		(timestamp, cloud_provider, account_id, service, category, resource_id, region, usage_quantity, usage_unit, cost, currency, tags, raw_json, source_object, meter)
 		VALUES
 		($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15)
 	`
+	batch := &pgx.Batch{}
 	for _, record := range records {
 		tags, _ := json.Marshal(record.Tags)
 		raw, _ := json.Marshal(defaultRawJSON(record))
-		if _, err = tx.Exec(ctx, insertSQL,
-			record.Timestamp,
+		batch.Queue(insertSQL,
+			record.Timestamp.UTC(),
 			record.Provider,
 			record.AccountID,
 			record.Service,
@@ -101,13 +170,24 @@ func (r *Repository) StoreIngestedBatch(ctx context.Context, file domain.Process
 			string(raw),
 			record.SourceObject,
 			record.Meter,
-		); err != nil {
+		)
+	}
+	results := tx.SendBatch(ctx, batch)
+	for range records {
+		if _, err := results.Exec(); err != nil {
+			_ = results.Close()
 			return fmt.Errorf("insert cost record: %w", err)
 		}
 	}
+	if err := results.Close(); err != nil {
+		return fmt.Errorf("close cost record batch: %w", err)
+	}
+	return nil
+}
 
-	if _, err = tx.Exec(ctx, `
-		INSERT INTO processed_report_files
+func markReportProcessedTx(ctx context.Context, tx pgx.Tx, file domain.ProcessedReportFile) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO processed_reports
 		(provider, bucket, object_name, etag, last_modified, processed_at, record_count, status, error_message)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (provider, bucket, object_name, etag)
@@ -117,28 +197,32 @@ func (r *Repository) StoreIngestedBatch(ctx context.Context, file domain.Process
 			record_count = EXCLUDED.record_count,
 			status = EXCLUDED.status,
 			error_message = EXCLUDED.error_message
-	`, file.Provider, file.Bucket, file.ObjectName, file.ETag, file.LastModified, file.ProcessedAt, file.RecordCount, file.Status, file.ErrorMessage); err != nil {
-		return fmt.Errorf("mark processed report file: %w", err)
-	}
-
-	return tx.Commit(ctx)
+	`, file.Provider, file.Bucket, file.ObjectName, file.ETag, file.LastModified, file.ProcessedAt, file.RecordCount, file.Status, file.ErrorMessage)
+	return err
 }
 
 func (r *Repository) AggregateCosts(ctx context.Context, from, to time.Time, window string) ([]domain.AggregatedCost, error) {
-	view := aggregateView(window)
+	started := time.Now()
+	bucket := aggregateBucket(window)
 	query := fmt.Sprintf(`
-		SELECT bucket, cloud_provider, account_id, service, total_cost::double precision
-		FROM %s
-		WHERE bucket >= $1 AND bucket <= $2
-		ORDER BY bucket ASC, cloud_provider, account_id, service
-	`, view)
+		SELECT
+			time_bucket(%s::interval, "timestamp") AS bucket,
+			cloud_provider,
+			COALESCE(account_id, '') AS account_id,
+			service,
+			COALESCE(SUM(cost), 0)::double precision AS total_cost
+		FROM cost_records
+		WHERE "timestamp" >= $1 AND "timestamp" < $2
+		GROUP BY 1, 2, 3, 4
+		ORDER BY 1 ASC, 2, 3, 4
+	`, bucket)
 	rows, err := r.db.Query(ctx, query, from.UTC(), to.UTC())
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var out []domain.AggregatedCost
+	out := make([]domain.AggregatedCost, 0)
 	for rows.Next() {
 		var rec domain.AggregatedCost
 		if err := rows.Scan(&rec.WindowStart, &rec.Provider, &rec.AccountID, &rec.Service, &rec.TotalCost); err != nil {
@@ -147,15 +231,25 @@ func (r *Repository) AggregateCosts(ctx context.Context, from, to time.Time, win
 		rec.WindowEnd = aggregateWindowEnd(rec.WindowStart, window)
 		out = append(out, rec)
 	}
-	return out, rows.Err()
+	err = rows.Err()
+	slog.Info("analytics summary query executed", "window", window, "from", from.UTC(), "to", to.UTC(), "rows", len(out), "duration", time.Since(started).String(), "error", err)
+	return out, err
 }
 
 func (r *Repository) DetectAnomalies(ctx context.Context, from, to time.Time) ([]domain.Anomaly, error) {
+	started := time.Now()
 	rows, err := r.db.Query(ctx, `
 		WITH daily AS (
-			SELECT bucket, cloud_provider, account_id, service, total_cost::double precision AS total_cost
-			FROM cost_summary_daily
-			WHERE bucket >= $1 - INTERVAL '7 days' AND bucket <= $2
+			SELECT
+				time_bucket(INTERVAL '1 day', "timestamp") AS bucket,
+				cloud_provider,
+				COALESCE(account_id, '') AS account_id,
+				service,
+				COALESCE(SUM(cost), 0)::double precision AS total_cost
+			FROM cost_records
+			WHERE "timestamp" >= $1::timestamptz - INTERVAL '7 days'
+			  AND "timestamp" < $2
+			GROUP BY 1, 2, 3, 4
 		),
 		series AS (
 			SELECT
@@ -185,7 +279,7 @@ func (r *Repository) DetectAnomalies(ctx context.Context, from, to time.Time) ([
 			total_cost - baseline AS moving_average_delta
 		FROM series
 		WHERE bucket >= $1
-		  AND bucket <= $2
+		  AND bucket < $2
 		  AND baseline IS NOT NULL
 		  AND (
 			ABS(CASE WHEN COALESCE(stddev, 0) > 0 THEN (total_cost - baseline) / stddev ELSE 0 END) >= 2
@@ -199,7 +293,7 @@ func (r *Repository) DetectAnomalies(ctx context.Context, from, to time.Time) ([
 	}
 	defer rows.Close()
 
-	var out []domain.Anomaly
+	out := make([]domain.Anomaly, 0)
 	for rows.Next() {
 		var a domain.Anomaly
 		if err := rows.Scan(&a.Date, &a.Provider, &a.AccountID, &a.Service, &a.Baseline, &a.Actual, &a.ZScore, &a.PercentDeviation, &a.MovingAverageDelta); err != nil {
@@ -208,12 +302,26 @@ func (r *Repository) DetectAnomalies(ctx context.Context, from, to time.Time) ([
 		a.Severity = anomalySeverity(a.ZScore, a.PercentDeviation)
 		out = append(out, a)
 	}
-	return out, rows.Err()
+	err = rows.Err()
+	slog.Info("analytics anomalies query executed", "from", from.UTC(), "to", to.UTC(), "rows", len(out), "duration", time.Since(started).String(), "error", err)
+	return out, err
 }
 
 func (r *Repository) ForecastCosts(ctx context.Context, from, to time.Time, horizon int) ([]domain.ForecastPoint, error) {
+	started := time.Now()
 	rows, err := r.db.Query(ctx, `
-		WITH ranked AS (
+		WITH daily AS (
+			SELECT
+				time_bucket(INTERVAL '1 day', "timestamp") AS bucket,
+				cloud_provider,
+				COALESCE(account_id, '') AS account_id,
+				service,
+				COALESCE(SUM(cost), 0)::double precision AS total_cost
+			FROM cost_records
+			WHERE "timestamp" >= $1 AND "timestamp" < $2
+			GROUP BY 1, 2, 3, 4
+		),
+		ranked AS (
 			SELECT
 				bucket,
 				cloud_provider,
@@ -222,8 +330,7 @@ func (r *Repository) ForecastCosts(ctx context.Context, from, to time.Time, hori
 				total_cost::double precision AS total_cost,
 				ROW_NUMBER() OVER (PARTITION BY cloud_provider, account_id, service ORDER BY bucket DESC) AS rn,
 				MAX(bucket) OVER (PARTITION BY cloud_provider, account_id, service) AS last_bucket
-			FROM cost_summary_daily
-			WHERE bucket >= $1 AND bucket <= $2
+			FROM daily
 		),
 		recent AS (
 			SELECT
@@ -254,7 +361,7 @@ func (r *Repository) ForecastCosts(ctx context.Context, from, to time.Time, hori
 	}
 	defer rows.Close()
 
-	var out []domain.ForecastPoint
+	out := make([]domain.ForecastPoint, 0)
 	for rows.Next() {
 		var point domain.ForecastPoint
 		if err := rows.Scan(&point.Date, &point.Provider, &point.AccountID, &point.Service, &point.ForecastCost, &point.ConfidenceLow, &point.ConfidenceHigh); err != nil {
@@ -262,7 +369,9 @@ func (r *Repository) ForecastCosts(ctx context.Context, from, to time.Time, hori
 		}
 		out = append(out, point)
 	}
-	return out, rows.Err()
+	err = rows.Err()
+	slog.Info("analytics forecast query executed", "from", from.UTC(), "to", to.UTC(), "horizon", horizon, "rows", len(out), "duration", time.Since(started).String(), "error", err)
+	return out, err
 }
 
 func (r *Repository) IsReportProcessed(ctx context.Context, provider domain.Provider, bucket, objectName, etag string) (bool, error) {
@@ -270,21 +379,34 @@ func (r *Repository) IsReportProcessed(ctx context.Context, provider domain.Prov
 	err := r.db.QueryRow(ctx, `
 		SELECT EXISTS(
 			SELECT 1
-			FROM processed_report_files
+			FROM processed_reports
 			WHERE provider = $1 AND bucket = $2 AND object_name = $3 AND etag = $4 AND status = 'processed'
 		)
 	`, provider, bucket, objectName, etag).Scan(&exists)
 	return exists, err
 }
 
-func aggregateView(window string) string {
+func (r *Repository) RefreshAggregates(ctx context.Context, from, to time.Time) error {
+	views := []string{"cost_summary_daily", "cost_summary_weekly", "cost_summary_monthly"}
+	for _, view := range views {
+		if _, err := r.db.Exec(ctx,
+			fmt.Sprintf("CALL refresh_continuous_aggregate('%s', $1::timestamptz, $2::timestamptz)", view),
+			from.UTC(), to.UTC(),
+		); err != nil {
+			return fmt.Errorf("refresh %s: %w", view, err)
+		}
+	}
+	return nil
+}
+
+func aggregateBucket(window string) string {
 	switch window {
 	case "weekly":
-		return "cost_summary_weekly"
+		return "'1 week'"
 	case "monthly":
-		return "cost_summary_monthly"
+		return "'1 month'"
 	default:
-		return "cost_summary_daily"
+		return "'1 day'"
 	}
 }
 

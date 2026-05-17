@@ -1,0 +1,67 @@
+package unit
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/crypticani/cloudpulse/internal/core/analytics"
+	"github.com/crypticani/cloudpulse/internal/core/forecasting"
+	"github.com/crypticani/cloudpulse/internal/core/reporting"
+	"github.com/crypticani/cloudpulse/internal/domain"
+)
+
+type mockReportingRepo struct{}
+
+func (m *mockReportingRepo) AggregateCosts(ctx context.Context, from, to time.Time, window string) ([]domain.AggregatedCost, error) {
+	return []domain.AggregatedCost{{Provider: domain.ProviderOCI, TotalCost: 100}}, nil
+}
+func (m *mockReportingRepo) DetectAnomalies(ctx context.Context, from, to time.Time) ([]domain.Anomaly, error) {
+	return []domain.Anomaly{{Provider: domain.ProviderOCI, Actual: 50}}, nil
+}
+func (m *mockReportingRepo) ForecastCosts(ctx context.Context, from, to time.Time, horizon int) ([]domain.ForecastPoint, error) {
+	return []domain.ForecastPoint{{Provider: domain.ProviderOCI, ForecastCost: 150}}, nil
+}
+func (m *mockReportingRepo) StoreIngestedBatch(ctx context.Context, file domain.ProcessedReportFile, records []domain.CanonicalCostRecord) error {
+	return nil
+}
+func (m *mockReportingRepo) StoreCostRecords(ctx context.Context, records []domain.CanonicalCostRecord) error {
+	return nil
+}
+func (m *mockReportingRepo) DeleteCostRecordsForSource(ctx context.Context, provider domain.Provider, sourceObject string) error {
+	return nil
+}
+func (m *mockReportingRepo) MarkReportProcessed(ctx context.Context, file domain.ProcessedReportFile) error {
+	return nil
+}
+func (m *mockReportingRepo) IsReportProcessed(ctx context.Context, provider domain.Provider, bucket, objectName, etag string) (bool, error) {
+	return false, nil
+}
+func (m *mockReportingRepo) RefreshAggregates(ctx context.Context, from, to time.Time) error {
+	return nil
+}
+
+func TestBuildReport(t *testing.T) {
+	repo := &mockReportingRepo{}
+	analyticsSvc := analytics.New(repo)
+	forecastSvc := forecasting.New(repo)
+	reportingSvc := reporting.New(analyticsSvc, forecastSvc)
+
+	report, err := reportingSvc.Build(context.Background(), "daily", time.Now(), time.Now())
+	if err != nil {
+		t.Fatalf("build report error: %v", err)
+	}
+
+	if report.Period != "daily" {
+		t.Errorf("expected daily period, got %s", report.Period)
+	}
+	if len(report.Summary) != 1 {
+		t.Errorf("expected 1 summary item, got %d", len(report.Summary))
+	}
+	if len(report.Anomalies) != 1 {
+		t.Errorf("expected 1 anomaly item, got %d", len(report.Anomalies))
+	}
+	if len(report.Forecast) != 1 {
+		t.Errorf("expected 1 forecast item, got %d", len(report.Forecast))
+	}
+}

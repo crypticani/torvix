@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -74,10 +75,12 @@ func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 // ingest godoc
 //
 //	@Summary		Trigger billing data ingestion
-//	@Description	Triggers collection of billing data from all enabled cloud providers for the last 24 hours.
+//	@Description	Triggers collection of billing data from all enabled cloud providers for the last 24 hours. Returns per-provider ingestion metrics.
 //	@Tags			Ingestion
 //	@Produce		json
-//	@Success		202	{object}	StatusResponse	"Ingestion completed successfully"
+//	@Param			days	query		int		false	"Number of days to look back for ingestion. Defaults to 7."	example(7)
+//	@Success		202	{object}	IngestResponse	"Ingestion completed successfully when a single provider is enabled"
+//	@Failure		207	{array}		IngestResponse	"Ingestion completed with partial failures"
 //	@Failure		405	{string}	string			"Method not allowed"
 //	@Failure		500	{object}	ErrorResponse	"Ingestion failed"
 //	@Router			/api/v1/ingest [post]
@@ -86,12 +89,42 @@ func (h *Handler) ingest(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	since := time.Now().UTC().Add(-24 * time.Hour)
-	if err := h.collector.Run(r.Context(), since); err != nil {
+	days := 7
+	if v := r.URL.Query().Get("days"); v != "" {
+		if d, err := strconv.Atoi(v); err == nil && d > 0 {
+			days = d
+		}
+	}
+	since := time.Now().UTC().AddDate(0, 0, -days)
+	results, err := h.collector.Run(r.Context(), since)
+
+	// Build structured response from provider results.
+	resp := make([]IngestResponse, 0, len(results))
+	for _, pr := range results {
+		resp = append(resp, IngestResponse{
+			Provider:        pr.Provider,
+			FilesProcessed:  pr.FilesProcessed,
+			RecordsParsed:   pr.RecordsParsed,
+			RecordsInserted: pr.RecordsInserted,
+			DurationSeconds: pr.Duration.Seconds(),
+			Error:           pr.Error,
+		})
+	}
+
+	if err != nil && len(resp) == 0 {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]string{"status": "ingestion completed"})
+	if err != nil {
+		// Partial failure: some providers succeeded, some failed.
+		writeJSON(w, http.StatusMultiStatus, resp)
+		return
+	}
+	if len(resp) == 1 {
+		writeJSON(w, http.StatusAccepted, resp[0])
+		return
+	}
+	writeJSON(w, http.StatusAccepted, resp)
 }
 
 // summary godoc
@@ -255,12 +288,12 @@ func parseRange(_ context.Context, r *http.Request) (time.Time, time.Time) {
 	from := to.AddDate(0, 0, -30)
 	if v := r.URL.Query().Get("from"); v != "" {
 		if t, err := time.Parse(time.DateOnly, v); err == nil {
-			from = t
+			from = t.UTC()
 		}
 	}
 	if v := r.URL.Query().Get("to"); v != "" {
 		if t, err := time.Parse(time.DateOnly, v); err == nil {
-			to = t
+			to = t.UTC().AddDate(0, 0, 1)
 		}
 	}
 	return from, to

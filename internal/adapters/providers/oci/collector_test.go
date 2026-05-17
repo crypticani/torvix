@@ -10,6 +10,7 @@ import (
 
 	"github.com/crypticani/cloudpulse/internal/config"
 	"github.com/crypticani/cloudpulse/internal/domain"
+	"github.com/crypticani/cloudpulse/internal/ports/providers"
 )
 
 func TestCollectorSkipsProcessedFiles(t *testing.T) {
@@ -53,6 +54,63 @@ func TestCollectorSkipsProcessedFiles(t *testing.T) {
 	}
 }
 
+func TestCollectorCollectStreamFlushesBoundedBatches(t *testing.T) {
+	repo := &fakeRepository{processed: map[string]bool{}}
+	client := &fakeObjectStorageClient{
+		namespace: "bling",
+		objects: []ObjectInfo{
+			{Name: "reports/newer.csv", ETag: "etag-2", LastModified: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC)},
+		},
+		bodies: map[string]string{
+			"reports/newer.csv": strings.Join([]string{
+				"lineItem/intervalUsageStart,product/service,usage/billedQuantity,cost/myCost",
+				"2026-05-03T00:00:00Z,Compute,1,3.5",
+				"2026-05-03T01:00:00Z,Compute,2,4.5",
+				"2026-05-03T02:00:00Z,Compute,3,5.5",
+			}, "\n"),
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	collector := NewWithClient(config.Provider{
+		Bucket:                 "tenant-bucket",
+		Prefix:                 "reports/",
+		Account:                "ocid1.tenancy.oc1..example",
+		MaxFilesPerRun:         5,
+		MaxRecordsPerBatch:     2,
+		MaxMemoryBufferRecords: 2,
+		MaxRuntime:             "1m",
+	}, logger, repo, client)
+
+	var batchSizes []int
+	finalSeen := false
+	result, err := collector.CollectStream(context.Background(), time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), func(_ context.Context, batch providers.FileBatch) error {
+		if batch.Final {
+			finalSeen = true
+			if batch.Metadata.RecordCount != 3 {
+				t.Fatalf("expected final record count 3, got %d", batch.Metadata.RecordCount)
+			}
+			return nil
+		}
+		if len(batch.Records) > 2 {
+			t.Fatalf("batch exceeded configured limit: %d", len(batch.Records))
+		}
+		batchSizes = append(batchSizes, len(batch.Records))
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("CollectStream() error = %v", err)
+	}
+	if !finalSeen {
+		t.Fatalf("expected final processed marker callback")
+	}
+	if result.RecordsProcessed != 3 {
+		t.Fatalf("expected 3 records processed, got %d", result.RecordsProcessed)
+	}
+	if len(batchSizes) != 2 || batchSizes[0] != 2 || batchSizes[1] != 1 {
+		t.Fatalf("unexpected batch sizes: %v", batchSizes)
+	}
+}
+
 type fakeObjectStorageClient struct {
 	namespace string
 	objects   []ObjectInfo
@@ -91,8 +149,24 @@ func (f *fakeRepository) StoreIngestedBatch(context.Context, domain.ProcessedRep
 	return nil
 }
 
+func (f *fakeRepository) StoreCostRecords(context.Context, []domain.CanonicalCostRecord) error {
+	return nil
+}
+
+func (f *fakeRepository) DeleteCostRecordsForSource(context.Context, domain.Provider, string) error {
+	return nil
+}
+
+func (f *fakeRepository) MarkReportProcessed(context.Context, domain.ProcessedReportFile) error {
+	return nil
+}
+
 func (f *fakeRepository) IsReportProcessed(_ context.Context, _ domain.Provider, _ string, objectName, etag string) (bool, error) {
 	return f.processed[objectName+"|"+etag], nil
+}
+
+func (f *fakeRepository) RefreshAggregates(context.Context, time.Time, time.Time) error {
+	return nil
 }
 
 func gzipString(t *testing.T, value string) string {

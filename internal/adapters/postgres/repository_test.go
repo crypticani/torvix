@@ -19,7 +19,7 @@ func TestAggregateCostsUsesDailySummary(t *testing.T) {
 
 	rows := pgxmock.NewRows([]string{"bucket", "cloud_provider", "account_id", "service", "total_cost"}).
 		AddRow(time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), "oci", "acct", "Compute", 12.5)
-	mock.ExpectQuery("FROM cost_summary_daily").
+	mock.ExpectQuery("FROM cost_records").
 		WithArgs(time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC)).
 		WillReturnRows(rows)
 
@@ -46,7 +46,7 @@ func TestIsReportProcessed(t *testing.T) {
 	}
 	defer mock.Close()
 
-	mock.ExpectQuery("FROM processed_report_files").
+	mock.ExpectQuery("FROM processed_reports").
 		WithArgs(domain.ProviderOCI, "bucket", "reports/001.csv.gz", "etag-1").
 		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(true))
 

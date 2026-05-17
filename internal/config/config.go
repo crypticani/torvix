@@ -18,8 +18,14 @@ type Config struct {
 		GCP   Provider `yaml:"gcp"`
 		OCI   Provider `yaml:"oci"`
 	} `yaml:"providers"`
+	Scheduler Scheduler `yaml:"scheduler"`
 	Reporting Reporting `yaml:"reporting"`
 	Metrics   Metrics   `yaml:"metrics"`
+}
+
+type Scheduler struct {
+	Enabled        bool   `yaml:"enabled"`
+	IngestInterval string `yaml:"ingest_interval"`
 }
 
 type HTTP struct {
@@ -33,22 +39,37 @@ type DB struct {
 }
 
 type Provider struct {
-	Enabled       bool   `yaml:"enabled"`
-	Bucket        string `yaml:"bucket"`
-	Prefix        string `yaml:"prefix"`
-	Account       string `yaml:"account"`
-	Container     string `yaml:"container"`
-	Project       string `yaml:"project"`
-	Namespace     string `yaml:"namespace"`
-	Region        string `yaml:"region"`
-	Credentials   string `yaml:"credentials"`
-	ConfigFile    string `yaml:"config_file"`
-	ConfigProfile string `yaml:"config_profile"`
-	Passphrase    string `yaml:"passphrase"`
-	PollSchedule  string `yaml:"poll_schedule"`
-	Format        string `yaml:"format"`
-	LookbackDays  int    `yaml:"lookback_days"`
-	MaxObjectScan int    `yaml:"max_object_scan"`
+	Enabled                bool   `yaml:"enabled"`
+	Bucket                 string `yaml:"bucket"`
+	Prefix                 string `yaml:"prefix"`
+	Account                string `yaml:"account"`
+	Container              string `yaml:"container"`
+	Project                string `yaml:"project"`
+	Namespace              string `yaml:"namespace"`
+	Region                 string `yaml:"region"`
+	Credentials            string `yaml:"credentials"`
+	ConfigFile             string `yaml:"config_file"`
+	ConfigProfile          string `yaml:"config_profile"`
+	Passphrase             string `yaml:"passphrase"`
+	PollSchedule           string `yaml:"poll_schedule"`
+	Format                 string `yaml:"format"`
+	LookbackDays           int    `yaml:"lookback_days"`
+	MaxObjectScan          int    `yaml:"max_object_scan"`
+	MaxFilesPerRun         int    `yaml:"max_files_per_run"`
+	MaxRecordsPerBatch     int    `yaml:"max_records_per_batch"`
+	MaxRuntime             string `yaml:"max_runtime"`
+	MaxMemoryBufferRecords int    `yaml:"max_memory_buffer_records"`
+	DryRun                 bool   `yaml:"dry_run"`
+	SampleMode             bool   `yaml:"sample_mode"`
+}
+
+type IngestionLimits struct {
+	MaxFilesPerRun         int
+	MaxRecordsPerBatch     int
+	MaxRuntime             time.Duration
+	MaxMemoryBufferRecords int
+	DryRun                 bool
+	SampleMode             bool
 }
 
 type Reporting struct {
@@ -92,4 +113,48 @@ func (p Provider) Lookback() time.Duration {
 		return 24 * time.Hour
 	}
 	return time.Duration(p.LookbackDays) * 24 * time.Hour
+}
+
+func (p Provider) IngestionLimits() IngestionLimits {
+	limits := IngestionLimits{
+		MaxFilesPerRun:         p.MaxFilesPerRun,
+		MaxRecordsPerBatch:     p.MaxRecordsPerBatch,
+		MaxMemoryBufferRecords: p.MaxMemoryBufferRecords,
+		DryRun:                 p.DryRun,
+		SampleMode:             p.SampleMode,
+	}
+	if limits.MaxFilesPerRun <= 0 {
+		limits.MaxFilesPerRun = 25
+	}
+	if limits.MaxRecordsPerBatch <= 0 {
+		limits.MaxRecordsPerBatch = 1000
+	}
+	if limits.MaxMemoryBufferRecords <= 0 {
+		limits.MaxMemoryBufferRecords = limits.MaxRecordsPerBatch
+	}
+	if limits.MaxMemoryBufferRecords > limits.MaxRecordsPerBatch {
+		limits.MaxMemoryBufferRecords = limits.MaxRecordsPerBatch
+	}
+	if p.MaxRuntime == "" {
+		limits.MaxRuntime = 10 * time.Minute
+	} else if d, err := time.ParseDuration(p.MaxRuntime); err == nil && d > 0 {
+		limits.MaxRuntime = d
+	} else {
+		limits.MaxRuntime = 10 * time.Minute
+	}
+	if limits.SampleMode {
+		if limits.MaxFilesPerRun > 3 {
+			limits.MaxFilesPerRun = 3
+		}
+		if limits.MaxRecordsPerBatch > 100 {
+			limits.MaxRecordsPerBatch = 100
+		}
+		if limits.MaxMemoryBufferRecords > limits.MaxRecordsPerBatch {
+			limits.MaxMemoryBufferRecords = limits.MaxRecordsPerBatch
+		}
+		if limits.MaxRuntime > 2*time.Minute {
+			limits.MaxRuntime = 2 * time.Minute
+		}
+	}
+	return limits
 }

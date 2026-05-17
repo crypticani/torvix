@@ -2,9 +2,9 @@ package azure
 
 import (
 	"context"
+	"fmt"
 	"time"
 
-	common "github.com/crypticani/cloudpulse/internal/adapters/providers"
 	"github.com/crypticani/cloudpulse/internal/config"
 	"github.com/crypticani/cloudpulse/internal/ports/providers"
 )
@@ -19,8 +19,6 @@ func New(cfg config.Provider) *Collector {
 
 func (c *Collector) Name() string { return "azure" }
 
-func (c *Collector) Collect(ctx context.Context, since time.Time) (providers.CollectResult, error) {
-	_ = ctx
-	_ = since
-	return common.Sample("azure", c.cfg.Account, "Virtual Machines"), nil
+func (c *Collector) Collect(_ context.Context, _ time.Time) (providers.CollectResult, error) {
+	return providers.CollectResult{}, fmt.Errorf("azure collector: not implemented — disable this provider or contribute a real implementation")
 }

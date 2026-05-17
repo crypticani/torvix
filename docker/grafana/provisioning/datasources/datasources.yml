@@ -6,3 +6,15 @@ datasources:
     access: proxy
     url: http://prometheus:9090
     isDefault: true
+  - name: PostgreSQL
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    database: cloudpulse
+    user: cloudpulse
+    secureJsonData:
+      password: cloudpulse
+    jsonData:
+      sslmode: "disable"
+      postgresVersion: 16
+      timescaledb: true

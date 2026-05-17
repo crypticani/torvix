@@ -3,6 +3,7 @@ package oci
 import (
 	"bufio"
 	"compress/gzip"
+	"context"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -15,15 +16,26 @@ import (
 
 type Parser struct{}
 
+type RecordHandler func(domain.RawBillingRecord) error
+
 func NewParser() *Parser {
 	return &Parser{}
 }
 
 func (p *Parser) Parse(r io.ReadCloser, objectName string, accountID string) ([]domain.RawBillingRecord, error) {
+	var records []domain.RawBillingRecord
+	_, err := p.ParseStream(context.Background(), r, objectName, accountID, func(record domain.RawBillingRecord) error {
+		records = append(records, record)
+		return nil
+	})
+	return records, err
+}
+
+func (p *Parser) ParseStream(ctx context.Context, r io.ReadCloser, objectName string, accountID string, handle RecordHandler) (int, error) {
 	reader, err := maybeGzipReader(r, objectName)
 	if err != nil {
 		_ = r.Close()
-		return nil, err
+		return 0, err
 	}
 	defer reader.Close()
 
@@ -34,24 +46,30 @@ func (p *Parser) Parse(r io.ReadCloser, objectName string, accountID string) ([]
 
 	header, err := csvReader.Read()
 	if err != nil {
-		return nil, fmt.Errorf("read csv header: %w", err)
+		return 0, fmt.Errorf("read csv header: %w", err)
 	}
 	index := buildHeaderIndex(header)
 
-	var records []domain.RawBillingRecord
+	records := 0
 	for {
+		if err := ctx.Err(); err != nil {
+			return records, err
+		}
 		row, err := csvReader.Read()
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("read csv row: %w", err)
+			return records, fmt.Errorf("read csv row: %w", err)
 		}
 		record, ok := parseRow(index, row, objectName, accountID)
 		if !ok {
 			continue
 		}
-		records = append(records, record)
+		if err := handle(record); err != nil {
+			return records, err
+		}
+		records++
 	}
 	return records, nil
 }
@@ -138,6 +156,7 @@ func parseRow(index map[string]int, row []string, objectName, configuredAccount 
 	))
 	usageAmount, _ := parseFloatField(lookup(index, row,
 		"usage/billedquantity",
+		"usage/consumedquantity",
 		"usage/attributedusage",
 		"usage/quantity",
 		"quantity",
@@ -162,7 +181,7 @@ func parseRow(index map[string]int, row []string, objectName, configuredAccount 
 		Currency:    defaultString(lookup(index, row, "cost/currencycode", "currencycode", "currency"), "USD"),
 		Cost:        cost,
 		UsageAmount: usageAmount,
-		UsageUnit:   lookup(index, row, "cost/billingunitreadable", "usage/unit", "unit"),
+		UsageUnit:   lookup(index, row, "cost/billingunitreadable", "usage/consumedquantityunits", "usage/unit", "unit"),
 		Tags: extractTags(index, row, map[string]string{
 			"oci_raw_service":         serviceRaw,
 			"oci_compartment_id":      lookup(index, row, "product/compartmentid"),
@@ -198,6 +217,8 @@ func parseTimeField(v string) (time.Time, bool) {
 	}
 	layouts := []string{
 		time.RFC3339,
+		"2006-01-02T15:04Z",      // OCI cost/usage reports (no seconds)
+		"2006-01-02T15:04Z07:00", // Variant with explicit offset
 		"2006-01-02T15:04:05.000Z",
 		"2006-01-02 15:04:05",
 		"2006-01-02",

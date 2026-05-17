@@ -93,6 +93,28 @@ definitions:
         example: internal server error
         type: string
     type: object
+  internal_ports_http.IngestResponse:
+    description: Per-provider ingestion result with metrics.
+    properties:
+      duration_seconds:
+        example: 12.4
+        type: number
+      error:
+        example: ""
+        type: string
+      files_processed:
+        example: 5
+        type: integer
+      provider:
+        example: oci
+        type: string
+      records_parsed:
+        example: 1234
+        type: integer
+      records_inserted:
+        example: 1234
+        type: integer
+    type: object
   internal_ports_http.StatusResponse:
     description: Generic status response for operations.
     properties:
@@ -215,14 +237,20 @@ paths:
   /api/v1/ingest:
     post:
       description: Triggers collection of billing data from all enabled cloud providers
-        for the last 24 hours.
+        for the last 24 hours. Returns per-provider ingestion metrics.
       produces:
       - application/json
       responses:
         "202":
-          description: Ingestion completed successfully
+          description: Ingestion completed successfully when a single provider is enabled
           schema:
-            $ref: '#/definitions/internal_ports_http.StatusResponse'
+            $ref: '#/definitions/internal_ports_http.IngestResponse'
+        "207":
+          description: Ingestion completed with partial failures
+          schema:
+            items:
+              $ref: '#/definitions/internal_ports_http.IngestResponse'
+            type: array
         "405":
           description: Method not allowed
           schema:

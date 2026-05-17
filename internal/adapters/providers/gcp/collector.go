@@ -2,9 +2,9 @@ package gcp
 
 import (
 	"context"
+	"fmt"
 	"time"
 
-	common "github.com/crypticani/cloudpulse/internal/adapters/providers"
 	"github.com/crypticani/cloudpulse/internal/config"
 	"github.com/crypticani/cloudpulse/internal/ports/providers"
 )
@@ -19,8 +19,6 @@ func New(cfg config.Provider) *Collector {
 
 func (c *Collector) Name() string { return "gcp" }
 
-func (c *Collector) Collect(ctx context.Context, since time.Time) (providers.CollectResult, error) {
-	_ = ctx
-	_ = since
-	return common.Sample("gcp", c.cfg.Account, "Compute Engine"), nil
+func (c *Collector) Collect(_ context.Context, _ time.Time) (providers.CollectResult, error) {
+	return providers.CollectResult{}, fmt.Errorf("gcp collector: not implemented — disable this provider or contribute a real implementation")
 }

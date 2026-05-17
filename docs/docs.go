@@ -166,7 +166,7 @@ const docTemplate = `{
         },
         "/api/v1/ingest": {
             "post": {
-                "description": "Triggers collection of billing data from all enabled cloud providers for the last 24 hours.",
+                "description": "Triggers collection of billing data from all enabled cloud providers for the last 24 hours. Returns per-provider ingestion metrics.",
                 "produces": [
                     "application/json"
                 ],
@@ -176,9 +176,18 @@ const docTemplate = `{
                 "summary": "Trigger billing data ingestion",
                 "responses": {
                     "202": {
-                        "description": "Ingestion completed successfully",
+                        "description": "Ingestion completed successfully when a single provider is enabled",
                         "schema": {
-                            "$ref": "#/definitions/internal_ports_http.StatusResponse"
+                            "$ref": "#/definitions/internal_ports_http.IngestResponse"
+                        }
+                    },
+                    "207": {
+                        "description": "Ingestion completed with partial failures",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_ports_http.IngestResponse"
+                            }
                         }
                     },
                     "405": {
@@ -530,6 +539,36 @@ const docTemplate = `{
                 "error": {
                     "type": "string",
                     "example": "internal server error"
+                }
+            }
+        },
+        "internal_ports_http.IngestResponse": {
+            "description": "Per-provider ingestion result with metrics.",
+            "type": "object",
+            "properties": {
+                "duration_seconds": {
+                    "type": "number",
+                    "example": 12.4
+                },
+                "error": {
+                    "type": "string",
+                    "example": ""
+                },
+                "files_processed": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "provider": {
+                    "type": "string",
+                    "example": "oci"
+                },
+                "records_parsed": {
+                    "type": "integer",
+                    "example": 1234
+                },
+                "records_inserted": {
+                    "type": "integer",
+                    "example": 1234
                 }
             }
         },

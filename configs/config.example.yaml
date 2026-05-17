@@ -9,8 +9,9 @@ db:
   min_conns: 2
 
 providers:
+  # AWS collector is not yet implemented — enable once a real adapter exists.
   aws:
-    enabled: true
+    enabled: false
     bucket: "cur-bucket"
     prefix: "cur/"
     account: "aws-root"
@@ -18,18 +19,32 @@ providers:
     poll_schedule: "0 2 * * *"
     format: "csv"
     lookback_days: 7
-    max_object_scan: 1000
+    max_object_scan: 25
+    max_files_per_run: 10
+    max_records_per_batch: 1000
+    max_memory_buffer_records: 1000
+    max_runtime: "10m"
+    dry_run: false
+    sample_mode: true
+  # Azure collector is not yet implemented — enable once a real adapter exists.
   azure:
-    enabled: true
+    enabled: false
     container: "cost-export"
     prefix: "daily/"
     account: "azure-subscription"
     poll_schedule: "15 2 * * *"
     format: "csv"
     lookback_days: 7
-    max_object_scan: 1000
+    max_object_scan: 25
+    max_files_per_run: 10
+    max_records_per_batch: 1000
+    max_memory_buffer_records: 1000
+    max_runtime: "10m"
+    dry_run: false
+    sample_mode: true
+  # GCP collector is not yet implemented — enable once a real adapter exists.
   gcp:
-    enabled: true
+    enabled: false
     bucket: "gcp-billing-export"
     prefix: "billing/"
     account: "gcp-billing-account"
@@ -37,13 +52,21 @@ providers:
     poll_schedule: "30 2 * * *"
     format: "bigquery-export"
     lookback_days: 7
-    max_object_scan: 1000
+    max_object_scan: 25
+    max_files_per_run: 10
+    max_records_per_batch: 1000
+    max_memory_buffer_records: 1000
+    max_runtime: "10m"
+    dry_run: false
+    sample_mode: true
   oci:
     enabled: true
-    bucket: "oci-usage-reports"
-    namespace: "example-namespace"
-    prefix: "reports/"
-    account: "oci-tenancy"
+    # OCI billing reports are stored in Object Storage namespace "bling"
+    # and bucket name equal to the tenancy OCID.
+    bucket: "ocid1.tenancy.oc1..replace_with_tenancy_ocid"
+    namespace: "bling"
+    prefix: ""
+    account: "ocid1.tenancy.oc1..replace_with_tenancy_ocid"
     region: "ap-mumbai-1"
     config_file: "/app/configs/oci_config"
     config_profile: "DEFAULT"
@@ -51,7 +74,13 @@ providers:
     poll_schedule: "45 2 * * *"
     format: "csv.gz"
     lookback_days: 7
-    max_object_scan: 1000
+    max_object_scan: 25
+    max_files_per_run: 10
+    max_records_per_batch: 1000
+    max_memory_buffer_records: 1000
+    max_runtime: "10m"
+    dry_run: false
+    sample_mode: true
 
 reporting:
   webhooks:

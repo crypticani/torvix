@@ -2,9 +2,9 @@ package aws
 
 import (
 	"context"
+	"fmt"
 	"time"
 
-	common "github.com/crypticani/cloudpulse/internal/adapters/providers"
 	"github.com/crypticani/cloudpulse/internal/config"
 	"github.com/crypticani/cloudpulse/internal/ports/providers"
 )
@@ -19,8 +19,6 @@ func New(cfg config.Provider) *Collector {
 
 func (c *Collector) Name() string { return "aws" }
 
-func (c *Collector) Collect(ctx context.Context, since time.Time) (providers.CollectResult, error) {
-	_ = ctx
-	_ = since
-	return common.Sample("aws", c.cfg.Account, "AmazonEC2"), nil
+func (c *Collector) Collect(_ context.Context, _ time.Time) (providers.CollectResult, error) {
+	return providers.CollectResult{}, fmt.Errorf("aws collector: not implemented — disable this provider or contribute a real implementation")
 }

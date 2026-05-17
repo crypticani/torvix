@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	prom "github.com/prometheus/client_golang/prometheus"
@@ -26,9 +27,16 @@ import (
 )
 
 type App struct {
-	server   *http.Server
-	repo     *postgres.Repository
-	alerting *alerting.Service
+	server          *http.Server
+	repo            *postgres.Repository
+	alerting        *alerting.Service
+	collector       *collect.Service
+	schedulerCfg    config.Scheduler
+	logger          *slog.Logger
+	stop            chan struct{}
+	stopOnce        sync.Once
+	schedulerCtx    context.Context
+	cancelScheduler context.CancelFunc
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*App, error) {
@@ -73,22 +81,57 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	alertingSvc := alerting.New(&http.Client{Timeout: 10 * time.Second}, cfg.Reporting.Webhooks)
 	handler := httpapi.New(collectorSvc, analyticsSvc, forecastingSvc, reportingSvc, alertingSvc, reg)
 
+	schedulerCtx, cancelScheduler := context.WithCancel(context.Background())
 	return &App{
 		server: &http.Server{
 			Addr:              cfg.HTTP.Address,
 			Handler:           requestLogger(logger, handler),
 			ReadHeaderTimeout: 5 * time.Second,
 		},
-		repo:     repo,
-		alerting: alertingSvc,
+		repo:            repo,
+		alerting:        alertingSvc,
+		collector:       collectorSvc,
+		schedulerCfg:    cfg.Scheduler,
+		logger:          logger,
+		stop:            make(chan struct{}),
+		schedulerCtx:    schedulerCtx,
+		cancelScheduler: cancelScheduler,
 	}, nil
 }
 
 func (a *App) Start() error {
+	if a.schedulerCfg.Enabled {
+		go a.runScheduler()
+	}
 	return a.server.ListenAndServe()
 }
 
+func (a *App) runScheduler() {
+	d, err := time.ParseDuration(a.schedulerCfg.IngestInterval)
+	if err != nil || d <= 0 {
+		a.logger.Error("invalid ingest interval", "error", err)
+		return
+	}
+	a.logger.Info("starting ingestion scheduler", "interval", d.String())
+	ticker := time.NewTicker(d)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			a.logger.Info("scheduler triggered ingestion")
+			_, err := a.collector.Run(a.schedulerCtx, time.Now().UTC().AddDate(0, 0, -7))
+			if err != nil {
+				a.logger.Error("scheduled ingestion failed", "error", err)
+			}
+		case <-a.stop:
+			return
+		}
+	}
+}
+
 func (a *App) Shutdown(ctx context.Context) error {
+	a.cancelScheduler()
+	a.stopOnce.Do(func() { close(a.stop) })
 	return a.server.Shutdown(ctx)
 }
 
