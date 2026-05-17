@@ -45,10 +45,35 @@ reporting:
     - name: slack-finops
       type: slack
       url: "https://hooks.slack.com/services/replace/me"
+      currency: INR
+      enabled: false
+    - name: teams-finops
+      type: teams
+      url: "https://outlook.office.com/webhook/replace/me"
+      currency: INR
+      enabled: false
+    - name: telegram-finops
+      type: telegram
+      bot_token: "replace_with_bot_token"
+      chat_id: "replace_with_chat_id"
+      currency: INR
       enabled: false
     - name: discord-finops
       type: discord
       url: "https://discord.com/api/webhooks/replace/me"
+      currency: INR
+      enabled: false
+    - name: email-finops
+      type: email
+      smtp_host: "smtp.example.com"
+      smtp_port: 587
+      username: "replace_with_smtp_user"
+      password: "replace_with_smtp_password"
+      from: "cloudpulse@example.com"
+      to:
+        - "finops@example.com"
+      subject_prefix: "[CloudPulse]"
+      currency: INR
       enabled: false
 
 metrics:

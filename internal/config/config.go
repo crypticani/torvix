@@ -81,10 +81,21 @@ type Reporting struct {
 }
 
 type Webhook struct {
-	Name    string `yaml:"name"`
-	Type    string `yaml:"type"`
-	URL     string `yaml:"url"`
-	Enabled bool   `yaml:"enabled"`
+	Name          string   `yaml:"name"`
+	Type          string   `yaml:"type"`
+	URL           string   `yaml:"url"`
+	Enabled       bool     `yaml:"enabled"`
+	Currency      string   `yaml:"currency"`
+	BotToken      string   `yaml:"bot_token"`
+	ChatID        string   `yaml:"chat_id"`
+	ParseMode     string   `yaml:"parse_mode"`
+	SMTPHost      string   `yaml:"smtp_host"`
+	SMTPPort      int      `yaml:"smtp_port"`
+	Username      string   `yaml:"username"`
+	Password      string   `yaml:"password"`
+	From          string   `yaml:"from"`
+	To            []string `yaml:"to"`
+	SubjectPrefix string   `yaml:"subject_prefix"`
 }
 
 type Metrics struct {

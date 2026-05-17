@@ -254,18 +254,18 @@ func (h *Handler) forecast(w http.ResponseWriter, r *http.Request) {
 // dailyReport godoc
 //
 //	@Summary		Generate daily report
-//	@Description	Builds a daily cost report including summary, anomalies, and forecast. Optionally delivers via configured webhooks.
+//	@Description	Builds a daily cost report for yesterday by default, including summary, anomalies, and forecast. Optionally delivers via configured webhooks.
 //	@Tags			Reports
 //	@Produce		json
-//	@Param			from	query		string	false	"Start date (YYYY-MM-DD). Defaults to 30 days ago."	example(2025-01-01)
-//	@Param			to		query		string	false	"End date (YYYY-MM-DD). Defaults to today."			example(2025-01-31)
+//	@Param			from	query		string	false	"Start date (YYYY-MM-DD). Defaults to yesterday for daily reports."	example(2025-01-01)
+//	@Param			to		query		string	false	"End date (YYYY-MM-DD). Defaults to today for daily reports."		example(2025-01-31)
 //	@Param			deliver	query		string	false	"Set to 'true' to send report via webhooks."			Enums(true, false)	default(false)
 //	@Success		200		{object}	domain.Report	"Daily report"
 //	@Failure		500		{object}	ErrorResponse	"Report generation failed"
 //	@Failure		502		{object}	ErrorResponse	"Webhook delivery failed"
 //	@Router			/api/v1/reports/daily [get]
 func (h *Handler) dailyReport(w http.ResponseWriter, r *http.Request) {
-	from, to := h.parseRange(r)
+	from, to := h.parseReportRange(r, "daily")
 	report, err := h.reporting.Build(r.Context(), "daily", from, to)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -281,18 +281,18 @@ func (h *Handler) dailyReport(w http.ResponseWriter, r *http.Request) {
 // weeklyReport godoc
 //
 //	@Summary		Generate weekly report
-//	@Description	Builds a weekly cost report including summary, anomalies, and forecast. Optionally delivers via configured webhooks.
+//	@Description	Builds a weekly cost report for the last completed week by default, including summary, anomalies, and forecast. Optionally delivers via configured webhooks.
 //	@Tags			Reports
 //	@Produce		json
-//	@Param			from	query		string	false	"Start date (YYYY-MM-DD). Defaults to 30 days ago."	example(2025-01-01)
-//	@Param			to		query		string	false	"End date (YYYY-MM-DD). Defaults to today."			example(2025-01-31)
+//	@Param			from	query		string	false	"Start date (YYYY-MM-DD). Defaults to the start of last completed week."	example(2025-01-01)
+//	@Param			to		query		string	false	"End date (YYYY-MM-DD). Defaults to the start of this week."				example(2025-01-31)
 //	@Param			deliver	query		string	false	"Set to 'true' to send report via webhooks."			Enums(true, false)	default(false)
 //	@Success		200		{object}	domain.Report	"Weekly report"
 //	@Failure		500		{object}	ErrorResponse	"Report generation failed"
 //	@Failure		502		{object}	ErrorResponse	"Webhook delivery failed"
 //	@Router			/api/v1/reports/weekly [get]
 func (h *Handler) weeklyReport(w http.ResponseWriter, r *http.Request) {
-	from, to := h.parseRange(r)
+	from, to := h.parseReportRange(r, "weekly")
 	report, err := h.reporting.Build(r.Context(), "weekly", from, to)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -308,18 +308,18 @@ func (h *Handler) weeklyReport(w http.ResponseWriter, r *http.Request) {
 // monthlyReport godoc
 //
 //	@Summary		Generate monthly report
-//	@Description	Builds a monthly cost report including summary, anomalies, and forecast. Optionally delivers via configured webhooks.
+//	@Description	Builds a monthly cost report for the last completed month by default, including summary, anomalies, and forecast. Optionally delivers via configured webhooks.
 //	@Tags			Reports
 //	@Produce		json
-//	@Param			from	query		string	false	"Start date (YYYY-MM-DD). Defaults to 30 days ago."	example(2025-01-01)
-//	@Param			to		query		string	false	"End date (YYYY-MM-DD). Defaults to today."			example(2025-01-31)
+//	@Param			from	query		string	false	"Start date (YYYY-MM-DD). Defaults to the start of last completed month."	example(2025-01-01)
+//	@Param			to		query		string	false	"End date (YYYY-MM-DD). Defaults to the start of this month."				example(2025-01-31)
 //	@Param			deliver	query		string	false	"Set to 'true' to send report via webhooks."			Enums(true, false)	default(false)
 //	@Success		200		{object}	domain.Report	"Monthly report"
 //	@Failure		500		{object}	ErrorResponse	"Report generation failed"
 //	@Failure		502		{object}	ErrorResponse	"Webhook delivery failed"
 //	@Router			/api/v1/reports/monthly [get]
 func (h *Handler) monthlyReport(w http.ResponseWriter, r *http.Request) {
-	from, to := h.parseRange(r)
+	from, to := h.parseReportRange(r, "monthly")
 	report, err := h.reporting.Build(r.Context(), "monthly", from, to)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -353,6 +353,30 @@ func (h *Handler) parseRange(r *http.Request) (time.Time, time.Time) {
 		}
 	}
 	return from, to
+}
+
+func (h *Handler) parseReportRange(r *http.Request, period string) (time.Time, time.Time) {
+	if r.URL.Query().Get("from") != "" || r.URL.Query().Get("to") != "" {
+		return h.parseRange(r)
+	}
+	return defaultReportRange(period, time.Now().UTC())
+}
+
+func defaultReportRange(period string, now time.Time) (time.Time, time.Time) {
+	today := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	switch period {
+	case "daily":
+		return today.AddDate(0, 0, -1), today
+	case "weekly":
+		daysSinceMonday := (int(today.Weekday()) + 6) % 7
+		thisWeekStart := today.AddDate(0, 0, -daysSinceMonday)
+		return thisWeekStart.AddDate(0, 0, -7), thisWeekStart
+	case "monthly":
+		thisMonthStart := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC)
+		return thisMonthStart.AddDate(0, -1, 0), thisMonthStart
+	default:
+		return today.AddDate(0, 0, -30), today
+	}
 }
 
 func writeJSON(w http.ResponseWriter, code int, data any) {
