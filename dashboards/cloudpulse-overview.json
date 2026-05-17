@@ -1,7 +1,8 @@
 {
-  "title": "CloudPulse FinOps Overview",
+  "title": "CloudPulse Rolling FinOps Overview",
+  "uid": "cloudpulse-rolling-finops-overview",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 4,
   "refresh": "1m",
   "time": {
     "from": "now-7d",
@@ -11,7 +12,7 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Total Daily Cost",
+      "title": "Selected Range Cost",
       "datasource": {
         "type": "postgres",
         "uid": "PostgreSQL"
@@ -24,38 +25,37 @@
             "uid": "PostgreSQL"
           },
           "format": "table",
-          "rawSql": "SELECT COALESCE(SUM(total_cost), 0) FROM cost_summary_daily WHERE bucket >= $__timeFrom() AND bucket <= $__timeTo()",
+          "rawSql": "SELECT COALESCE(SUM(cost), 0) AS total_cost FROM cost_records WHERE $__timeFilter(\"timestamp\")",
           "rawQuery": true
         }
       ],
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 5,
         "x": 0,
         "y": 0
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "values": false,
-          "fields": ""
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto"
       },
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD"
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         }
       }
     },
     {
       "id": 2,
       "type": "stat",
-      "title": "Active Services",
+      "title": "Latest Day Delta",
       "datasource": {
         "type": "postgres",
         "uid": "PostgreSQL"
@@ -68,40 +68,94 @@
             "uid": "PostgreSQL"
           },
           "format": "table",
-          "rawSql": "SELECT COUNT(DISTINCT service) FROM cost_summary_daily WHERE bucket >= $__timeFrom() AND bucket <= $__timeTo()",
+          "rawSql": "WITH anchor AS (SELECT date_trunc('day', MAX(\"timestamp\")) AS day FROM cost_records), current_period AS (SELECT COALESCE(SUM(cost), 0)::double precision AS cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.day AND \"timestamp\" < anchor.day + INTERVAL '1 day'), previous_period AS (SELECT COALESCE(SUM(cost), 0)::double precision AS cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.day - INTERVAL '1 day' AND \"timestamp\" < anchor.day) SELECT current_period.cost - previous_period.cost AS delta FROM current_period, previous_period",
           "rawQuery": true
         }
       ],
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 6,
+        "w": 5,
+        "x": 5,
         "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
       }
     },
     {
       "id": 3,
       "type": "stat",
-      "title": "Anomalies Found",
+      "title": "Anomaly Candidates",
       "datasource": {
-        "type": "prometheus",
-        "uid": "Prometheus"
+        "type": "postgres",
+        "uid": "PostgreSQL"
       },
       "targets": [
         {
-          "expr": "cloudpulse_anomalies_found_total",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "format": "table",
+          "rawSql": "WITH daily AS (SELECT time_bucket(INTERVAL '1 day', \"timestamp\") AS bucket, cloud_provider, COALESCE(account_id, '') AS account_id, service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, COALESCE(SUM(cost), 0)::double precision AS total_cost FROM cost_records WHERE \"timestamp\" >= $__timeFrom()::timestamptz - INTERVAL '7 days' AND \"timestamp\" < $__timeTo() GROUP BY 1, 2, 3, 4, 5), series AS (SELECT bucket, cloud_provider, account_id, service, compartment, total_cost, AVG(total_cost) OVER w AS baseline, STDDEV_POP(total_cost) OVER w AS stddev FROM daily WINDOW w AS (PARTITION BY cloud_provider, account_id, service, compartment ORDER BY bucket ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING)) SELECT COUNT(*) AS anomaly_candidates FROM series WHERE bucket >= $__timeFrom() AND bucket < $__timeTo() AND baseline IS NOT NULL AND (ABS(CASE WHEN COALESCE(stddev, 0) > 0 THEN (total_cost - baseline) / stddev ELSE 0 END) >= 2 OR ABS(CASE WHEN COALESCE(baseline, 0) > 0 THEN ((total_cost - baseline) / baseline) * 100 ELSE 0 END) >= 30 OR ABS(total_cost - baseline) >= baseline * 0.25)",
+          "rawQuery": true
         }
       ],
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 12,
+        "w": 5,
+        "x": 10,
         "y": 0
       }
     },
     {
       "id": 4,
+      "type": "stat",
+      "title": "Latest Cost Record",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "format": "table",
+          "rawSql": "SELECT (EXTRACT(EPOCH FROM MAX(\"timestamp\")) * 1000)::bigint AS latest_cost_record FROM cost_records",
+          "rawQuery": true
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 15,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeAsIso"
+        }
+      }
+    },
+    {
+      "id": 5,
       "type": "stat",
       "title": "Latest Ingestion",
       "datasource": {
@@ -116,19 +170,24 @@
             "uid": "PostgreSQL"
           },
           "format": "table",
-          "rawSql": "SELECT MAX(processed_at) FROM processed_report_files",
+          "rawSql": "SELECT (EXTRACT(EPOCH FROM MAX(processed_at)) * 1000)::bigint AS latest_ingestion FROM processed_reports WHERE status = 'processed'",
           "rawQuery": true
         }
       ],
       "gridPos": {
         "h": 4,
-        "w": 6,
-        "x": 18,
+        "w": 4,
+        "x": 20,
         "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeAsIso"
+        }
       }
     },
     {
-      "id": 5,
+      "id": 6,
       "type": "timeseries",
       "title": "Daily Cost Trend",
       "datasource": {
@@ -143,13 +202,13 @@
             "uid": "PostgreSQL"
           },
           "format": "time_series",
-          "rawSql": "SELECT bucket AS \"time\", cloud_provider || ' - ' || service AS metric, SUM(total_cost) AS value FROM cost_summary_daily WHERE $__timeFilter(bucket) GROUP BY bucket, cloud_provider, service ORDER BY bucket",
+          "rawSql": "SELECT time_bucket('1 day', \"timestamp\") AS \"time\", SUM(cost) AS value FROM cost_records WHERE $__timeFilter(\"timestamp\") GROUP BY 1 ORDER BY 1",
           "rawQuery": true
         }
       ],
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
         "y": 4
       },
@@ -160,9 +219,9 @@
       }
     },
     {
-      "id": 6,
+      "id": 7,
       "type": "barchart",
-      "title": "Cost by Service",
+      "title": "Top Services by Cost",
       "datasource": {
         "type": "postgres",
         "uid": "PostgreSQL"
@@ -175,28 +234,218 @@
             "uid": "PostgreSQL"
           },
           "format": "table",
-          "rawSql": "SELECT service AS metric, SUM(total_cost) AS value FROM cost_summary_daily WHERE $__timeFilter(bucket) GROUP BY service ORDER BY value DESC",
+          "rawSql": "SELECT service AS metric, SUM(cost) AS value FROM cost_records WHERE $__timeFilter(\"timestamp\") GROUP BY service ORDER BY value DESC LIMIT 15",
           "rawQuery": true
         }
       ],
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
+        "w": 8,
+        "x": 8,
         "y": 4
-      },
-      "options": {
-        "xTickLabelRotation": -45,
-        "xTickLabelMaxLength": 20
       },
       "fieldConfig": {
         "defaults": {
           "unit": "currencyUSD"
         }
+      },
+      "options": {
+        "xTickLabelMaxLength": 18,
+        "xTickLabelRotation": -45
       }
     },
     {
-      "id": 7,
+      "id": 8,
+      "type": "barchart",
+      "title": "Top Compartments by Cost",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "format": "table",
+          "rawSql": "SELECT COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS metric, SUM(cost) AS value FROM cost_records WHERE $__timeFilter(\"timestamp\") GROUP BY 1 ORDER BY value DESC LIMIT 15",
+          "rawQuery": true
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "options": {
+        "xTickLabelMaxLength": 18,
+        "xTickLabelRotation": -45
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Top Daily Increases by Service and Compartment",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "format": "table",
+          "rawSql": "WITH anchor AS (SELECT date_trunc('day', MAX(\"timestamp\")) AS current_start FROM cost_records), current_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS current_cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.current_start AND \"timestamp\" < anchor.current_start + INTERVAL '1 day' GROUP BY 1, 2), previous_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS previous_cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.current_start - INTERVAL '1 day' AND \"timestamp\" < anchor.current_start GROUP BY 1, 2) SELECT COALESCE(c.service, p.service) AS service, COALESCE(c.compartment, p.compartment) AS compartment, COALESCE(c.current_cost, 0) AS current_cost, COALESCE(p.previous_cost, 0) AS previous_cost, COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0) AS delta, CASE WHEN COALESCE(p.previous_cost, 0) > 0 THEN ((COALESCE(c.current_cost, 0) - p.previous_cost) / p.previous_cost) * 100 WHEN COALESCE(c.current_cost, 0) > 0 THEN 100 ELSE 0 END AS pct_change FROM current_period c FULL OUTER JOIN previous_period p ON c.service = p.service AND c.compartment = p.compartment WHERE COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0) > 0 ORDER BY delta DESC LIMIT 15",
+          "rawQuery": true
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pct_change"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Last Week vs Previous Week",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "format": "table",
+          "rawSql": "WITH anchor AS (SELECT date_trunc('week', MAX(\"timestamp\")) - INTERVAL '7 days' AS current_start FROM cost_records), current_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS current_cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.current_start AND \"timestamp\" < anchor.current_start + INTERVAL '7 days' GROUP BY 1, 2), previous_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS previous_cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.current_start - INTERVAL '7 days' AND \"timestamp\" < anchor.current_start GROUP BY 1, 2) SELECT COALESCE(c.service, p.service) AS service, COALESCE(c.compartment, p.compartment) AS compartment, COALESCE(c.current_cost, 0) AS last_week_cost, COALESCE(p.previous_cost, 0) AS previous_week_cost, COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0) AS delta, CASE WHEN COALESCE(p.previous_cost, 0) > 0 THEN ((COALESCE(c.current_cost, 0) - p.previous_cost) / p.previous_cost) * 100 WHEN COALESCE(c.current_cost, 0) > 0 THEN 100 ELSE 0 END AS pct_change FROM current_period c FULL OUTER JOIN previous_period p ON c.service = p.service AND c.compartment = p.compartment ORDER BY ABS(COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0)) DESC LIMIT 15",
+          "rawQuery": true
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 12
+      }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Last Month vs Previous Month",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "format": "table",
+          "rawSql": "WITH anchor AS (SELECT date_trunc('month', MAX(\"timestamp\")) - INTERVAL '1 month' AS current_start FROM cost_records), current_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS current_cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.current_start AND \"timestamp\" < anchor.current_start + INTERVAL '1 month' GROUP BY 1, 2), previous_period AS (SELECT service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, SUM(cost)::double precision AS previous_cost FROM cost_records, anchor WHERE \"timestamp\" >= anchor.current_start - INTERVAL '1 month' AND \"timestamp\" < anchor.current_start GROUP BY 1, 2) SELECT COALESCE(c.service, p.service) AS service, COALESCE(c.compartment, p.compartment) AS compartment, COALESCE(c.current_cost, 0) AS last_month_cost, COALESCE(p.previous_cost, 0) AS previous_month_cost, COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0) AS delta, CASE WHEN COALESCE(p.previous_cost, 0) > 0 THEN ((COALESCE(c.current_cost, 0) - p.previous_cost) / p.previous_cost) * 100 WHEN COALESCE(c.current_cost, 0) > 0 THEN 100 ELSE 0 END AS pct_change FROM current_period c FULL OUTER JOIN previous_period p ON c.service = p.service AND c.compartment = p.compartment ORDER BY ABS(COALESCE(c.current_cost, 0) - COALESCE(p.previous_cost, 0)) DESC LIMIT 15",
+          "rawQuery": true
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 12
+      }
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Anomaly Candidate Details",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "format": "table",
+          "rawSql": "WITH daily AS (SELECT time_bucket(INTERVAL '1 day', \"timestamp\") AS day, service, COALESCE(tags->>'oci_compartment_name', tags->>'oci_compartment_id', 'unknown') AS compartment, COALESCE(SUM(cost), 0)::double precision AS actual FROM cost_records WHERE \"timestamp\" >= $__timeFrom()::timestamptz - INTERVAL '7 days' AND \"timestamp\" < $__timeTo() GROUP BY 1, 2, 3), series AS (SELECT day, service, compartment, actual, AVG(actual) OVER w AS baseline, STDDEV_POP(actual) OVER w AS stddev FROM daily WINDOW w AS (PARTITION BY service, compartment ORDER BY day ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING)) SELECT day, service, compartment, actual, baseline, actual - baseline AS delta, CASE WHEN COALESCE(baseline, 0) > 0 THEN ((actual - baseline) / baseline) * 100 ELSE 0 END AS pct_change FROM series WHERE day >= $__timeFrom() AND day < $__timeTo() AND baseline IS NOT NULL AND (ABS(CASE WHEN COALESCE(stddev, 0) > 0 THEN (actual - baseline) / stddev ELSE 0 END) >= 2 OR ABS(CASE WHEN COALESCE(baseline, 0) > 0 THEN ((actual - baseline) / baseline) * 100 ELSE 0 END) >= 30 OR ABS(actual - baseline) >= baseline * 0.25) ORDER BY ABS(actual - baseline) DESC LIMIT 25",
+          "rawQuery": true
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 21
+      }
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Ingestion Summary",
+      "datasource": {
+        "type": "postgres",
+        "uid": "PostgreSQL"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "postgres",
+            "uid": "PostgreSQL"
+          },
+          "format": "table",
+          "rawSql": "SELECT provider, COUNT(*) AS processed_reports, SUM(record_count) AS reported_records, MAX(last_modified) AS latest_report_modified, MAX(processed_at) AS latest_processed_at FROM processed_reports WHERE status = 'processed' GROUP BY provider ORDER BY provider",
+          "rawQuery": true
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 12,
+        "y": 21
+      }
+    },
+    {
+      "id": 14,
       "type": "timeseries",
       "title": "Collector Runs",
       "datasource": {
@@ -211,32 +460,32 @@
         }
       ],
       "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 12
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 21
       }
     },
     {
-      "id": 8,
-      "type": "timeseries",
-      "title": "Ingestion Duration",
+      "id": 15,
+      "type": "stat",
+      "title": "Avg Ingestion Duration",
       "datasource": {
         "type": "prometheus",
         "uid": "Prometheus"
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(cloudpulse_ingestion_duration_seconds_bucket[5m])) by (le, provider))",
-          "legendFormat": "p95 {{provider}}",
+          "expr": "sum(increase(cloudpulse_ingestion_duration_seconds_sum[$__range])) / sum(increase(cloudpulse_ingestion_duration_seconds_count[$__range]))",
+          "instant": true,
           "refId": "A"
         }
       ],
       "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 12
+        "h": 4,
+        "w": 3,
+        "x": 18,
+        "y": 26
       },
       "fieldConfig": {
         "defaults": {
@@ -245,26 +494,25 @@
       }
     },
     {
-      "id": 9,
-      "type": "table",
-      "title": "Records by Provider",
+      "id": 16,
+      "type": "stat",
+      "title": "Ingestion Failures",
       "datasource": {
         "type": "prometheus",
         "uid": "Prometheus"
       },
       "targets": [
         {
-          "expr": "sum(cloudpulse_processed_records_total) by (provider)",
-          "format": "table",
+          "expr": "round(sum(increase(cloudpulse_ingestion_failures_total[$__range])))",
           "instant": true,
           "refId": "A"
         }
       ],
       "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 12
+        "h": 4,
+        "w": 3,
+        "x": 21,
+        "y": 26
       }
     }
   ]

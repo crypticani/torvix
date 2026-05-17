@@ -14,6 +14,8 @@ type Metrics struct {
 	ProcessedRecordsTotal *prometheus.CounterVec
 	InsertedBatchesTotal  *prometheus.CounterVec
 	RecordsPerSecond      *prometheus.GaugeVec
+	RecordsDeletedTotal   prometheus.Counter
+	CompressedChunksTotal prometheus.Counter
 	IngestionFailures     *prometheus.CounterVec
 	IngestionDuration     *prometheus.HistogramVec
 	DatabaseBackendInfo   *prometheus.GaugeVec
@@ -57,6 +59,16 @@ func New(namespace string, reg prometheus.Registerer) *Metrics {
 			Name:      "ingestion_records_per_second",
 			Help:      "Last observed ingestion record rate.",
 		}, []string{"provider"}),
+		RecordsDeletedTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "records_deleted_total",
+			Help:      "Total cost records deleted by rolling retention maintenance.",
+		}),
+		CompressedChunksTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace,
+			Name:      "compressed_chunks_total",
+			Help:      "Total TimescaleDB chunks compressed by rolling-window maintenance.",
+		}),
 		IngestionFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: namespace,
 			Name:      "ingestion_failures_total",
@@ -82,6 +94,8 @@ func New(namespace string, reg prometheus.Registerer) *Metrics {
 		m.ProcessedRecordsTotal,
 		m.InsertedBatchesTotal,
 		m.RecordsPerSecond,
+		m.RecordsDeletedTotal,
+		m.CompressedChunksTotal,
 		m.IngestionFailures,
 		m.IngestionDuration,
 		m.DatabaseBackendInfo,
@@ -122,6 +136,20 @@ func (m *Metrics) ObserveRecordsPerSecond(provider string, rate float64) {
 		return
 	}
 	m.RecordsPerSecond.WithLabelValues(provider).Set(rate)
+}
+
+func (m *Metrics) ObserveRecordsDeleted(count int64) {
+	if count <= 0 {
+		return
+	}
+	m.RecordsDeletedTotal.Add(float64(count))
+}
+
+func (m *Metrics) ObserveCompressedChunks(count int64) {
+	if count <= 0 {
+		return
+	}
+	m.CompressedChunksTotal.Add(float64(count))
 }
 
 func (m *Metrics) ObserveFailure(provider, stage string, count int) {

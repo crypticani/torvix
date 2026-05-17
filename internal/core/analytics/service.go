@@ -25,6 +25,11 @@ func (s *Service) AggregateWindow(ctx context.Context, from, to time.Time, windo
 	return s.repo.AggregateCosts(ctx, from, to, window)
 }
 
+func (s *Service) CompareVariance(ctx context.Context, period string, now time.Time) ([]domain.CostVariance, error) {
+	currentFrom, currentTo, previousFrom, previousTo := comparisonWindows(period, now.UTC())
+	return s.repo.CompareCostVariance(ctx, period, currentFrom, currentTo, previousFrom, previousTo)
+}
+
 func (s *Service) DetectAnomalies(ctx context.Context, from, to time.Time) ([]domain.Anomaly, error) {
 	return s.repo.DetectAnomalies(ctx, from, to)
 }
@@ -83,4 +88,32 @@ func stats(items []domain.AggregatedCost) (mean, stddev float64) {
 	}
 	stddev = math.Sqrt(stddev / float64(len(items)))
 	return mean, stddev
+}
+
+func comparisonWindows(period string, now time.Time) (currentFrom, currentTo, previousFrom, previousTo time.Time) {
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	switch period {
+	case "weekly":
+		weekday := int(today.Weekday())
+		if weekday == 0 {
+			weekday = 7
+		}
+		thisWeekStart := today.AddDate(0, 0, -(weekday - 1))
+		currentTo = thisWeekStart
+		currentFrom = currentTo.AddDate(0, 0, -7)
+		previousTo = currentFrom
+		previousFrom = previousTo.AddDate(0, 0, -7)
+	case "monthly":
+		thisMonthStart := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC)
+		currentTo = thisMonthStart
+		currentFrom = currentTo.AddDate(0, -1, 0)
+		previousTo = currentFrom
+		previousFrom = previousTo.AddDate(0, -1, 0)
+	default:
+		currentTo = today
+		currentFrom = currentTo.AddDate(0, 0, -1)
+		previousTo = currentFrom
+		previousFrom = previousTo.AddDate(0, 0, -1)
+	}
+	return currentFrom, currentTo, previousFrom, previousTo
 }

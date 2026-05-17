@@ -61,6 +61,11 @@ type ProcessedReportFile struct {
 	ErrorMessage string
 }
 
+type DataLifecycleMaintenance struct {
+	RecordsDeleted   int64
+	CompressedChunks int64
+}
+
 type AggregatedCost struct {
 	WindowStart time.Time `json:"window_start"`
 	WindowEnd   time.Time `json:"window_end"`
@@ -68,6 +73,24 @@ type AggregatedCost struct {
 	AccountID   string    `json:"account_id"`
 	Service     string    `json:"service"`
 	TotalCost   float64   `json:"total_cost"`
+}
+
+type CostVariance struct {
+	Period              string    `json:"period"`
+	CurrentWindowStart  time.Time `json:"current_window_start"`
+	CurrentWindowEnd    time.Time `json:"current_window_end"`
+	PreviousWindowStart time.Time `json:"previous_window_start"`
+	PreviousWindowEnd   time.Time `json:"previous_window_end"`
+	Provider            Provider  `json:"provider"`
+	AccountID           string    `json:"account_id"`
+	Service             string    `json:"service"`
+	CompartmentID       string    `json:"compartment_id"`
+	CompartmentName     string    `json:"compartment_name"`
+	CurrentCost         float64   `json:"current_cost"`
+	PreviousCost        float64   `json:"previous_cost"`
+	Delta               float64   `json:"delta"`
+	PercentChange       float64   `json:"percent_change"`
+	Direction           string    `json:"direction"`
 }
 
 type Anomaly struct {

@@ -11,9 +11,6 @@ import (
 
 	"github.com/crypticani/cloudpulse/internal/adapters/postgres"
 	metricsadapter "github.com/crypticani/cloudpulse/internal/adapters/prometheus"
-	awsadapter "github.com/crypticani/cloudpulse/internal/adapters/providers/aws"
-	azureadapter "github.com/crypticani/cloudpulse/internal/adapters/providers/azure"
-	gcpadapter "github.com/crypticani/cloudpulse/internal/adapters/providers/gcp"
 	ociadapter "github.com/crypticani/cloudpulse/internal/adapters/providers/oci"
 	"github.com/crypticani/cloudpulse/internal/config"
 	"github.com/crypticani/cloudpulse/internal/core/alerting"
@@ -51,19 +48,14 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		repo.Close()
 		return nil, err
 	}
+	if err := repo.ApplyDataLifecyclePolicies(ctx, cfg.Ingestion.RetentionDays, cfg.Ingestion.CompressionAfterDays); err != nil {
+		repo.Close()
+		return nil, err
+	}
 
 	var collectors []providers.Collector
-	if cfg.Providers.AWS.Enabled {
-		collectors = append(collectors, awsadapter.New(cfg.Providers.AWS))
-	}
-	if cfg.Providers.Azure.Enabled {
-		collectors = append(collectors, azureadapter.New(cfg.Providers.Azure))
-	}
-	if cfg.Providers.GCP.Enabled {
-		collectors = append(collectors, gcpadapter.New(cfg.Providers.GCP))
-	}
 	if cfg.Providers.OCI.Enabled {
-		ociCollector, err := ociadapter.New(cfg.Providers.OCI, logger, repo)
+		ociCollector, err := ociadapter.New(cfg.Providers.OCI.WithIngestionDefaults(cfg.Ingestion), logger, repo)
 		if err != nil {
 			return nil, err
 		}
@@ -74,12 +66,16 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	metrics := metricsadapter.New(cfg.Metrics.Namespace, reg)
 
 	normalizer := normalize.New()
-	collectorSvc := collect.New(logger, repo, normalizer, collectors, metrics)
+	collectorSvc := collect.NewWithPolicy(logger, repo, normalizer, collectors, metrics, collect.Policy{
+		LookbackDays:         cfg.Ingestion.LookbackDays,
+		RetentionDays:        cfg.Ingestion.RetentionDays,
+		CompressionAfterDays: cfg.Ingestion.CompressionAfterDays,
+	})
 	analyticsSvc := analytics.New(repo)
 	forecastingSvc := forecasting.New(repo)
 	reportingSvc := reporting.New(analyticsSvc, forecastingSvc)
 	alertingSvc := alerting.New(&http.Client{Timeout: 10 * time.Second}, cfg.Reporting.Webhooks)
-	handler := httpapi.New(collectorSvc, analyticsSvc, forecastingSvc, reportingSvc, alertingSvc, reg)
+	handler := httpapi.NewWithLookback(collectorSvc, analyticsSvc, forecastingSvc, reportingSvc, alertingSvc, reg, cfg.Ingestion.LookbackDays)
 
 	schedulerCtx, cancelScheduler := context.WithCancel(context.Background())
 	return &App{
@@ -119,7 +115,7 @@ func (a *App) runScheduler() {
 		select {
 		case <-ticker.C:
 			a.logger.Info("scheduler triggered ingestion")
-			_, err := a.collector.Run(a.schedulerCtx, time.Now().UTC().AddDate(0, 0, -7))
+			_, err := a.collector.Run(a.schedulerCtx, time.Time{})
 			if err != nil {
 				a.logger.Error("scheduled ingestion failed", "error", err)
 			}

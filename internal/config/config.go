@@ -13,11 +13,9 @@ type Config struct {
 	HTTP      HTTP   `yaml:"http"`
 	DB        DB     `yaml:"db"`
 	Providers struct {
-		AWS   Provider `yaml:"aws"`
-		Azure Provider `yaml:"azure"`
-		GCP   Provider `yaml:"gcp"`
-		OCI   Provider `yaml:"oci"`
+		OCI Provider `yaml:"oci"`
 	} `yaml:"providers"`
+	Ingestion Ingestion `yaml:"ingestion"`
 	Scheduler Scheduler `yaml:"scheduler"`
 	Reporting Reporting `yaml:"reporting"`
 	Metrics   Metrics   `yaml:"metrics"`
@@ -43,18 +41,24 @@ type Provider struct {
 	Bucket                 string `yaml:"bucket"`
 	Prefix                 string `yaml:"prefix"`
 	Account                string `yaml:"account"`
-	Container              string `yaml:"container"`
-	Project                string `yaml:"project"`
 	Namespace              string `yaml:"namespace"`
-	Region                 string `yaml:"region"`
-	Credentials            string `yaml:"credentials"`
 	ConfigFile             string `yaml:"config_file"`
 	ConfigProfile          string `yaml:"config_profile"`
 	Passphrase             string `yaml:"passphrase"`
-	PollSchedule           string `yaml:"poll_schedule"`
-	Format                 string `yaml:"format"`
 	LookbackDays           int    `yaml:"lookback_days"`
 	MaxObjectScan          int    `yaml:"max_object_scan"`
+	MaxFilesPerRun         int    `yaml:"max_files_per_run"`
+	MaxRecordsPerBatch     int    `yaml:"max_records_per_batch"`
+	MaxRuntime             string `yaml:"max_runtime"`
+	MaxMemoryBufferRecords int    `yaml:"max_memory_buffer_records"`
+	DryRun                 bool   `yaml:"dry_run"`
+	SampleMode             bool   `yaml:"sample_mode"`
+}
+
+type Ingestion struct {
+	LookbackDays           int    `yaml:"lookback_days"`
+	RetentionDays          int    `yaml:"retention_days"`
+	CompressionAfterDays   int    `yaml:"compression_after_days"`
 	MaxFilesPerRun         int    `yaml:"max_files_per_run"`
 	MaxRecordsPerBatch     int    `yaml:"max_records_per_batch"`
 	MaxRuntime             string `yaml:"max_runtime"`
@@ -105,14 +109,55 @@ func Load(path string) (Config, error) {
 	if cfg.Metrics.Namespace == "" {
 		cfg.Metrics.Namespace = "cloudpulse"
 	}
+	cfg.Ingestion = cfg.Ingestion.WithDefaults()
 	return cfg, nil
 }
 
-func (p Provider) Lookback() time.Duration {
-	if p.LookbackDays <= 0 {
-		return 24 * time.Hour
+func (i Ingestion) WithDefaults() Ingestion {
+	if i.LookbackDays <= 0 {
+		i.LookbackDays = 30
 	}
-	return time.Duration(p.LookbackDays) * 24 * time.Hour
+	if i.RetentionDays <= 0 {
+		i.RetentionDays = 180
+	}
+	if i.CompressionAfterDays <= 0 {
+		i.CompressionAfterDays = 7
+	}
+	if i.MaxFilesPerRun <= 0 {
+		i.MaxFilesPerRun = 25
+	}
+	if i.MaxRecordsPerBatch <= 0 {
+		i.MaxRecordsPerBatch = 1000
+	}
+	if i.MaxMemoryBufferRecords <= 0 {
+		i.MaxMemoryBufferRecords = i.MaxRecordsPerBatch
+	}
+	if i.MaxRuntime == "" {
+		i.MaxRuntime = "10m"
+	}
+	return i
+}
+
+func (p Provider) WithIngestionDefaults(ingestion Ingestion) Provider {
+	ingestion = ingestion.WithDefaults()
+	if p.LookbackDays <= 0 {
+		p.LookbackDays = ingestion.LookbackDays
+	}
+	if p.MaxFilesPerRun <= 0 {
+		p.MaxFilesPerRun = ingestion.MaxFilesPerRun
+	}
+	if p.MaxRecordsPerBatch <= 0 {
+		p.MaxRecordsPerBatch = ingestion.MaxRecordsPerBatch
+	}
+	if p.MaxMemoryBufferRecords <= 0 {
+		p.MaxMemoryBufferRecords = ingestion.MaxMemoryBufferRecords
+	}
+	if p.MaxRuntime == "" {
+		p.MaxRuntime = ingestion.MaxRuntime
+	}
+	p.DryRun = p.DryRun || ingestion.DryRun
+	p.SampleMode = p.SampleMode || ingestion.SampleMode
+	return p
 }
 
 func (p Provider) IngestionLimits() IngestionLimits {

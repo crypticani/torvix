@@ -12,9 +12,14 @@ type Repository interface {
 	StoreCostRecords(ctx context.Context, records []domain.CanonicalCostRecord) error
 	DeleteCostRecordsForSource(ctx context.Context, provider domain.Provider, sourceObject string) error
 	MarkReportProcessed(ctx context.Context, file domain.ProcessedReportFile) error
+	LastIngestionCheckpoint(ctx context.Context, provider domain.Provider) (time.Time, error)
+	MarkIngestionCheckpoint(ctx context.Context, provider domain.Provider, checkpoint time.Time) error
 	AggregateCosts(ctx context.Context, from, to time.Time, window string) ([]domain.AggregatedCost, error)
+	CompareCostVariance(ctx context.Context, period string, currentFrom, currentTo, previousFrom, previousTo time.Time) ([]domain.CostVariance, error)
 	DetectAnomalies(ctx context.Context, from, to time.Time) ([]domain.Anomaly, error)
 	ForecastCosts(ctx context.Context, from, to time.Time, horizon int) ([]domain.ForecastPoint, error)
 	IsReportProcessed(ctx context.Context, provider domain.Provider, bucket, objectName, etag string) (bool, error)
+	ApplyDataLifecyclePolicies(ctx context.Context, retentionDays, compressionAfterDays int) error
+	RunDataLifecycleMaintenance(ctx context.Context, retentionDays, compressionAfterDays int) (domain.DataLifecycleMaintenance, error)
 	RefreshAggregates(ctx context.Context, from, to time.Time) error
 }

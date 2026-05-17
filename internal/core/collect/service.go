@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/crypticani/cloudpulse/internal/core/normalize"
+	"github.com/crypticani/cloudpulse/internal/domain"
 	"github.com/crypticani/cloudpulse/internal/ports/providers"
 	"github.com/crypticani/cloudpulse/internal/ports/storage"
 )
@@ -18,16 +19,38 @@ type Service struct {
 	normalizer *normalize.Service
 	collectors []providers.Collector
 	metrics    MetricsRecorder
+	policy     Policy
+}
+
+type Policy struct {
+	LookbackDays         int
+	RetentionDays        int
+	CompressionAfterDays int
 }
 
 func New(logger *slog.Logger, repo storage.Repository, normalizer *normalize.Service, collectors []providers.Collector, metrics MetricsRecorder) *Service {
-	return &Service{logger: logger, repo: repo, normalizer: normalizer, collectors: collectors, metrics: metrics}
+	return NewWithPolicy(logger, repo, normalizer, collectors, metrics, Policy{})
+}
+
+func NewWithPolicy(logger *slog.Logger, repo storage.Repository, normalizer *normalize.Service, collectors []providers.Collector, metrics MetricsRecorder, policy Policy) *Service {
+	if policy.LookbackDays <= 0 {
+		policy.LookbackDays = 30
+	}
+	if policy.RetentionDays <= 0 {
+		policy.RetentionDays = 180
+	}
+	if policy.CompressionAfterDays <= 0 {
+		policy.CompressionAfterDays = 7
+	}
+	return &Service{logger: logger, repo: repo, normalizer: normalizer, collectors: collectors, metrics: metrics, policy: policy}
 }
 
 // ProviderResult holds per-provider ingestion metrics returned by Run.
 type ProviderResult struct {
 	Provider        string        `json:"provider"`
 	FilesProcessed  int           `json:"files_processed"`
+	FilesSkipped    int           `json:"files_skipped"`
+	SkippedOldFiles int           `json:"skipped_old_files"`
 	RecordsParsed   int           `json:"records_parsed"`
 	RecordsInserted int           `json:"records_inserted"`
 	Duration        time.Duration `json:"duration_ns"`
@@ -50,12 +73,16 @@ func (s *Service) Run(ctx context.Context, since time.Time) ([]ProviderResult, e
 			defer wg.Done()
 			start := time.Now()
 			if s.logger != nil {
-				s.logger.Info("collector start", "provider", c.Name(), "since", since)
+				s.logger.Info("collector start", "provider", c.Name(), "requested_since", since)
 			}
 
 			pr := ProviderResult{Provider: c.Name()}
 			recordsInserted := 0
-			result, err := s.collectProvider(ctx, c, since, &pr, &recordsInserted)
+			effectiveSince := s.effectiveSince(ctx, c.Name(), since)
+			if s.logger != nil {
+				s.logger.Info("collector rolling window selected", "provider", c.Name(), "since", effectiveSince, "lookback_days", s.policy.LookbackDays)
+			}
+			result, err := s.collectProvider(ctx, c, effectiveSince, &pr, &recordsInserted)
 			if err != nil {
 				mu.Lock()
 				allErrs = append(allErrs, err)
@@ -70,6 +97,8 @@ func (s *Service) Run(ctx context.Context, since time.Time) ([]ProviderResult, e
 			}
 
 			pr.FilesProcessed = result.FilesProcessed
+			pr.FilesSkipped = result.FilesSkipped
+			pr.SkippedOldFiles = result.SkippedOldFiles
 			pr.RecordsParsed = result.RecordsProcessed
 			pr.RecordsInserted = recordsInserted
 			pr.Duration = time.Since(start)
@@ -82,13 +111,26 @@ func (s *Service) Run(ctx context.Context, since time.Time) ([]ProviderResult, e
 				s.metrics.ObserveCollector(c.Name(), status, pr.Duration)
 				s.metrics.ObserveFiles(c.Name(), "processed", result.FilesProcessed)
 				s.metrics.ObserveFiles(c.Name(), "skipped", result.FilesSkipped)
+				s.metrics.ObserveFiles(c.Name(), "skipped_old", result.SkippedOldFiles)
 				s.metrics.ObserveRecords(c.Name(), result.RecordsProcessed)
 				s.metrics.ObserveBatches(c.Name(), result.BatchesInserted)
 				s.metrics.ObserveRecordsPerSecond(c.Name(), float64(result.RecordsProcessed)/max(pr.Duration.Seconds(), 0.001))
 				s.metrics.ObserveFailure(c.Name(), "parse", result.Failures)
 			}
 			if s.logger != nil {
-				s.logger.Info("collector done", "provider", c.Name(), "files_processed", result.FilesProcessed, "files_skipped", result.FilesSkipped, "records_parsed", result.RecordsProcessed, "records_inserted", recordsInserted, "duration", pr.Duration.String())
+				s.logger.Info("collector done", "provider", c.Name(), "files_processed", result.FilesProcessed, "files_skipped", result.FilesSkipped, "skipped_old_files", result.SkippedOldFiles, "records_parsed", result.RecordsProcessed, "records_inserted", recordsInserted, "duration", pr.Duration.String())
+			}
+			if err == nil && result.FilesProcessed > 0 && !result.HitFileLimit {
+				if checkpointErr := s.repo.MarkIngestionCheckpoint(ctx, providerName(c.Name()), time.Now().UTC()); checkpointErr != nil {
+					mu.Lock()
+					allErrs = append(allErrs, checkpointErr)
+					mu.Unlock()
+					if s.logger != nil {
+						s.logger.Error("failed to update ingestion checkpoint", "provider", c.Name(), "error", checkpointErr)
+					}
+				}
+			} else if err == nil && s.logger != nil {
+				s.logger.Info("ingestion checkpoint unchanged", "provider", c.Name(), "files_processed", result.FilesProcessed, "hit_file_limit", result.HitFileLimit)
 			}
 
 			mu.Lock()
@@ -126,7 +168,50 @@ func (s *Service) Run(ctx context.Context, since time.Time) ([]ProviderResult, e
 		}
 	}
 
+	maintenance, err := s.repo.RunDataLifecycleMaintenance(ctx, s.policy.RetentionDays, s.policy.CompressionAfterDays)
+	if err != nil {
+		allErrs = append(allErrs, err)
+		if s.logger != nil {
+			s.logger.Error("data lifecycle maintenance failed", "error", err)
+		}
+	} else {
+		if s.metrics != nil {
+			s.metrics.ObserveRecordsDeleted(maintenance.RecordsDeleted)
+			s.metrics.ObserveCompressedChunks(maintenance.CompressedChunks)
+		}
+		if s.logger != nil {
+			s.logger.Info("rolling retention maintenance complete", "records_deleted", maintenance.RecordsDeleted, "compressed_chunks", maintenance.CompressedChunks)
+		}
+	}
+
 	return results, errors.Join(allErrs...)
+}
+
+func (s *Service) effectiveSince(ctx context.Context, provider string, requested time.Time) time.Time {
+	now := time.Now().UTC()
+	lookbackSince := now.AddDate(0, 0, -s.policy.LookbackDays)
+	effective := requested.UTC()
+	if effective.IsZero() || effective.Before(lookbackSince) {
+		effective = lookbackSince
+	}
+	checkpoint, err := s.repo.LastIngestionCheckpoint(ctx, providerName(provider))
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Error("failed to read ingestion checkpoint", "provider", provider, "error", err)
+		}
+		return effective
+	}
+	if checkpoint.After(effective) {
+		overlap := checkpoint.Add(-1 * time.Hour)
+		if overlap.After(effective) {
+			effective = overlap
+		}
+	}
+	return effective
+}
+
+func providerName(name string) domain.Provider {
+	return domain.Provider(name)
 }
 
 func (s *Service) collectProvider(ctx context.Context, c providers.Collector, since time.Time, pr *ProviderResult, recordsInserted *int) (providers.CollectResult, error) {

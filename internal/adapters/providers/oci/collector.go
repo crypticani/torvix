@@ -67,7 +67,7 @@ func (c *Collector) CollectStream(ctx context.Context, since time.Time, handle p
 	}
 
 	objectScanLimit := c.cfg.MaxObjectScan
-	if objectScanLimit <= 0 || objectScanLimit > limits.MaxFilesPerRun {
+	if objectScanLimit <= 0 {
 		objectScanLimit = limits.MaxFilesPerRun
 	}
 	objects, err := c.client.ListObjects(ctx, namespace, c.cfg.Bucket, c.cfg.Prefix, objectScanLimit)
@@ -80,18 +80,23 @@ func (c *Collector) CollectStream(ctx context.Context, since time.Time, handle p
 	}
 
 	var (
-		result providers.CollectResult
-		errs   []error
-		seen   = make(map[string]struct{}, len(objects))
+		result              providers.CollectResult
+		errs                []error
+		seen                = make(map[string]struct{}, len(objects))
+		startedFiles        int
+		consecutiveFailures int
 	)
-	for i, object := range objects {
+	const maxConsecutiveObjectFailures = 3
+	for _, object := range objects {
 		if err := ctx.Err(); err != nil {
 			errs = append(errs, err)
 			break
 		}
-		if i >= limits.MaxFilesPerRun {
-			c.logger.Warn("OCI max files per run reached", "limit", limits.MaxFilesPerRun)
-			break
+		if !object.LastModified.IsZero() && object.LastModified.Before(since) {
+			result.FilesSkipped++
+			result.SkippedOldFiles++
+			c.logger.Debug("skipping old OCI report before download", "object", object.Name, "etag", object.ETag, "last_modified", object.LastModified, "since", since)
+			continue
 		}
 		identity := object.Name + "|" + object.ETag
 		if _, ok := seen[identity]; ok {
@@ -112,13 +117,24 @@ func (c *Collector) CollectStream(ctx context.Context, since time.Time, handle p
 			c.logger.Debug("skipping processed OCI report", "object", object.Name, "etag", object.ETag)
 			continue
 		}
+		if startedFiles >= limits.MaxFilesPerRun {
+			result.HitFileLimit = true
+			c.logger.Warn("OCI max files per run reached", "limit", limits.MaxFilesPerRun)
+			break
+		}
+		startedFiles++
 
 		fileStart := time.Now()
 		stream, err := c.client.GetObject(ctx, namespace, c.cfg.Bucket, object.Name)
 		if err != nil {
 			errs = append(errs, err)
 			result.Failures++
+			consecutiveFailures++
 			c.logger.Error("failed to download OCI report", "object", object.Name, "error", err)
+			if consecutiveFailures >= maxConsecutiveObjectFailures {
+				c.logger.Warn("stopping OCI ingestion after consecutive object failures", "failures", consecutiveFailures)
+				break
+			}
 			continue
 		}
 		c.logger.Info("OCI report streaming started", "object", object.Name, "etag", object.ETag, "size", object.Size)
@@ -167,10 +183,18 @@ func (c *Collector) CollectStream(ctx context.Context, since time.Time, handle p
 			}
 			return nil
 		})
+		if closeErr := stream.Close(); closeErr != nil {
+			c.logger.Warn("failed to close OCI report stream", "object", object.Name, "error", closeErr)
+		}
 		if parseErr != nil {
 			errs = append(errs, fmt.Errorf("parse %s: %w", object.Name, parseErr))
 			result.Failures++
+			consecutiveFailures++
 			c.logger.Error("failed to parse OCI report", "object", object.Name, "error", parseErr)
+			if consecutiveFailures >= maxConsecutiveObjectFailures || ctx.Err() != nil {
+				c.logger.Warn("stopping OCI ingestion after parse failure", "failures", consecutiveFailures, "context_error", ctx.Err())
+				break
+			}
 			continue
 		}
 		metadata.RecordCount = records
@@ -179,16 +203,27 @@ func (c *Collector) CollectStream(ctx context.Context, since time.Time, handle p
 		if err := flush(false); err != nil {
 			errs = append(errs, fmt.Errorf("flush %s: %w", object.Name, err))
 			result.Failures++
+			consecutiveFailures++
+			if consecutiveFailures >= maxConsecutiveObjectFailures || ctx.Err() != nil {
+				c.logger.Warn("stopping OCI ingestion after flush failure", "failures", consecutiveFailures, "context_error", ctx.Err())
+				break
+			}
 			continue
 		}
 		if !limits.DryRun {
 			if err := handle(ctx, providers.FileBatch{Metadata: metadata, First: firstBatch, Final: true}); err != nil {
 				errs = append(errs, fmt.Errorf("mark processed %s: %w", object.Name, err))
 				result.Failures++
+				consecutiveFailures++
+				if consecutiveFailures >= maxConsecutiveObjectFailures || ctx.Err() != nil {
+					c.logger.Warn("stopping OCI ingestion after mark-processed failure", "failures", consecutiveFailures, "context_error", ctx.Err())
+					break
+				}
 				continue
 			}
 		}
 		result.FilesProcessed++
+		consecutiveFailures = 0
 		recordsPerSecond := float64(records) / max(time.Since(fileStart).Seconds(), 0.001)
 		c.logger.Info("OCI report streamed", "object", object.Name, "records", records, "duration", time.Since(fileStart).String(), "records_per_second", recordsPerSecond)
 	}

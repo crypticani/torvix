@@ -8,5 +8,7 @@ type MetricsRecorder interface {
 	ObserveRecords(provider string, count int)
 	ObserveBatches(provider string, count int)
 	ObserveRecordsPerSecond(provider string, rate float64)
+	ObserveRecordsDeleted(count int64)
+	ObserveCompressedChunks(count int64)
 	ObserveFailure(provider, stage string, count int)
 }

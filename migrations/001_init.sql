@@ -60,5 +60,5 @@ ALTER TABLE cost_records SET (
     timescaledb.compress_orderby = '"timestamp" DESC'
 );
 
-SELECT add_compression_policy('cost_records', INTERVAL '14 days', if_not_exists => TRUE);
-SELECT add_retention_policy('cost_records', INTERVAL '365 days', if_not_exists => TRUE);
+SELECT add_compression_policy('cost_records', INTERVAL '7 days', if_not_exists => TRUE);
+SELECT add_retention_policy('cost_records', INTERVAL '180 days', if_not_exists => TRUE);

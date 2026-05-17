@@ -143,6 +143,82 @@ func (r *Repository) MarkReportProcessed(ctx context.Context, file domain.Proces
 	return tx.Commit(ctx)
 }
 
+func (r *Repository) LastIngestionCheckpoint(ctx context.Context, provider domain.Provider) (time.Time, error) {
+	var checkpoint time.Time
+	err := r.db.QueryRow(ctx, `
+		SELECT COALESCE(MAX(last_successful_ingestion_at), 'epoch'::timestamptz)
+		FROM ingestion_checkpoints
+		WHERE provider = $1
+	`, provider).Scan(&checkpoint)
+	return checkpoint.UTC(), err
+}
+
+func (r *Repository) MarkIngestionCheckpoint(ctx context.Context, provider domain.Provider, checkpoint time.Time) error {
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO ingestion_checkpoints (provider, last_successful_ingestion_at, updated_at)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (provider)
+		DO UPDATE SET
+			last_successful_ingestion_at = GREATEST(ingestion_checkpoints.last_successful_ingestion_at, EXCLUDED.last_successful_ingestion_at),
+			updated_at = NOW()
+	`, provider, checkpoint.UTC())
+	return err
+}
+
+func (r *Repository) ApplyDataLifecyclePolicies(ctx context.Context, retentionDays, compressionAfterDays int) error {
+	if retentionDays <= 0 {
+		retentionDays = 180
+	}
+	if compressionAfterDays <= 0 {
+		compressionAfterDays = 7
+	}
+	if _, err := r.db.Exec(ctx, `SELECT remove_retention_policy('cost_records', if_exists => TRUE)`); err != nil {
+		return fmt.Errorf("remove retention policy: %w", err)
+	}
+	if _, err := r.db.Exec(ctx, `SELECT add_retention_policy('cost_records', make_interval(days => $1), if_not_exists => TRUE)`, retentionDays); err != nil {
+		return fmt.Errorf("add retention policy: %w", err)
+	}
+	if _, err := r.db.Exec(ctx, `SELECT remove_compression_policy('cost_records', if_exists => TRUE)`); err != nil {
+		return fmt.Errorf("remove compression policy: %w", err)
+	}
+	if _, err := r.db.Exec(ctx, `SELECT add_compression_policy('cost_records', make_interval(days => $1), if_not_exists => TRUE)`, compressionAfterDays); err != nil {
+		return fmt.Errorf("add compression policy: %w", err)
+	}
+	slog.Info("data lifecycle policies applied", "retention_days", retentionDays, "compression_after_days", compressionAfterDays)
+	return nil
+}
+
+func (r *Repository) RunDataLifecycleMaintenance(ctx context.Context, retentionDays, compressionAfterDays int) (domain.DataLifecycleMaintenance, error) {
+	if retentionDays <= 0 {
+		retentionDays = 180
+	}
+	if compressionAfterDays <= 0 {
+		compressionAfterDays = 7
+	}
+	var result domain.DataLifecycleMaintenance
+	tag, err := r.db.Exec(ctx, `
+		DELETE FROM cost_records
+		WHERE "timestamp" < NOW() - make_interval(days => $1)
+	`, retentionDays)
+	if err != nil {
+		return result, fmt.Errorf("prune old cost records: %w", err)
+	}
+	result.RecordsDeleted = tag.RowsAffected()
+
+	err = r.db.QueryRow(ctx, `
+		SELECT COUNT(*)::bigint
+		FROM (
+			SELECT compress_chunk(chunk, if_not_compressed => TRUE)
+			FROM show_chunks('cost_records', older_than => make_interval(days => $1)) AS chunk
+		) compressed
+	`, compressionAfterDays).Scan(&result.CompressedChunks)
+	if err != nil {
+		return result, fmt.Errorf("compress old cost chunks: %w", err)
+	}
+	slog.Info("data lifecycle maintenance completed", "records_deleted", result.RecordsDeleted, "compressed_chunks", result.CompressedChunks, "retention_days", retentionDays, "compression_after_days", compressionAfterDays)
+	return result, nil
+}
+
 func storeCostRecordsTx(ctx context.Context, tx pgx.Tx, records []domain.CanonicalCostRecord) error {
 	const insertSQL = `
 		INSERT INTO cost_records
@@ -233,6 +309,97 @@ func (r *Repository) AggregateCosts(ctx context.Context, from, to time.Time, win
 	}
 	err = rows.Err()
 	slog.Info("analytics summary query executed", "window", window, "from", from.UTC(), "to", to.UTC(), "rows", len(out), "duration", time.Since(started).String(), "error", err)
+	return out, err
+}
+
+func (r *Repository) CompareCostVariance(ctx context.Context, period string, currentFrom, currentTo, previousFrom, previousTo time.Time) ([]domain.CostVariance, error) {
+	started := time.Now()
+	rows, err := r.db.Query(ctx, `
+		WITH current_window AS (
+			SELECT
+				cloud_provider,
+				COALESCE(account_id, '') AS account_id,
+				service,
+				COALESCE(tags->>'oci_compartment_id', '') AS compartment_id,
+				COALESCE(NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', 'unknown') AS compartment_name,
+				COALESCE(SUM(cost), 0)::double precision AS total_cost
+			FROM cost_records
+			WHERE "timestamp" >= $1 AND "timestamp" < $2
+			GROUP BY 1, 2, 3, 4, 5
+		),
+		previous_window AS (
+			SELECT
+				cloud_provider,
+				COALESCE(account_id, '') AS account_id,
+				service,
+				COALESCE(tags->>'oci_compartment_id', '') AS compartment_id,
+				COALESCE(NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', 'unknown') AS compartment_name,
+				COALESCE(SUM(cost), 0)::double precision AS total_cost
+			FROM cost_records
+			WHERE "timestamp" >= $3 AND "timestamp" < $4
+			GROUP BY 1, 2, 3, 4, 5
+		),
+		joined AS (
+			SELECT
+				COALESCE(c.cloud_provider, p.cloud_provider) AS cloud_provider,
+				COALESCE(c.account_id, p.account_id) AS account_id,
+				COALESCE(c.service, p.service) AS service,
+				COALESCE(c.compartment_id, p.compartment_id) AS compartment_id,
+				COALESCE(c.compartment_name, p.compartment_name) AS compartment_name,
+				COALESCE(c.total_cost, 0)::double precision AS current_cost,
+				COALESCE(p.total_cost, 0)::double precision AS previous_cost
+			FROM current_window c
+			FULL OUTER JOIN previous_window p
+			  ON c.cloud_provider = p.cloud_provider
+			 AND c.account_id = p.account_id
+			 AND c.service = p.service
+			 AND c.compartment_id = p.compartment_id
+			 AND c.compartment_name = p.compartment_name
+		)
+		SELECT
+			cloud_provider,
+			account_id,
+			service,
+			compartment_id,
+			compartment_name,
+			current_cost,
+			previous_cost,
+			current_cost - previous_cost AS delta,
+			CASE
+				WHEN previous_cost > 0 THEN ((current_cost - previous_cost) / previous_cost) * 100
+				WHEN current_cost > 0 THEN 100
+				ELSE 0
+			END AS percent_change,
+			CASE
+				WHEN current_cost > previous_cost THEN 'increase'
+				WHEN current_cost < previous_cost THEN 'decrease'
+				ELSE 'flat'
+			END AS direction
+		FROM joined
+		WHERE current_cost <> 0 OR previous_cost <> 0
+		ORDER BY ABS(current_cost - previous_cost) DESC, cloud_provider, service, compartment_name
+	`, currentFrom.UTC(), currentTo.UTC(), previousFrom.UTC(), previousTo.UTC())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]domain.CostVariance, 0)
+	for rows.Next() {
+		rec := domain.CostVariance{
+			Period:              period,
+			CurrentWindowStart:  currentFrom.UTC(),
+			CurrentWindowEnd:    currentTo.UTC(),
+			PreviousWindowStart: previousFrom.UTC(),
+			PreviousWindowEnd:   previousTo.UTC(),
+		}
+		if err := rows.Scan(&rec.Provider, &rec.AccountID, &rec.Service, &rec.CompartmentID, &rec.CompartmentName, &rec.CurrentCost, &rec.PreviousCost, &rec.Delta, &rec.PercentChange, &rec.Direction); err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	err = rows.Err()
+	slog.Info("analytics cost variance query executed", "period", period, "current_from", currentFrom.UTC(), "current_to", currentTo.UTC(), "previous_from", previousFrom.UTC(), "previous_to", previousTo.UTC(), "rows", len(out), "duration", time.Since(started).String(), "error", err)
 	return out, err
 }
 
@@ -387,16 +554,56 @@ func (r *Repository) IsReportProcessed(ctx context.Context, provider domain.Prov
 }
 
 func (r *Repository) RefreshAggregates(ctx context.Context, from, to time.Time) error {
-	views := []string{"cost_summary_daily", "cost_summary_weekly", "cost_summary_monthly"}
+	views := []struct {
+		name  string
+		align func(time.Time, time.Time) (time.Time, time.Time)
+	}{
+		{name: "cost_summary_daily", align: alignDailyRefreshWindow},
+		{name: "cost_summary_weekly", align: alignWeeklyRefreshWindow},
+		{name: "cost_summary_monthly", align: alignMonthlyRefreshWindow},
+	}
 	for _, view := range views {
+		refreshFrom, refreshTo := view.align(from.UTC(), to.UTC())
+		if !refreshTo.After(refreshFrom) {
+			continue
+		}
 		if _, err := r.db.Exec(ctx,
-			fmt.Sprintf("CALL refresh_continuous_aggregate('%s', $1::timestamptz, $2::timestamptz)", view),
-			from.UTC(), to.UTC(),
+			fmt.Sprintf("CALL refresh_continuous_aggregate('%s', $1::timestamptz, $2::timestamptz)", view.name),
+			refreshFrom, refreshTo,
 		); err != nil {
-			return fmt.Errorf("refresh %s: %w", view, err)
+			return fmt.Errorf("refresh %s: %w", view.name, err)
 		}
 	}
 	return nil
+}
+
+func alignDailyRefreshWindow(from, to time.Time) (time.Time, time.Time) {
+	return dayStart(from), dayStart(to).AddDate(0, 0, 1)
+}
+
+func alignWeeklyRefreshWindow(from, to time.Time) (time.Time, time.Time) {
+	return weekStart(from), weekStart(to).AddDate(0, 0, 7)
+}
+
+func alignMonthlyRefreshWindow(from, to time.Time) (time.Time, time.Time) {
+	return monthStart(from), monthStart(to).AddDate(0, 1, 0)
+}
+
+func dayStart(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func weekStart(t time.Time) time.Time {
+	start := dayStart(t)
+	weekday := int(start.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	return start.AddDate(0, 0, -(weekday - 1))
+}
+
+func monthStart(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
 }
 
 func aggregateBucket(window string) string {

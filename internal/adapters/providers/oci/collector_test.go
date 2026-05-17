@@ -111,10 +111,55 @@ func TestCollectorCollectStreamFlushesBoundedBatches(t *testing.T) {
 	}
 }
 
+func TestCollectorSkipsOldObjectsBeforeDownload(t *testing.T) {
+	repo := &fakeRepository{processed: map[string]bool{}}
+	client := &fakeObjectStorageClient{
+		namespace: "bling",
+		objects: []ObjectInfo{
+			{Name: "reports/old.csv", ETag: "etag-old", LastModified: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC)},
+			{Name: "reports/new.csv", ETag: "etag-new", LastModified: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC)},
+		},
+		bodies: map[string]string{
+			"reports/new.csv": strings.Join([]string{
+				"lineItem/intervalUsageStart,product/service,usage/billedQuantity,cost/myCost",
+				"2026-05-03T00:00:00Z,Compute,1,3.5",
+			}, "\n"),
+		},
+		downloads: map[string]int{},
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	collector := NewWithClient(config.Provider{
+		Bucket:                 "tenant-bucket",
+		Prefix:                 "reports/",
+		Account:                "ocid1.tenancy.oc1..example",
+		MaxFilesPerRun:         5,
+		MaxRecordsPerBatch:     2,
+		MaxMemoryBufferRecords: 2,
+		MaxRuntime:             "1m",
+	}, logger, repo, client)
+
+	result, err := collector.CollectStream(context.Background(), time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), func(context.Context, providers.FileBatch) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("CollectStream() error = %v", err)
+	}
+	if result.SkippedOldFiles != 1 {
+		t.Fatalf("expected one old file skipped, got %d", result.SkippedOldFiles)
+	}
+	if client.downloads["reports/old.csv"] != 0 {
+		t.Fatalf("old report was downloaded before skip")
+	}
+	if client.downloads["reports/new.csv"] != 1 {
+		t.Fatalf("new report should be downloaded once, got %d", client.downloads["reports/new.csv"])
+	}
+}
+
 type fakeObjectStorageClient struct {
 	namespace string
 	objects   []ObjectInfo
 	bodies    map[string]string
+	downloads map[string]int
 }
 
 func (f *fakeObjectStorageClient) GetNamespace(context.Context) (string, error) {
@@ -126,6 +171,9 @@ func (f *fakeObjectStorageClient) ListObjects(context.Context, string, string, s
 }
 
 func (f *fakeObjectStorageClient) GetObject(_ context.Context, _, _, objectName string) (io.ReadCloser, error) {
+	if f.downloads != nil {
+		f.downloads[objectName]++
+	}
 	return io.NopCloser(strings.NewReader(f.bodies[objectName])), nil
 }
 
@@ -134,6 +182,10 @@ type fakeRepository struct {
 }
 
 func (f *fakeRepository) AggregateCosts(context.Context, time.Time, time.Time, string) ([]domain.AggregatedCost, error) {
+	return nil, nil
+}
+
+func (f *fakeRepository) CompareCostVariance(context.Context, string, time.Time, time.Time, time.Time, time.Time) ([]domain.CostVariance, error) {
 	return nil, nil
 }
 
@@ -161,8 +213,24 @@ func (f *fakeRepository) MarkReportProcessed(context.Context, domain.ProcessedRe
 	return nil
 }
 
+func (f *fakeRepository) LastIngestionCheckpoint(context.Context, domain.Provider) (time.Time, error) {
+	return time.Time{}, nil
+}
+
+func (f *fakeRepository) MarkIngestionCheckpoint(context.Context, domain.Provider, time.Time) error {
+	return nil
+}
+
 func (f *fakeRepository) IsReportProcessed(_ context.Context, _ domain.Provider, _ string, objectName, etag string) (bool, error) {
 	return f.processed[objectName+"|"+etag], nil
+}
+
+func (f *fakeRepository) ApplyDataLifecyclePolicies(context.Context, int, int) error {
+	return nil
+}
+
+func (f *fakeRepository) RunDataLifecycleMaintenance(context.Context, int, int) (domain.DataLifecycleMaintenance, error) {
+	return domain.DataLifecycleMaintenance{}, nil
 }
 
 func (f *fakeRepository) RefreshAggregates(context.Context, time.Time, time.Time) error {

@@ -18,8 +18,10 @@ type CollectResult struct {
 	Batches          []FileBatch
 	FilesProcessed   int
 	FilesSkipped     int
+	SkippedOldFiles  int
 	RecordsProcessed int
 	BatchesInserted  int
+	HitFileLimit     bool
 	Failures         int
 }
 
