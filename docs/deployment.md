@@ -134,7 +134,9 @@ Runtime precedence is:
 3. `http.address` in the YAML config
 4. default `:8080`
 
-The production Compose file intentionally does not define a Docker healthcheck because the listener can be controlled by either environment or mounted config. Use Prometheus or your platform health checks against the configured `/healthz` and `/metrics` endpoints.
+The production Compose healthcheck checks `http://127.0.0.1:${CLOUDPULSE_HTTP_PORT:-8080}/healthz`. If you use `CLOUDPULSE_HTTP_ADDRESS`, the healthcheck derives the port from that value when `CLOUDPULSE_HTTP_PORT` is not set.
+
+If you change only `http.address` in `configs/config.prod.yaml`, also set `CLOUDPULSE_HTTP_PORT` to the same port or update the healthcheck command in `docker-compose.prod.yml`. Compose cannot read the mounted YAML value into its healthcheck automatically.
 
 Resource limits can be tuned with:
 

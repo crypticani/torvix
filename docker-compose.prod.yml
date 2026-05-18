@@ -25,3 +25,9 @@ services:
         reservations:
           cpus: "0.25"
           memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "port=$${CLOUDPULSE_HTTP_PORT:-}; addr=$${CLOUDPULSE_HTTP_ADDRESS:-}; if [ -z \"$$port\" ] && [ -n \"$$addr\" ]; then port=$${addr##*:}; fi; wget -qO- http://127.0.0.1:$${port:-8080}/healthz >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
