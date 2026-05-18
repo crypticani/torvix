@@ -3,5 +3,6 @@ dist/
 .DS_Store
 configs/*
 !configs/config.example.yaml
+!configs/config.prod.example.yaml
 deploy.sh
 postgres_data/

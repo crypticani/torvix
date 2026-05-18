@@ -1,0 +1,50 @@
+log_level: info
+
+http:
+  address: ":8080"
+
+db:
+  # Use your production PostgreSQL/TimescaleDB endpoint.
+  # If PostgreSQL runs on the Docker host, use host.docker.internal.
+  dsn: "postgres://cloudpulse:replace_with_password@postgres.example.internal:5432/cloudpulse?sslmode=require"
+  max_conns: 20
+  min_conns: 2
+
+ingestion:
+  lookback_days: 30
+  retention_days: 180
+  compression_after_days: 7
+  max_files_per_run: 25
+  max_records_per_batch: 1000
+  max_memory_buffer_records: 1000
+  max_runtime: "10m"
+  dry_run: false
+  sample_mode: false
+
+providers:
+  oci:
+    enabled: true
+    namespace: "bling"
+    bucket: "ocid1.tenancy.oc1..replace_with_tenancy_ocid"
+    prefix: "reports/"
+    account: "ocid1.tenancy.oc1..replace_with_tenancy_ocid"
+    config_file: "/app/configs/oci_config"
+    config_profile: "DEFAULT"
+    passphrase: ""
+    lookback_days: 30
+    max_object_scan: 10000
+
+scheduler:
+  enabled: true
+  ingest_interval: "6h"
+
+reporting:
+  webhooks:
+    - name: discord-finops
+      type: discord
+      url: "https://discord.com/api/webhooks/replace/me"
+      currency: INR
+      enabled: false
+
+metrics:
+  namespace: cloudpulse

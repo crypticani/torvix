@@ -11,9 +11,9 @@ CloudPulse now uses PostgreSQL with the TimescaleDB extension as its permanent a
 - Daily, weekly, and monthly Timescale continuous aggregates
 - Anomaly detection using moving averages, z-score, and percentage deviation
 - Rolling forecast generation
-- Slack and Discord webhook delivery
+- Slack, Microsoft Teams, Telegram, Discord, and SMTP email report delivery
 - Prometheus metrics and Grafana dashboards
-- Self-hosted Docker Compose deployment
+- Separate Docker Compose files for full local development and production app-only deployment
 
 ## Architecture
 
@@ -59,12 +59,6 @@ Oracle deprecated older usage reports on January 31, 2025, so the parser accepts
 
 ```yaml
 providers:
-  aws:
-    enabled: false
-  azure:
-    enabled: false
-  gcp:
-    enabled: false
   oci:
     enabled: true
     namespace: "bling"
@@ -130,17 +124,24 @@ Pass `from=YYYY-MM-DD&to=YYYY-MM-DD` to override those defaults. Add `deliver=tr
 ```bash
 make tidy
 make test
-make compose-up
+make compose-dev-up
 curl -X POST http://localhost:8080/api/v1/ingest
 curl "http://localhost:8080/api/v1/analytics/summary?window=weekly&from=2026-05-01&to=2026-05-31"
 ```
 
 The application applies SQL migrations from `migrations/` on startup.
 
+CloudPulse has two Docker Compose entry points:
+
+- `docker-compose.dev.yml`: full local stack with CloudPulse, PostgreSQL/TimescaleDB, Prometheus, and Grafana.
+- `docker-compose.prod.yml`: CloudPulse app only for production environments that already have PostgreSQL/TimescaleDB, Prometheus, and Grafana.
+
 - **API:** `http://localhost:8080`
 - **Swagger UI:** `http://localhost:8080/swagger/index.html`
 - **Grafana:** `http://localhost:3000` (PostgreSQL and Prometheus datasources are automatically provisioned)
 - **Prometheus:** `http://localhost:9090`
+
+For production setup, Prometheus scraping, and Grafana dashboard import instructions, see `docs/deployment.md`.
 
 ## Configuration Highlights
 
@@ -196,4 +197,4 @@ In `configs/config.yaml`:
 - Backup: `pg_dump -Fc -h localhost -U cloudpulse cloudpulse > cloudpulse.dump`
 - Restore: `pg_restore -d cloudpulse -h localhost -U cloudpulse --clean cloudpulse.dump`
 
-For local TimescaleDB data resets, use `make compose-down`.
+For local TimescaleDB data resets, use `make compose-dev-down`.

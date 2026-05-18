@@ -40,7 +40,7 @@ services:
     cpus: "1.0"
     volumes:
       - ./configs:/app/configs:ro
-    command: ["./cloudpulse", "-config", "/app/configs/config.yaml"]
+    command: ["-config", "/app/configs/config.yaml"]
     deploy:
       resources:
         limits:

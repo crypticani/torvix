@@ -1,0 +1,7 @@
+scrape_configs:
+  - job_name: cloudpulse
+    metrics_path: /metrics
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - cloudpulse.example.internal:8080
