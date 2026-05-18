@@ -141,6 +141,8 @@ CloudPulse has two Docker Compose entry points:
 - **Grafana:** `http://localhost:3000` (PostgreSQL and Prometheus datasources are automatically provisioned)
 - **Prometheus:** `http://localhost:9090`
 
+CloudPulse listens on `http.address` from config by default. Override the actual app listener at runtime with `CLOUDPULSE_HTTP_ADDRESS` or `CLOUDPULSE_HTTP_PORT`, which is useful when using host networking.
+
 For production setup, Prometheus scraping, and Grafana dashboard import instructions, see `docs/deployment.md`.
 
 ## Configuration Highlights

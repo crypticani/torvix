@@ -1,6 +1,7 @@
 log_level: info
 
 http:
+  # Can be overridden at runtime with CLOUDPULSE_HTTP_ADDRESS or CLOUDPULSE_HTTP_PORT.
   address: ":8080"
 
 db:

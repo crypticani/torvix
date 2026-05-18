@@ -38,6 +38,9 @@ services:
     restart: unless-stopped
     mem_limit: 512m
     cpus: "1.0"
+    environment:
+      - CLOUDPULSE_HTTP_ADDRESS
+      - CLOUDPULSE_HTTP_PORT
     volumes:
       - ./configs:/app/configs:ro
     command: ["-config", "/app/configs/config.yaml"]

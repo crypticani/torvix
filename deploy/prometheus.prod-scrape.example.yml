@@ -4,4 +4,6 @@ scrape_configs:
     scrape_interval: 15s
     static_configs:
       - targets:
+          # Change the port if CloudPulse is started with CLOUDPULSE_HTTP_PORT
+          # or a non-default http.address.
           - cloudpulse.example.internal:8080

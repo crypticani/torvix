@@ -31,6 +31,14 @@ The development setup is self-contained and starts all dependencies.
    make compose-dev-up
    ```
 
+   To run CloudPulse on a different host-network port, set the app bind port:
+
+   ```bash
+   CLOUDPULSE_HTTP_PORT=18080 docker compose -f docker-compose.dev.yml up --build
+   ```
+
+   If you change the dev API port, also update `deploy/prometheus.yml` so the bundled Prometheus scrapes the same port.
+
 4. Open the local services:
 
    - CloudPulse API: `http://localhost:8080`
@@ -99,11 +107,34 @@ Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are 
    curl http://localhost:8080/metrics
    ```
 
-The production Compose file exposes CloudPulse on host port `8080` by default. Override it with:
+The production Compose file uses host networking and does not publish Docker ports. The app binds to `:8080` by default. Override the actual app listener with:
 
 ```bash
 CLOUDPULSE_HTTP_PORT=18080 docker compose -f docker-compose.prod.yml up --build -d
 ```
+
+Then validate with:
+
+```bash
+curl http://localhost:18080/healthz
+curl http://localhost:18080/metrics
+```
+
+The config file can also manage the listener:
+
+```yaml
+http:
+  address: ":18080"
+```
+
+Runtime precedence is:
+
+1. `CLOUDPULSE_HTTP_ADDRESS`, for example `0.0.0.0:18080`
+2. `CLOUDPULSE_HTTP_PORT`, for example `18080`
+3. `http.address` in the YAML config
+4. default `:8080`
+
+The production Compose file intentionally does not define a Docker healthcheck because the listener can be controlled by either environment or mounted config. Use Prometheus or your platform health checks against the configured `/healthz` and `/metrics` endpoints.
 
 Resource limits can be tuned with:
 
@@ -116,7 +147,7 @@ CLOUDPULSE_CPU_LIMIT=1.0 CLOUDPULSE_MEMORY_LIMIT=512M docker compose -f docker-c
 CloudPulse exposes Prometheus metrics at:
 
 ```text
-http://<cloudpulse-host>:8080/metrics
+http://<cloudpulse-host>:<cloudpulse-port>/metrics
 ```
 
 Add this scrape job to your existing Prometheus configuration:
