@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -68,6 +69,9 @@ func (r *Repository) Pool() *pgxpool.Pool {
 
 func (r *Repository) StoreIngestedBatch(ctx context.Context, file domain.ProcessedReportFile, records []domain.CanonicalCostRecord) error {
 	started := time.Now()
+	if err := r.ensureCostRecordChunksWritableForRecords(ctx, records); err != nil {
+		return err
+	}
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -97,6 +101,9 @@ func (r *Repository) StoreCostRecords(ctx context.Context, records []domain.Cano
 		return nil
 	}
 	started := time.Now()
+	if err := r.ensureCostRecordChunksWritableForRecords(ctx, records); err != nil {
+		return err
+	}
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
@@ -120,7 +127,16 @@ func (r *Repository) DeleteCostRecordsForSource(ctx context.Context, provider do
 	if sourceObject == "" {
 		return nil
 	}
-	_, err := r.db.Exec(ctx, `
+	from, to, ok, err := r.costRecordSourceRange(ctx, provider, sourceObject)
+	if err != nil {
+		return err
+	}
+	if ok {
+		if err := r.ensureCostRecordChunksWritable(ctx, from, to); err != nil {
+			return err
+		}
+	}
+	_, err = r.db.Exec(ctx, `
 		DELETE FROM cost_records
 		WHERE cloud_provider = $1 AND source_object = $2
 	`, provider, sourceObject)
@@ -217,6 +233,76 @@ func (r *Repository) RunDataLifecycleMaintenance(ctx context.Context, retentionD
 	}
 	slog.Info("data lifecycle maintenance completed", "records_deleted", result.RecordsDeleted, "compressed_chunks", result.CompressedChunks, "retention_days", retentionDays, "compression_after_days", compressionAfterDays)
 	return result, nil
+}
+
+func (r *Repository) ensureCostRecordChunksWritableForRecords(ctx context.Context, records []domain.CanonicalCostRecord) error {
+	from, to, ok := costRecordRange(records)
+	if !ok {
+		return nil
+	}
+	return r.ensureCostRecordChunksWritable(ctx, from, to)
+}
+
+func costRecordRange(records []domain.CanonicalCostRecord) (time.Time, time.Time, bool) {
+	var from, to time.Time
+	for _, record := range records {
+		ts := record.Timestamp.UTC()
+		if ts.IsZero() {
+			continue
+		}
+		if from.IsZero() || ts.Before(from) {
+			from = ts
+		}
+		if to.IsZero() || ts.After(to) {
+			to = ts
+		}
+	}
+	if from.IsZero() || to.IsZero() {
+		return time.Time{}, time.Time{}, false
+	}
+	return from, to, true
+}
+
+func (r *Repository) costRecordSourceRange(ctx context.Context, provider domain.Provider, sourceObject string) (time.Time, time.Time, bool, error) {
+	var from, to sql.NullTime
+	err := r.db.QueryRow(ctx, `
+		SELECT MIN("timestamp"), MAX("timestamp")
+		FROM cost_records
+		WHERE cloud_provider = $1 AND source_object = $2
+	`, provider, sourceObject).Scan(&from, &to)
+	if err != nil {
+		return time.Time{}, time.Time{}, false, fmt.Errorf("read source record range: %w", err)
+	}
+	if !from.Valid || !to.Valid {
+		return time.Time{}, time.Time{}, false, nil
+	}
+	return from.Time.UTC(), to.Time.UTC(), true, nil
+}
+
+func (r *Repository) ensureCostRecordChunksWritable(ctx context.Context, from, to time.Time) error {
+	if from.IsZero() || to.IsZero() {
+		return nil
+	}
+	from = from.UTC().Add(-time.Nanosecond)
+	to = to.UTC().Add(time.Nanosecond)
+	if to.Before(from) {
+		from, to = to, from
+	}
+	var chunks int64
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*)::bigint
+		FROM (
+			SELECT decompress_chunk(chunk, if_compressed => TRUE)
+			FROM show_chunks('cost_records', newer_than => $1::timestamptz, older_than => $2::timestamptz) AS chunk
+		) decompressed
+	`, from, to).Scan(&chunks)
+	if err != nil {
+		return fmt.Errorf("decompress cost record chunks: %w", err)
+	}
+	if chunks > 0 {
+		slog.Info("cost record chunks made writable", "from", from, "to", to, "chunks", chunks)
+	}
+	return nil
 }
 
 func storeCostRecordsTx(ctx context.Context, tx pgx.Tx, records []domain.CanonicalCostRecord) error {

@@ -111,7 +111,7 @@ func TestCollectorCollectStreamFlushesBoundedBatches(t *testing.T) {
 	}
 }
 
-func TestCollectorSkipsOldObjectsBeforeDownload(t *testing.T) {
+func TestCollectorUsesProcessedReportsInsteadOfLastModifiedForDedupe(t *testing.T) {
 	repo := &fakeRepository{processed: map[string]bool{}}
 	client := &fakeObjectStorageClient{
 		namespace: "bling",
@@ -120,6 +120,10 @@ func TestCollectorSkipsOldObjectsBeforeDownload(t *testing.T) {
 			{Name: "reports/new.csv", ETag: "etag-new", LastModified: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC)},
 		},
 		bodies: map[string]string{
+			"reports/old.csv": strings.Join([]string{
+				"lineItem/intervalUsageStart,product/service,usage/billedQuantity,cost/myCost",
+				"2026-04-01T00:00:00Z,Compute,1,2.5",
+			}, "\n"),
 			"reports/new.csv": strings.Join([]string{
 				"lineItem/intervalUsageStart,product/service,usage/billedQuantity,cost/myCost",
 				"2026-05-03T00:00:00Z,Compute,1,3.5",
@@ -144,14 +148,103 @@ func TestCollectorSkipsOldObjectsBeforeDownload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CollectStream() error = %v", err)
 	}
-	if result.SkippedOldFiles != 1 {
-		t.Fatalf("expected one old file skipped, got %d", result.SkippedOldFiles)
+	if result.SkippedOldFiles != 0 {
+		t.Fatalf("expected no timestamp-based old-file skips, got %d", result.SkippedOldFiles)
 	}
-	if client.downloads["reports/old.csv"] != 0 {
-		t.Fatalf("old report was downloaded before skip")
+	if result.FilesProcessed != 2 {
+		t.Fatalf("expected both unprocessed files to be processed, got %d", result.FilesProcessed)
+	}
+	if client.downloads["reports/old.csv"] != 1 {
+		t.Fatalf("old unprocessed report should be downloaded once, got %d", client.downloads["reports/old.csv"])
 	}
 	if client.downloads["reports/new.csv"] != 1 {
 		t.Fatalf("new report should be downloaded once, got %d", client.downloads["reports/new.csv"])
+	}
+}
+
+func TestCollectorRuntimeLimitStopsBeforeNextFile(t *testing.T) {
+	repo := &fakeRepository{processed: map[string]bool{}}
+	client := &fakeObjectStorageClient{
+		namespace: "bling",
+		objects: []ObjectInfo{
+			{Name: "reports/first.csv", ETag: "etag-1"},
+			{Name: "reports/second.csv", ETag: "etag-2"},
+		},
+		bodies: map[string]string{
+			"reports/first.csv": strings.Join([]string{
+				"lineItem/intervalUsageStart,product/service,usage/billedQuantity,cost/myCost",
+				"2026-05-03T00:00:00Z,Compute,1,3.5",
+			}, "\n"),
+			"reports/second.csv": strings.Join([]string{
+				"lineItem/intervalUsageStart,product/service,usage/billedQuantity,cost/myCost",
+				"2026-05-04T00:00:00Z,Compute,1,4.5",
+			}, "\n"),
+		},
+		downloads: map[string]int{},
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	collector := NewWithClient(config.Provider{
+		Bucket:                 "tenant-bucket",
+		Account:                "ocid1.tenancy.oc1..example",
+		MaxFilesPerRun:         5,
+		MaxRecordsPerBatch:     1,
+		MaxMemoryBufferRecords: 1,
+		MaxRuntime:             "1ns",
+	}, logger, repo, client)
+
+	result, err := collector.CollectStream(context.Background(), time.Time{}, func(context.Context, providers.FileBatch) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("CollectStream() error = %v", err)
+	}
+	if !result.HitRuntimeLimit {
+		t.Fatalf("expected runtime limit to be reported")
+	}
+	if result.FilesProcessed != 1 {
+		t.Fatalf("expected first file to finish before runtime stop, got %d", result.FilesProcessed)
+	}
+	if client.downloads["reports/second.csv"] != 0 {
+		t.Fatalf("second file should not be downloaded after runtime limit, got %d", client.downloads["reports/second.csv"])
+	}
+}
+
+func TestCollectorCleansPartialRecordsAfterParseFailure(t *testing.T) {
+	repo := &fakeRepository{processed: map[string]bool{}, deleted: map[string]int{}}
+	client := &fakeObjectStorageClient{
+		namespace: "bling",
+		objects: []ObjectInfo{
+			{Name: "reports/bad.csv", ETag: "etag-bad"},
+		},
+		bodies: map[string]string{
+			"reports/bad.csv": strings.Join([]string{
+				"lineItem/intervalUsageStart,product/service,usage/billedQuantity,cost/myCost",
+				"2026-05-03T00:00:00Z,Compute,1,3.5",
+				"\"unterminated",
+			}, "\n"),
+		},
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	collector := NewWithClient(config.Provider{
+		Bucket:                 "tenant-bucket",
+		Account:                "ocid1.tenancy.oc1..example",
+		MaxFilesPerRun:         5,
+		MaxRecordsPerBatch:     1,
+		MaxMemoryBufferRecords: 1,
+		MaxRuntime:             "1m",
+	}, logger, repo, client)
+
+	result, err := collector.CollectStream(context.Background(), time.Time{}, func(context.Context, providers.FileBatch) error {
+		return nil
+	})
+	if err == nil {
+		t.Fatalf("expected parse error")
+	}
+	if result.RecordsProcessed != 1 {
+		t.Fatalf("expected one record before parse failure, got %d", result.RecordsProcessed)
+	}
+	if repo.deleted["reports/bad.csv"] != 1 {
+		t.Fatalf("expected partial records cleanup once, got %d", repo.deleted["reports/bad.csv"])
 	}
 }
 
@@ -179,6 +272,7 @@ func (f *fakeObjectStorageClient) GetObject(_ context.Context, _, _, objectName 
 
 type fakeRepository struct {
 	processed map[string]bool
+	deleted   map[string]int
 }
 
 func (f *fakeRepository) AggregateCosts(context.Context, time.Time, time.Time, string) ([]domain.AggregatedCost, error) {
@@ -205,7 +299,10 @@ func (f *fakeRepository) StoreCostRecords(context.Context, []domain.CanonicalCos
 	return nil
 }
 
-func (f *fakeRepository) DeleteCostRecordsForSource(context.Context, domain.Provider, string) error {
+func (f *fakeRepository) DeleteCostRecordsForSource(_ context.Context, _ domain.Provider, sourceObject string) error {
+	if f.deleted != nil {
+		f.deleted[sourceObject]++
+	}
 	return nil
 }
 

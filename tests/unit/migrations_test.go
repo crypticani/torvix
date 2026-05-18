@@ -12,6 +12,7 @@ func TestTimescaleMigrationsContainRequiredPrimitives(t *testing.T) {
 		"../../migrations/002_processed_report_files.sql",
 		"../../migrations/003_processed_reports.sql",
 		"../../migrations/004_ingestion_checkpoints_lifecycle.sql",
+		"../../migrations/005_cost_records_source_object_index.sql",
 	}
 
 	combined := ""
@@ -33,6 +34,7 @@ func TestTimescaleMigrationsContainRequiredPrimitives(t *testing.T) {
 		"add_retention_policy",
 		"processed_reports",
 		"ingestion_checkpoints",
+		"idx_cost_records_source_object_time",
 	}
 	for _, needle := range required {
 		if !strings.Contains(combined, needle) {

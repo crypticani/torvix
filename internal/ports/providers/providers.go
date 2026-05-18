@@ -22,6 +22,7 @@ type CollectResult struct {
 	RecordsProcessed int
 	BatchesInserted  int
 	HitFileLimit     bool
+	HitRuntimeLimit  bool
 	Failures         int
 }
 

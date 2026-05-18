@@ -156,7 +156,7 @@ func (i Ingestion) WithDefaults() Ingestion {
 		i.RetentionDays = 180
 	}
 	if i.CompressionAfterDays <= 0 {
-		i.CompressionAfterDays = 7
+		i.CompressionAfterDays = 45
 	}
 	if i.MaxFilesPerRun <= 0 {
 		i.MaxFilesPerRun = 25

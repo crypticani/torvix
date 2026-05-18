@@ -37,18 +37,22 @@ type App struct {
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*App, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
+	connectCtx, cancelConnect := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelConnect()
 
-	repo, err := postgres.New(ctx, cfg.DB.DSN, cfg.DB.MaxConns, cfg.DB.MinConns)
+	repo, err := postgres.New(connectCtx, cfg.DB.DSN, cfg.DB.MaxConns, cfg.DB.MinConns)
 	if err != nil {
 		return nil, err
 	}
-	if err := postgres.NewMigrator(repo.Pool(), "migrations").Run(ctx); err != nil {
+	migrationCtx, cancelMigration := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancelMigration()
+	if err := postgres.NewMigrator(repo.Pool(), "migrations").Run(migrationCtx); err != nil {
 		repo.Close()
 		return nil, err
 	}
-	if err := repo.ApplyDataLifecyclePolicies(ctx, cfg.Ingestion.RetentionDays, cfg.Ingestion.CompressionAfterDays); err != nil {
+	lifecycleCtx, cancelLifecycle := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancelLifecycle()
+	if err := repo.ApplyDataLifecyclePolicies(lifecycleCtx, cfg.Ingestion.RetentionDays, cfg.Ingestion.CompressionAfterDays); err != nil {
 		repo.Close()
 		return nil, err
 	}
