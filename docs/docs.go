@@ -166,7 +166,7 @@ const docTemplate = `{
         },
         "/api/v1/ingest": {
             "post": {
-                "description": "Triggers collection of billing data from all enabled cloud providers for the last 24 hours. Returns per-provider ingestion metrics.",
+                "description": "Queues collection of billing data from all enabled cloud providers within the configured rolling ingestion window and returns immediately. Completion is available through the returned status URL and enabled alerting targets.",
                 "produces": [
                     "application/json"
                 ],
@@ -176,18 +176,9 @@ const docTemplate = `{
                 "summary": "Trigger billing data ingestion",
                 "responses": {
                     "202": {
-                        "description": "Ingestion completed successfully when a single provider is enabled",
+                        "description": "Ingestion queued for background processing",
                         "schema": {
-                            "$ref": "#/definitions/internal_ports_http.IngestResponse"
-                        }
-                    },
-                    "207": {
-                        "description": "Ingestion completed with partial failures",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/internal_ports_http.IngestResponse"
-                            }
+                            "$ref": "#/definitions/internal_ports_http.IngestAcceptedResponse"
                         }
                     },
                     "405": {
@@ -196,8 +187,43 @@ const docTemplate = `{
                             "type": "string"
                         }
                     },
-                    "500": {
-                        "description": "Ingestion failed",
+                    "503": {
+                        "description": "Ingestion service unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/internal_ports_http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/ingest/status/{job_id}": {
+            "get": {
+                "description": "Returns the current or completed status for a background ingestion job.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Ingestion"
+                ],
+                "summary": "Get ingestion job status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Ingestion job ID",
+                        "name": "job_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Ingestion job status",
+                        "schema": {
+                            "$ref": "#/definitions/internal_ports_http.IngestionJobResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Ingestion job not found",
                         "schema": {
                             "$ref": "#/definitions/internal_ports_http.ErrorResponse"
                         }
@@ -542,6 +568,75 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_ports_http.IngestAcceptedResponse": {
+            "description": "Response returned when ingestion has been queued for background processing.",
+            "type": "object",
+            "properties": {
+                "job_id": {
+                    "type": "string",
+                    "example": "1760000000000000000"
+                },
+                "message": {
+                    "type": "string",
+                    "example": "ingestion queued and running in the background"
+                },
+                "queued_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "queued"
+                },
+                "status_url": {
+                    "type": "string",
+                    "example": "/api/v1/ingest/status/1760000000000000000"
+                }
+            }
+        },
+        "internal_ports_http.IngestionJobResponse": {
+            "description": "Current or completed background ingestion job status.",
+            "type": "object",
+            "properties": {
+                "completed_at": {
+                    "type": "string"
+                },
+                "days": {
+                    "type": "integer",
+                    "example": 30
+                },
+                "duration_seconds": {
+                    "type": "number",
+                    "example": 12.4
+                },
+                "error": {
+                    "type": "string",
+                    "example": ""
+                },
+                "job_id": {
+                    "type": "string",
+                    "example": "1760000000000000000"
+                },
+                "queued_at": {
+                    "type": "string"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_ports_http.IngestResponse"
+                    }
+                },
+                "since": {
+                    "type": "string"
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string",
+                    "example": "running"
+                }
+            }
+        },
         "internal_ports_http.IngestResponse": {
             "description": "Per-provider ingestion result with metrics.",
             "type": "object",
@@ -558,6 +653,10 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 5
                 },
+                "files_skipped": {
+                    "type": "integer",
+                    "example": 2
+                },
                 "provider": {
                     "type": "string",
                     "example": "oci"
@@ -569,6 +668,10 @@ const docTemplate = `{
                 "records_inserted": {
                     "type": "integer",
                     "example": 1234
+                },
+                "skipped_old_files": {
+                    "type": "integer",
+                    "example": 1
                 }
             }
         },

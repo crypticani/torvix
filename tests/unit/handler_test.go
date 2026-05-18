@@ -1,8 +1,10 @@
 package unit
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -55,13 +57,46 @@ func TestHandlerRoutes(t *testing.T) {
 	}
 }
 
+func TestIngestReturnsBackgroundJob(t *testing.T) {
+	repo := &mockReportingRepo{}
+	analyticsSvc := analytics.New(repo)
+	forecastSvc := forecasting.New(repo)
+	reportingSvc := reporting.New(analyticsSvc, forecastSvc)
+	alertingSvc := alerting.New(&http.Client{}, nil)
+	collectorSvc := collect.New(nil, repo, normalize.New(), nil, nil)
+	reg := prometheus.NewRegistry()
+
+	handler := httpapi.New(collectorSvc, analyticsSvc, forecastSvc, reportingSvc, alertingSvc, reg)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/ingest", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d", http.StatusAccepted, rr.Code)
+	}
+	var response httpapi.IngestAcceptedResponse
+	if err := json.NewDecoder(rr.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.JobID == "" {
+		t.Fatal("expected job id")
+	}
+	if response.Status != "queued" {
+		t.Fatalf("expected queued status, got %q", response.Status)
+	}
+	if !strings.HasSuffix(response.StatusURL, response.JobID) {
+		t.Fatalf("expected status URL to include job id, got %q", response.StatusURL)
+	}
+}
+
 func TestParseRange(t *testing.T) {
 	req := httptest.NewRequest("GET", "/?from=2026-05-01&to=2026-05-15", nil)
-	
+
 	// parseRange is unexported, so we test it via the handler behavior if we want, or just let it be covered
 	// Since we can't easily call unexported, we'll just test the endpoint that uses it.
 	rr := httptest.NewRecorder()
-	
+
 	repo := &mockReportingRepo{}
 	analyticsSvc := analytics.New(repo)
 	handler := httpapi.New(nil, analyticsSvc, nil, nil, nil, prometheus.NewRegistry())

@@ -125,6 +125,96 @@ func TestSendReportTelegramBuildsAPIURL(t *testing.T) {
 	}
 }
 
+func TestSendNotificationHTTPNotifiers(t *testing.T) {
+	tests := []struct {
+		name       string
+		targetType string
+		configure  func(*config.Webhook)
+		assert     func(t *testing.T, body map[string]any)
+	}{
+		{
+			name:       "slack",
+			targetType: "slack",
+			assert: func(t *testing.T, body map[string]any) {
+				if _, ok := body["blocks"].([]any); !ok {
+					t.Fatalf("expected slack blocks, got %#v", body)
+				}
+			},
+		},
+		{
+			name:       "discord",
+			targetType: "discord",
+			assert: func(t *testing.T, body map[string]any) {
+				if _, ok := body["embeds"].([]any); !ok {
+					t.Fatalf("expected discord embeds, got %#v", body)
+				}
+			},
+		},
+		{
+			name:       "teams",
+			targetType: "teams",
+			assert: func(t *testing.T, body map[string]any) {
+				if body["@type"] != "MessageCard" {
+					t.Fatalf("expected teams MessageCard, got %#v", body)
+				}
+			},
+		},
+		{
+			name:       "telegram",
+			targetType: "telegram",
+			configure: func(target *config.Webhook) {
+				target.ChatID = "12345"
+			},
+			assert: func(t *testing.T, body map[string]any) {
+				if body["chat_id"] != "12345" {
+					t.Fatalf("expected telegram chat id, got %#v", body)
+				}
+				if !strings.Contains(body["text"].(string), "CloudPulse Ingestion Succeeded") {
+					t.Fatalf("expected ingestion notification text, got %#v", body)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got map[string]any
+			client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				if r.Method != http.MethodPost {
+					t.Fatalf("expected POST, got %s", r.Method)
+				}
+				if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+					t.Fatalf("expected json content type, got %s", ct)
+				}
+				if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+					t.Fatalf("decode body: %v", err)
+				}
+				return &http.Response{
+					StatusCode: http.StatusNoContent,
+					Status:     "204 No Content",
+					Body:       io.NopCloser(strings.NewReader("")),
+					Header:     make(http.Header),
+				}, nil
+			})}
+
+			target := config.Webhook{
+				Name:    tt.name,
+				Type:    tt.targetType,
+				URL:     "https://example.test/webhook",
+				Enabled: true,
+			}
+			if tt.configure != nil {
+				tt.configure(&target)
+			}
+			svc := New(client, []config.Webhook{target})
+			if err := svc.SendNotification(context.Background(), sampleNotification()); err != nil {
+				t.Fatalf("send notification: %v", err)
+			}
+			tt.assert(t, got)
+		})
+	}
+}
+
 func TestSendReportEmail(t *testing.T) {
 	var gotAddr, gotFrom string
 	var gotTo []string
@@ -167,10 +257,51 @@ func TestSendReportEmail(t *testing.T) {
 	}
 }
 
+func TestSendNotificationEmail(t *testing.T) {
+	var gotMsg []byte
+
+	svc := New(http.DefaultClient, []config.Webhook{{
+		Name:          "email",
+		Type:          "email",
+		Enabled:       true,
+		SMTPHost:      "smtp.example.test",
+		SMTPPort:      2525,
+		From:          "finops@example.test",
+		To:            []string{"ops@example.test"},
+		SubjectPrefix: "[CloudPulse]",
+	}})
+	svc.sendMail = func(_ string, _ smtp.Auth, _ string, _ []string, msg []byte) error {
+		gotMsg = append([]byte(nil), msg...)
+		return nil
+	}
+
+	if err := svc.SendNotification(context.Background(), sampleNotification()); err != nil {
+		t.Fatalf("send notification: %v", err)
+	}
+	msg := string(gotMsg)
+	if !strings.Contains(msg, "Subject: [CloudPulse] CloudPulse Ingestion Succeeded") {
+		t.Fatalf("expected subject in email, got %s", msg)
+	}
+	if !strings.Contains(msg, "Records inserted: 100") {
+		t.Fatalf("expected notification field in email, got %s", msg)
+	}
+}
+
 func TestSendReportUnsupportedNotifier(t *testing.T) {
 	svc := New(http.DefaultClient, []config.Webhook{{Name: "bad", Type: "pager", Enabled: true}})
 	if err := svc.SendReport(context.Background(), sampleReport()); err == nil {
 		t.Fatal("expected unsupported notifier error")
+	}
+}
+
+func sampleNotification() Notification {
+	return Notification{
+		Title:    "CloudPulse Ingestion Succeeded",
+		Severity: "success",
+		Message:  "Background ingestion finished with status success.",
+		Fields: []NotificationField{
+			{Name: "Records inserted", Value: "100"},
+		},
 	}
 }
 
