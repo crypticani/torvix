@@ -77,7 +77,10 @@ Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are 
 
 3. Set production OCI provider credentials in `configs/config.prod.yaml`.
 
-4. Start only the CloudPulse app:
+4. Configure any alerting targets under `reporting.webhooks`.
+   The production example includes disabled placeholders for Slack, Microsoft Teams, Telegram, Discord, and SMTP email. Keep only the targets you use, replace placeholder secrets, set the correct `currency`, and set `enabled: true`.
+
+5. Start only the CloudPulse app:
 
    ```bash
    docker compose -f docker-compose.prod.yml up --build -d
@@ -89,7 +92,7 @@ Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are 
    make compose-prod-up
    ```
 
-5. Validate the app:
+6. Validate the app:
 
    ```bash
    curl http://localhost:8080/healthz
