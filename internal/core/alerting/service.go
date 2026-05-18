@@ -26,6 +26,18 @@ type Service struct {
 	sendMail smtpSender
 }
 
+type Notification struct {
+	Title    string
+	Severity string
+	Message  string
+	Fields   []NotificationField
+}
+
+type NotificationField struct {
+	Name  string
+	Value string
+}
+
 func New(client *http.Client, webhooks []config.Webhook) *Service {
 	if client == nil {
 		client = http.DefaultClient
@@ -39,6 +51,18 @@ func (s *Service) SendReport(ctx context.Context, report domain.Report) error {
 			continue
 		}
 		if err := s.sendReport(ctx, target, report); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) SendNotification(ctx context.Context, notification Notification) error {
+	for _, target := range s.webhooks {
+		if !target.Enabled {
+			continue
+		}
+		if err := s.sendNotification(ctx, target, notification); err != nil {
 			return err
 		}
 	}
@@ -61,6 +85,27 @@ func (s *Service) sendReport(ctx context.Context, target config.Webhook, report 
 		return s.postJSON(ctx, target, endpoint, body)
 	case "email", "smtp":
 		return s.sendEmail(target, report)
+	default:
+		return fmt.Errorf("%s notifier type %q is not supported", target.Name, target.Type)
+	}
+}
+
+func (s *Service) sendNotification(ctx context.Context, target config.Webhook, notification Notification) error {
+	switch strings.ToLower(target.Type) {
+	case "slack":
+		return s.postJSON(ctx, target, target.URL, formatSlackNotification(notification))
+	case "discord":
+		return s.postJSON(ctx, target, target.URL, formatDiscordNotification(notification))
+	case "teams", "msteams", "microsoft_teams":
+		return s.postJSON(ctx, target, target.URL, formatTeamsNotification(notification))
+	case "telegram":
+		endpoint, body, err := formatTelegramNotification(target, notification)
+		if err != nil {
+			return err
+		}
+		return s.postJSON(ctx, target, endpoint, body)
+	case "email", "smtp":
+		return s.sendNotificationEmail(target, notification)
 	default:
 		return fmt.Errorf("%s notifier type %q is not supported", target.Name, target.Type)
 	}
@@ -90,7 +135,35 @@ func (s *Service) postJSON(ctx context.Context, target config.Webhook, endpoint 
 	if resp.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("%s notifier status: %s", target.Name, resp.Status)
 	}
-	slog.Info("alert report delivered", "target", target.Name, "type", target.Type)
+	slog.Info("alert webhook delivered", "target", target.Name, "type", target.Type)
+	return nil
+}
+
+func (s *Service) sendNotificationEmail(target config.Webhook, notification Notification) error {
+	if target.SMTPHost == "" {
+		return fmt.Errorf("%s email smtp_host is required", target.Name)
+	}
+	if target.From == "" {
+		return fmt.Errorf("%s email from is required", target.Name)
+	}
+	if len(target.To) == 0 {
+		return fmt.Errorf("%s email to is required", target.Name)
+	}
+	port := target.SMTPPort
+	if port == 0 {
+		port = 587
+	}
+	addr := fmt.Sprintf("%s:%d", target.SMTPHost, port)
+	var auth smtp.Auth
+	if target.Username != "" || target.Password != "" {
+		auth = smtp.PlainAuth("", target.Username, target.Password, target.SMTPHost)
+	}
+
+	msg := formatNotificationEmail(target, notification)
+	if err := s.sendMail(addr, auth, target.From, target.To, msg); err != nil {
+		return fmt.Errorf("%s email send: %w", target.Name, err)
+	}
+	slog.Info("alert notification delivered", "target", target.Name, "type", target.Type, "recipients", len(target.To))
 	return nil
 }
 
@@ -120,6 +193,87 @@ func (s *Service) sendEmail(target config.Webhook, report domain.Report) error {
 	}
 	slog.Info("alert report delivered", "target", target.Name, "type", target.Type, "recipients", len(target.To))
 	return nil
+}
+
+func formatSlackNotification(notification Notification) any {
+	blocks := []map[string]any{
+		{
+			"type": "header",
+			"text": map[string]string{"type": "plain_text", "text": notification.Title},
+		},
+		{
+			"type": "section",
+			"text": map[string]string{"type": "mrkdwn", "text": notificationText(notification)},
+		},
+	}
+	return map[string]any{"blocks": blocks}
+}
+
+func formatDiscordNotification(notification Notification) any {
+	fields := make([]map[string]any, 0, len(notification.Fields))
+	for _, field := range notification.Fields {
+		fields = append(fields, map[string]any{"name": field.Name, "value": field.Value, "inline": true})
+	}
+	return map[string]any{
+		"embeds": []map[string]any{{
+			"title":       notification.Title,
+			"description": notification.Message,
+			"color":       notificationColor(notification.Severity),
+			"fields":      fields,
+		}},
+	}
+}
+
+func formatTeamsNotification(notification Notification) any {
+	facts := make([]map[string]string, 0, len(notification.Fields))
+	for _, field := range notification.Fields {
+		facts = append(facts, map[string]string{"name": field.Name, "value": field.Value})
+	}
+	return map[string]any{
+		"@type":      "MessageCard",
+		"@context":   "https://schema.org/extensions",
+		"summary":    notification.Title,
+		"themeColor": notificationColorHex(notification.Severity),
+		"title":      notification.Title,
+		"text":       notification.Message,
+		"sections":   []map[string]any{{"facts": facts}},
+	}
+}
+
+func formatTelegramNotification(target config.Webhook, notification Notification) (string, any, error) {
+	endpoint := target.URL
+	if endpoint == "" {
+		if target.BotToken == "" {
+			return "", nil, fmt.Errorf("%s telegram bot_token or url is required", target.Name)
+		}
+		endpoint = "https://api.telegram.org/bot" + url.PathEscape(target.BotToken) + "/sendMessage"
+	}
+	if target.ChatID == "" {
+		return "", nil, fmt.Errorf("%s telegram chat_id is required", target.Name)
+	}
+	body := map[string]any{
+		"chat_id": target.ChatID,
+		"text":    notification.Title + "\n" + notificationText(notification),
+	}
+	if target.ParseMode != "" {
+		body["parse_mode"] = target.ParseMode
+	}
+	return endpoint, body, nil
+}
+
+func formatNotificationEmail(target config.Webhook, notification Notification) []byte {
+	subject := notification.Title
+	if target.SubjectPrefix != "" {
+		subject = strings.TrimSpace(target.SubjectPrefix) + " " + subject
+	}
+	headers := []string{
+		"From: " + target.From,
+		"To: " + strings.Join(target.To, ", "),
+		"Subject: " + subject,
+		"MIME-Version: 1.0",
+		"Content-Type: text/plain; charset=UTF-8",
+	}
+	return []byte(strings.Join(headers, "\r\n") + "\r\n\r\n" + notification.Title + "\n\n" + notificationText(notification))
 }
 
 func formatSlack(target config.Webhook, report domain.Report) any {
@@ -283,6 +437,44 @@ func formatCost(currency string, amount float64) string {
 		return fmt.Sprintf("%.2f", amount)
 	}
 	return fmt.Sprintf("%s %.2f", strings.ToUpper(currency), amount)
+}
+
+func notificationText(notification Notification) string {
+	var b strings.Builder
+	if notification.Message != "" {
+		b.WriteString(notification.Message)
+	}
+	for _, field := range notification.Fields {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(field.Name)
+		b.WriteString(": ")
+		b.WriteString(field.Value)
+	}
+	return b.String()
+}
+
+func notificationColor(severity string) int {
+	switch strings.ToLower(severity) {
+	case "error", "failed", "failure":
+		return 15158332
+	case "warning", "partial_failure":
+		return 16776960
+	default:
+		return 3066993
+	}
+}
+
+func notificationColorHex(severity string) string {
+	switch strings.ToLower(severity) {
+	case "error", "failed", "failure":
+		return "E81123"
+	case "warning", "partial_failure":
+		return "FFCC00"
+	default:
+		return "2ECC71"
+	}
 }
 
 func teamsColor(anomalyCount int) string {

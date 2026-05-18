@@ -55,10 +55,9 @@ func (c *Collector) Collect(ctx context.Context, since time.Time) (providers.Col
 
 func (c *Collector) CollectStream(ctx context.Context, since time.Time, handle providers.BatchHandler) (providers.CollectResult, error) {
 	limits := c.cfg.IngestionLimits()
+	var runDeadline time.Time
 	if limits.MaxRuntime > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, limits.MaxRuntime)
-		defer cancel()
+		runDeadline = time.Now().Add(limits.MaxRuntime)
 	}
 
 	namespace, err := c.resolveNamespace(ctx)
@@ -92,11 +91,10 @@ func (c *Collector) CollectStream(ctx context.Context, since time.Time, handle p
 			errs = append(errs, err)
 			break
 		}
-		if !object.LastModified.IsZero() && object.LastModified.Before(since) {
-			result.FilesSkipped++
-			result.SkippedOldFiles++
-			c.logger.Debug("skipping old OCI report before download", "object", object.Name, "etag", object.ETag, "last_modified", object.LastModified, "since", since)
-			continue
+		if !runDeadline.IsZero() && startedFiles > 0 && time.Now().After(runDeadline) {
+			result.HitRuntimeLimit = true
+			c.logger.Warn("OCI max runtime reached before starting next report", "limit", limits.MaxRuntime, "files_processed", result.FilesProcessed, "records_processed", result.RecordsProcessed)
+			break
 		}
 		identity := object.Name + "|" + object.ETag
 		if _, ok := seen[identity]; ok {
@@ -191,6 +189,9 @@ func (c *Collector) CollectStream(ctx context.Context, since time.Time, handle p
 			result.Failures++
 			consecutiveFailures++
 			c.logger.Error("failed to parse OCI report", "object", object.Name, "error", parseErr)
+			if cleanupErr := c.cleanupPartialIngest(object.Name); cleanupErr != nil {
+				errs = append(errs, fmt.Errorf("cleanup partial %s: %w", object.Name, cleanupErr))
+			}
 			if consecutiveFailures >= maxConsecutiveObjectFailures || ctx.Err() != nil {
 				c.logger.Warn("stopping OCI ingestion after parse failure", "failures", consecutiveFailures, "context_error", ctx.Err())
 				break
@@ -204,6 +205,9 @@ func (c *Collector) CollectStream(ctx context.Context, since time.Time, handle p
 			errs = append(errs, fmt.Errorf("flush %s: %w", object.Name, err))
 			result.Failures++
 			consecutiveFailures++
+			if cleanupErr := c.cleanupPartialIngest(object.Name); cleanupErr != nil {
+				errs = append(errs, fmt.Errorf("cleanup partial %s: %w", object.Name, cleanupErr))
+			}
 			if consecutiveFailures >= maxConsecutiveObjectFailures || ctx.Err() != nil {
 				c.logger.Warn("stopping OCI ingestion after flush failure", "failures", consecutiveFailures, "context_error", ctx.Err())
 				break
@@ -215,6 +219,9 @@ func (c *Collector) CollectStream(ctx context.Context, since time.Time, handle p
 				errs = append(errs, fmt.Errorf("mark processed %s: %w", object.Name, err))
 				result.Failures++
 				consecutiveFailures++
+				if cleanupErr := c.cleanupPartialIngest(object.Name); cleanupErr != nil {
+					errs = append(errs, fmt.Errorf("cleanup partial %s: %w", object.Name, cleanupErr))
+				}
 				if consecutiveFailures >= maxConsecutiveObjectFailures || ctx.Err() != nil {
 					c.logger.Warn("stopping OCI ingestion after mark-processed failure", "failures", consecutiveFailures, "context_error", ctx.Err())
 					break
@@ -229,6 +236,20 @@ func (c *Collector) CollectStream(ctx context.Context, since time.Time, handle p
 	}
 
 	return result, errors.Join(errs...)
+}
+
+func (c *Collector) cleanupPartialIngest(objectName string) error {
+	if c.repo == nil || objectName == "" {
+		return nil
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if err := c.repo.DeleteCostRecordsForSource(cleanupCtx, domain.ProviderOCI, objectName); err != nil {
+		c.logger.Error("failed to clean up partial OCI report records", "object", objectName, "error", err)
+		return err
+	}
+	c.logger.Info("partial OCI report records cleaned up", "object", objectName)
+	return nil
 }
 
 func (c *Collector) resolveNamespace(ctx context.Context) (string, error) {

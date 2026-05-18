@@ -3,8 +3,11 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,6 +31,7 @@ type Handler struct {
 	alerting     *alerting.Service
 	metrics      http.Handler
 	lookbackDays int
+	ingestions   *ingestionJobStore
 }
 
 func New(collector *collect.Service, analytics *analytics.Service, forecasting *forecasting.Service, reporting *reporting.Service, alerting *alerting.Service, reg *prometheus.Registry) *Handler {
@@ -47,6 +51,7 @@ func NewWithLookback(collector *collect.Service, analytics *analytics.Service, f
 		alerting:     alerting,
 		metrics:      promhttp.HandlerFor(reg, promhttp.HandlerOpts{}),
 		lookbackDays: lookbackDays,
+		ingestions:   newIngestionJobStore(),
 	}
 	h.routes()
 	return h
@@ -55,6 +60,7 @@ func NewWithLookback(collector *collect.Service, analytics *analytics.Service, f
 func (h *Handler) routes() {
 	h.mux.HandleFunc("/healthz", h.health)
 	h.mux.HandleFunc("/api/v1/ingest", h.ingest)
+	h.mux.HandleFunc("/api/v1/ingest/status/", h.ingestStatus)
 	h.mux.HandleFunc("/api/v1/analytics/summary", h.summary)
 	h.mux.HandleFunc("/api/v1/analytics/variance", h.variance)
 	h.mux.HandleFunc("/api/v1/analytics/anomalies", h.anomalies)
@@ -85,18 +91,21 @@ func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 // ingest godoc
 //
 //	@Summary		Trigger billing data ingestion
-//	@Description	Triggers collection of billing data from all enabled cloud providers within the configured rolling ingestion window. Returns per-provider ingestion metrics.
+//	@Description	Queues collection of billing data from all enabled cloud providers within the configured rolling ingestion window and returns immediately. Completion is available through the returned status URL and enabled alerting targets.
 //	@Tags			Ingestion
 //	@Produce		json
 //	@Param			days	query		int		false	"Number of days to look back for ingestion. Defaults to configured rolling lookback, normally 30."	example(30)
-//	@Success		202	{object}	IngestResponse	"Ingestion completed successfully when a single provider is enabled"
-//	@Failure		207	{array}		IngestResponse	"Ingestion completed with partial failures"
+//	@Success		202	{object}	IngestAcceptedResponse	"Ingestion queued for background processing"
 //	@Failure		405	{string}	string			"Method not allowed"
-//	@Failure		500	{object}	ErrorResponse	"Ingestion failed"
+//	@Failure		503	{object}	ErrorResponse	"Ingestion service unavailable"
 //	@Router			/api/v1/ingest [post]
 func (h *Handler) ingest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if h.collector == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "ingestion collector is not configured"})
 		return
 	}
 	days := 0
@@ -109,10 +118,76 @@ func (h *Handler) ingest(w http.ResponseWriter, r *http.Request) {
 	if days > 0 {
 		since = time.Now().UTC().AddDate(0, 0, -days)
 	}
-	runCtx := context.WithoutCancel(r.Context())
-	results, err := h.collector.Run(runCtx, since)
+	job, started := h.ingestions.enqueue(days, since)
+	if started {
+		go h.runIngestionJob(job.JobID, since)
+	}
 
-	// Build structured response from provider results.
+	statusURL := "/api/v1/ingest/status/" + job.JobID
+	message := "ingestion queued and running in the background"
+	if !started {
+		message = "ingestion is already running; duplicate request was not started"
+	}
+	writeJSON(w, http.StatusAccepted, IngestAcceptedResponse{
+		JobID:     job.JobID,
+		Status:    job.Status,
+		Message:   message,
+		StatusURL: statusURL,
+		QueuedAt:  job.QueuedAt,
+	})
+}
+
+// ingestStatus godoc
+//
+//	@Summary		Get ingestion job status
+//	@Description	Returns the current or completed status for a background ingestion job.
+//	@Tags			Ingestion
+//	@Produce		json
+//	@Param			job_id	path		string	true	"Ingestion job ID"
+//	@Success		200		{object}	IngestionJobResponse	"Ingestion job status"
+//	@Failure		404		{object}	ErrorResponse			"Ingestion job not found"
+//	@Router			/api/v1/ingest/status/{job_id} [get]
+func (h *Handler) ingestStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	jobID := strings.TrimPrefix(r.URL.Path, "/api/v1/ingest/status/")
+	if jobID == "" {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "ingestion job not found"})
+		return
+	}
+	job, ok := h.ingestions.get(jobID)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "ingestion job not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
+}
+
+func (h *Handler) runIngestionJob(jobID string, since time.Time) {
+	h.ingestions.markRunning(jobID)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err := fmt.Errorf("ingestion panic: %v", recovered)
+			job := h.ingestions.complete(jobID, ingestionStatusFailed, nil, err)
+			h.notifyIngestionComplete(job)
+		}
+	}()
+	results, err := h.collector.Run(context.Background(), since)
+	resp := ingestionResponses(results)
+	status := ingestionStatusSuccess
+	if err != nil && len(resp) > 0 {
+		status = ingestionStatusPartial
+	}
+	if err != nil && len(resp) == 0 {
+		status = ingestionStatusFailed
+	}
+	job := h.ingestions.complete(jobID, status, resp, err)
+	h.notifyIngestionComplete(job)
+}
+
+func ingestionResponses(results []collect.ProviderResult) []IngestResponse {
 	resp := make([]IngestResponse, 0, len(results))
 	for _, pr := range results {
 		resp = append(resp, IngestResponse{
@@ -126,21 +201,69 @@ func (h *Handler) ingest(w http.ResponseWriter, r *http.Request) {
 			Error:           pr.Error,
 		})
 	}
+	return resp
+}
 
-	if err != nil && len(resp) == 0 {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+func (h *Handler) notifyIngestionComplete(job IngestionJobResponse) {
+	if h.alerting == nil {
 		return
 	}
-	if err != nil {
-		// Partial failure: some providers succeeded, some failed.
-		writeJSON(w, http.StatusMultiStatus, resp)
-		return
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := h.alerting.SendNotification(ctx, ingestionNotification(job)); err != nil {
+		slog.Error("failed to deliver ingestion completion alert", "job_id", job.JobID, "error", err)
 	}
-	if len(resp) == 1 {
-		writeJSON(w, http.StatusAccepted, resp[0])
-		return
+}
+
+func ingestionNotification(job IngestionJobResponse) alerting.Notification {
+	filesProcessed, filesSkipped, skippedOld, recordsParsed, recordsInserted := 0, 0, 0, 0, 0
+	for _, result := range job.Results {
+		filesProcessed += result.FilesProcessed
+		filesSkipped += result.FilesSkipped
+		skippedOld += result.SkippedOldFiles
+		recordsParsed += result.RecordsParsed
+		recordsInserted += result.RecordsInserted
 	}
-	writeJSON(w, http.StatusAccepted, resp)
+
+	severity := "success"
+	if job.Status == ingestionStatusPartial {
+		severity = "warning"
+	}
+	if job.Status == ingestionStatusFailed {
+		severity = "error"
+	}
+	message := fmt.Sprintf("Background ingestion finished with status %s.", job.Status)
+	if job.Error != "" {
+		message += " Error: " + job.Error
+	}
+
+	return alerting.Notification{
+		Title:    "CloudPulse Ingestion " + titleForNotification(job.Status),
+		Severity: severity,
+		Message:  message,
+		Fields: []alerting.NotificationField{
+			{Name: "Job ID", Value: job.JobID},
+			{Name: "Files processed", Value: strconv.Itoa(filesProcessed)},
+			{Name: "Files skipped", Value: strconv.Itoa(filesSkipped)},
+			{Name: "Old files skipped", Value: strconv.Itoa(skippedOld)},
+			{Name: "Records parsed", Value: strconv.Itoa(recordsParsed)},
+			{Name: "Records inserted", Value: strconv.Itoa(recordsInserted)},
+			{Name: "Duration", Value: fmt.Sprintf("%.1fs", job.DurationSeconds)},
+		},
+	}
+}
+
+func titleForNotification(status string) string {
+	switch status {
+	case ingestionStatusSuccess:
+		return "Succeeded"
+	case ingestionStatusPartial:
+		return "Partially Failed"
+	case ingestionStatusFailed:
+		return "Failed"
+	default:
+		return strings.ReplaceAll(status, "_", " ")
+	}
 }
 
 // summary godoc

@@ -83,26 +83,30 @@ Trigger ingestion and validate results:
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/ingest
+curl http://localhost:8080/api/v1/ingest/status/<job_id>
 psql "$DATABASE_URL" -c "SELECT count(*) FROM cost_records;"
 curl "http://localhost:8080/api/v1/analytics/summary?window=weekly"
 ```
 
-If only OCI is enabled, `/api/v1/ingest` returns one object:
+`POST /api/v1/ingest` returns immediately with a background job. This keeps API clients from timing out while large OCI reports are streamed and inserted. If an ingestion is already running, CloudPulse returns the active job instead of starting a duplicate run. Recent job status is retained in memory for follow-up checks.
 
 ```json
 {
-  "provider": "oci",
-  "files_processed": 1,
-  "records_parsed": 100,
-  "records_inserted": 100,
-  "duration_seconds": 2.4
+  "job_id": "1760000000000000000",
+  "status": "queued",
+  "message": "ingestion queued and running in the background",
+  "status_url": "/api/v1/ingest/status/1760000000000000000",
+  "queued_at": "2026-05-18T03:17:19Z"
 }
 ```
+
+When enabled alerting targets are configured, CloudPulse sends an ingestion completion notification with success, partial failure, or failure status plus files and record counts.
 
 ## API
 
 - `GET /healthz`
 - `POST /api/v1/ingest`
+- `GET /api/v1/ingest/status/{job_id}`
 - `GET /api/v1/analytics/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&window=daily|weekly|monthly`
 - `GET /api/v1/analytics/anomalies?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/analytics/forecast?from=YYYY-MM-DD&to=YYYY-MM-DD`

@@ -120,7 +120,7 @@ func (s *Service) Run(ctx context.Context, since time.Time) ([]ProviderResult, e
 			if s.logger != nil {
 				s.logger.Info("collector done", "provider", c.Name(), "files_processed", result.FilesProcessed, "files_skipped", result.FilesSkipped, "skipped_old_files", result.SkippedOldFiles, "records_parsed", result.RecordsProcessed, "records_inserted", recordsInserted, "duration", pr.Duration.String())
 			}
-			if err == nil && result.FilesProcessed > 0 && !result.HitFileLimit {
+			if err == nil && result.FilesProcessed > 0 && !result.HitFileLimit && !result.HitRuntimeLimit {
 				if checkpointErr := s.repo.MarkIngestionCheckpoint(ctx, providerName(c.Name()), time.Now().UTC()); checkpointErr != nil {
 					mu.Lock()
 					allErrs = append(allErrs, checkpointErr)
@@ -130,7 +130,7 @@ func (s *Service) Run(ctx context.Context, since time.Time) ([]ProviderResult, e
 					}
 				}
 			} else if err == nil && s.logger != nil {
-				s.logger.Info("ingestion checkpoint unchanged", "provider", c.Name(), "files_processed", result.FilesProcessed, "hit_file_limit", result.HitFileLimit)
+				s.logger.Info("ingestion checkpoint unchanged", "provider", c.Name(), "files_processed", result.FilesProcessed, "hit_file_limit", result.HitFileLimit, "hit_runtime_limit", result.HitRuntimeLimit)
 			}
 
 			mu.Lock()

@@ -48,6 +48,9 @@ CREATE INDEX IF NOT EXISTS idx_cost_records_region_time
 CREATE INDEX IF NOT EXISTS idx_cost_records_account_time
     ON cost_records (account_id, "timestamp" DESC);
 
+CREATE INDEX IF NOT EXISTS idx_cost_records_source_object_time
+    ON cost_records (cloud_provider, source_object, "timestamp" DESC);
+
 CREATE INDEX IF NOT EXISTS idx_cost_records_tags_gin
     ON cost_records USING GIN (tags);
 

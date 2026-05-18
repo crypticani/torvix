@@ -93,6 +93,55 @@ definitions:
         example: internal server error
         type: string
     type: object
+  internal_ports_http.IngestAcceptedResponse:
+    description: Response returned when ingestion has been queued for background processing.
+    properties:
+      job_id:
+        example: "1760000000000000000"
+        type: string
+      message:
+        example: ingestion queued and running in the background
+        type: string
+      queued_at:
+        type: string
+      status:
+        example: queued
+        type: string
+      status_url:
+        example: /api/v1/ingest/status/1760000000000000000
+        type: string
+    type: object
+  internal_ports_http.IngestionJobResponse:
+    description: Current or completed background ingestion job status.
+    properties:
+      completed_at:
+        type: string
+      days:
+        example: 30
+        type: integer
+      duration_seconds:
+        example: 12.4
+        type: number
+      error:
+        example: ""
+        type: string
+      job_id:
+        example: "1760000000000000000"
+        type: string
+      queued_at:
+        type: string
+      results:
+        items:
+          $ref: '#/definitions/internal_ports_http.IngestResponse'
+        type: array
+      since:
+        type: string
+      started_at:
+        type: string
+      status:
+        example: running
+        type: string
+    type: object
   internal_ports_http.IngestResponse:
     description: Per-provider ingestion result with metrics.
     properties:
@@ -105,6 +154,9 @@ definitions:
       files_processed:
         example: 5
         type: integer
+      files_skipped:
+        example: 2
+        type: integer
       provider:
         example: oci
         type: string
@@ -113,6 +165,9 @@ definitions:
         type: integer
       records_inserted:
         example: 1234
+        type: integer
+      skipped_old_files:
+        example: 1
         type: integer
     type: object
   internal_ports_http.StatusResponse:
@@ -236,30 +291,49 @@ paths:
       - Analytics
   /api/v1/ingest:
     post:
-      description: Triggers collection of billing data from all enabled cloud providers
-        for the last 24 hours. Returns per-provider ingestion metrics.
+      description: Queues collection of billing data from all enabled cloud providers
+        within the configured rolling ingestion window and returns immediately. Completion
+        is available through the returned status URL and enabled alerting targets.
       produces:
       - application/json
       responses:
         "202":
-          description: Ingestion completed successfully when a single provider is enabled
+          description: Ingestion queued for background processing
           schema:
-            $ref: '#/definitions/internal_ports_http.IngestResponse'
-        "207":
-          description: Ingestion completed with partial failures
-          schema:
-            items:
-              $ref: '#/definitions/internal_ports_http.IngestResponse'
-            type: array
+            $ref: '#/definitions/internal_ports_http.IngestAcceptedResponse'
         "405":
           description: Method not allowed
           schema:
             type: string
-        "500":
-          description: Ingestion failed
+        "503":
+          description: Ingestion service unavailable
           schema:
             $ref: '#/definitions/internal_ports_http.ErrorResponse'
       summary: Trigger billing data ingestion
+      tags:
+      - Ingestion
+  /api/v1/ingest/status/{job_id}:
+    get:
+      description: Returns the current or completed status for a background ingestion
+        job.
+      parameters:
+      - description: Ingestion job ID
+        in: path
+        name: job_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Ingestion job status
+          schema:
+            $ref: '#/definitions/internal_ports_http.IngestionJobResponse'
+        "404":
+          description: Ingestion job not found
+          schema:
+            $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      summary: Get ingestion job status
       tags:
       - Ingestion
   /api/v1/reports/daily:

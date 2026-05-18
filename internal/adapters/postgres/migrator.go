@@ -16,6 +16,8 @@ type Migrator struct {
 	dir  string
 }
 
+const nonTransactionalMigrationMarker = "-- cloudpulse:nontransactional"
+
 func NewMigrator(pool *pgxpool.Pool, dir string) *Migrator {
 	return &Migrator{pool: pool, dir: dir}
 }
@@ -57,12 +59,23 @@ func (m *Migrator) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", name, err)
 		}
+		sqlText := string(sqlBytes)
+
+		if strings.Contains(sqlText, nonTransactionalMigrationMarker) {
+			if _, err := m.pool.Exec(ctx, sqlText); err != nil {
+				return fmt.Errorf("apply migration %s: %w", name, err)
+			}
+			if _, err := m.pool.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ($1) ON CONFLICT (version) DO NOTHING`, name); err != nil {
+				return fmt.Errorf("record migration %s: %w", name, err)
+			}
+			continue
+		}
 
 		tx, err := m.pool.Begin(ctx)
 		if err != nil {
 			return fmt.Errorf("begin migration %s: %w", name, err)
 		}
-		if _, err := tx.Exec(ctx, string(sqlBytes)); err != nil {
+		if _, err := tx.Exec(ctx, sqlText); err != nil {
 			_ = tx.Rollback(ctx)
 			return fmt.Errorf("apply migration %s: %w", name, err)
 		}

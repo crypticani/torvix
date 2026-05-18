@@ -62,3 +62,54 @@ func TestIsReportProcessed(t *testing.T) {
 		t.Fatalf("unmet expectations: %v", err)
 	}
 }
+
+func TestDeleteCostRecordsForSourceDecompressesExistingSourceChunks(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	defer mock.Close()
+
+	from := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC)
+	mock.ExpectQuery(`SELECT MIN\("timestamp"\), MAX\("timestamp"\)`).
+		WithArgs(domain.ProviderOCI, "reports/001.csv.gz").
+		WillReturnRows(pgxmock.NewRows([]string{"min", "max"}).AddRow(from, to))
+	mock.ExpectQuery("decompress_chunk").
+		WithArgs(from.Add(-time.Nanosecond), to.Add(time.Nanosecond)).
+		WillReturnRows(pgxmock.NewRows([]string{"count"}).AddRow(int64(1)))
+	mock.ExpectExec("DELETE FROM cost_records").
+		WithArgs(domain.ProviderOCI, "reports/001.csv.gz").
+		WillReturnResult(pgxmock.NewResult("DELETE", 3))
+
+	repo := NewWithDB(mock)
+	if err := repo.DeleteCostRecordsForSource(context.Background(), domain.ProviderOCI, "reports/001.csv.gz"); err != nil {
+		t.Fatalf("DeleteCostRecordsForSource() error = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestDeleteCostRecordsForSourceSkipsDecompressionWhenSourceIsAbsent(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	defer mock.Close()
+
+	mock.ExpectQuery(`SELECT MIN\("timestamp"\), MAX\("timestamp"\)`).
+		WithArgs(domain.ProviderOCI, "reports/missing.csv.gz").
+		WillReturnRows(pgxmock.NewRows([]string{"min", "max"}).AddRow(nil, nil))
+	mock.ExpectExec("DELETE FROM cost_records").
+		WithArgs(domain.ProviderOCI, "reports/missing.csv.gz").
+		WillReturnResult(pgxmock.NewResult("DELETE", 0))
+
+	repo := NewWithDB(mock)
+	if err := repo.DeleteCostRecordsForSource(context.Background(), domain.ProviderOCI, "reports/missing.csv.gz"); err != nil {
+		t.Fatalf("DeleteCostRecordsForSource() error = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}

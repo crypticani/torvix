@@ -6,3 +6,4 @@ configs/*
 !configs/config.prod.example.yaml
 deploy.sh
 postgres_data/
+tracker.md
