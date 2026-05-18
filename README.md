@@ -143,7 +143,7 @@ CloudPulse has two Docker Compose entry points:
 
 CloudPulse listens on `http.address` from config by default. Override the actual app listener at runtime with `CLOUDPULSE_HTTP_ADDRESS` or `CLOUDPULSE_HTTP_PORT`, which is useful when using host networking.
 
-For production setup, Prometheus scraping, and Grafana dashboard import instructions, see `docs/deployment.md`.
+For production setup, Prometheus scraping, and Grafana dashboard import instructions, see `docs/deployment.md`. If you change the app port, update the Prometheus scrape target in `deploy/prometheus.yml` or your production Prometheus config to match.
 
 ## Configuration Highlights
 
