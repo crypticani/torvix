@@ -1,6 +1,8 @@
 APP=cloudpulse
+DEV_COMPOSE=docker compose -f docker-compose.dev.yml
+PROD_COMPOSE=docker compose -f docker-compose.prod.yml
 
-.PHONY: build run test fmt tidy compose-up compose-down swagger
+.PHONY: build run test fmt tidy compose-up compose-down compose-dev-up compose-dev-down compose-prod-up compose-prod-down compose-dev-config compose-prod-config swagger
 
 build:
 	go build ./cmd/... ./internal/...
@@ -21,7 +23,25 @@ tidy:
 	go mod tidy
 
 compose-up:
-	docker compose up --build
+	$(DEV_COMPOSE) up --build
 
 compose-down:
-	docker compose down -v
+	$(DEV_COMPOSE) down -v
+
+compose-dev-up:
+	$(DEV_COMPOSE) up --build
+
+compose-dev-down:
+	$(DEV_COMPOSE) down -v
+
+compose-prod-up:
+	$(PROD_COMPOSE) up --build -d
+
+compose-prod-down:
+	$(PROD_COMPOSE) down
+
+compose-dev-config:
+	$(DEV_COMPOSE) config --quiet
+
+compose-prod-config:
+	$(PROD_COMPOSE) config --quiet

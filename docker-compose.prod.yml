@@ -1,0 +1,33 @@
+services:
+  cloudpulse:
+    image: ${CLOUDPULSE_IMAGE:-cloudpulse:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cloudpulse
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - CLOUDPULSE_HTTP_ADDRESS
+      - CLOUDPULSE_HTTP_PORT
+    volumes:
+      - ./configs:/app/configs:ro
+    command: ["-config", "/app/configs/config.prod.yaml"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    mem_limit: ${CLOUDPULSE_MEMORY_LIMIT:-512m}
+    cpus: "${CLOUDPULSE_CPU_LIMIT:-1.0}"
+    deploy:
+      resources:
+        limits:
+          cpus: "${CLOUDPULSE_CPU_LIMIT:-1.0}"
+          memory: ${CLOUDPULSE_MEMORY_LIMIT:-512M}
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    healthcheck:
+      test: ["CMD-SHELL", "port=$${CLOUDPULSE_HTTP_PORT:-}; addr=$${CLOUDPULSE_HTTP_ADDRESS:-}; if [ -z \"$$port\" ] && [ -n \"$$addr\" ]; then port=$${addr##*:}; fi; wget -qO- http://127.0.0.1:$${port:-8080}/healthz >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s

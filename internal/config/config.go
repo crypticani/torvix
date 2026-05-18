@@ -3,9 +3,15 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
+)
+
+const (
+	EnvHTTPAddress = "CLOUDPULSE_HTTP_ADDRESS"
+	EnvHTTPPort    = "CLOUDPULSE_HTTP_PORT"
 )
 
 type Config struct {
@@ -111,6 +117,7 @@ func Load(path string) (Config, error) {
 	if err := yaml.Unmarshal(b, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse config: %w", err)
 	}
+	applyEnvOverrides(&cfg)
 	if cfg.HTTP.Address == "" {
 		cfg.HTTP.Address = ":8080"
 	}
@@ -122,6 +129,23 @@ func Load(path string) (Config, error) {
 	}
 	cfg.Ingestion = cfg.Ingestion.WithDefaults()
 	return cfg, nil
+}
+
+func applyEnvOverrides(cfg *Config) {
+	if address := strings.TrimSpace(os.Getenv(EnvHTTPAddress)); address != "" {
+		cfg.HTTP.Address = address
+		return
+	}
+	if port := strings.TrimSpace(os.Getenv(EnvHTTPPort)); port != "" {
+		cfg.HTTP.Address = normalizeHTTPPort(port)
+	}
+}
+
+func normalizeHTTPPort(port string) string {
+	if strings.Contains(port, ":") {
+		return port
+	}
+	return ":" + port
 }
 
 func (i Ingestion) WithDefaults() Ingestion {
