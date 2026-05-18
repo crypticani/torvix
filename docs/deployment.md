@@ -158,13 +158,15 @@ Add this scrape job to your existing Prometheus configuration:
 scrape_configs:
   - job_name: cloudpulse
     metrics_path: /metrics
-    scrape_interval: 15s
+    scrape_interval: 60s
     static_configs:
       - targets:
           - cloudpulse.example.internal:8080
 ```
 
 An example snippet is available at `deploy/prometheus.prod-scrape.example.yml`.
+
+Keep the target port aligned with the CloudPulse listener. For example, if production runs with `CLOUDPULSE_HTTP_PORT=18080` or `http.address: ":18080"`, scrape `cloudpulse.example.internal:18080` instead of `cloudpulse.example.internal:8080`. The `60s` scrape interval is intentional because cost data changes on ingestion/report cadence, not every few seconds; lower it only if you need faster app health or ingestion-failure detection.
 
 After reloading Prometheus, verify the target is up:
 
