@@ -18,5 +18,5 @@ datasources:
       password: cloudpulse
     jsonData:
       sslmode: "disable"
-      postgresVersion: 16
+      postgresVersion: 18
       timescaledb: true
