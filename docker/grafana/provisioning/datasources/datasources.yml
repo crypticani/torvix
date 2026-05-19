@@ -1,5 +1,7 @@
 apiVersion: 1
 
+# Local development only. Production Grafana should use the CloudPulse API
+# datasource example and keep PostgreSQL private.
 datasources:
   - name: Prometheus
     uid: Prometheus
@@ -7,6 +9,13 @@ datasources:
     access: proxy
     url: http://127.0.0.1:9090
     isDefault: true
+  - name: CloudPulse API
+    uid: CloudPulseAPI
+    type: yesoreyeram-infinity-datasource
+    access: proxy
+    url: http://127.0.0.1:8080
+    jsonData:
+      auth_method: "none"
   - name: PostgreSQL
     uid: PostgreSQL
     type: postgres

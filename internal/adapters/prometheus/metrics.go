@@ -19,9 +19,12 @@ type Metrics struct {
 	IngestionFailures     *prometheus.CounterVec
 	IngestionDuration     *prometheus.HistogramVec
 	DatabaseBackendInfo   *prometheus.GaugeVec
+	CostTotal             *prometheus.GaugeVec
+	CostServiceCount      *prometheus.GaugeVec
+	CostAnomalyCount      *prometheus.GaugeVec
 }
 
-func New(namespace string, reg prometheus.Registerer) *Metrics {
+func New(namespace string, reg prometheus.Registerer, costStatsEnabled bool) *Metrics {
 	m := &Metrics{
 		CollectRuns: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: namespace,
@@ -86,7 +89,7 @@ func New(namespace string, reg prometheus.Registerer) *Metrics {
 			Help:      "Database backend information.",
 		}, []string{"backend"}),
 	}
-	reg.MustRegister(
+	collectors := []prometheus.Collector{
 		m.CollectRuns,
 		m.CollectLatency,
 		m.AnomaliesFound,
@@ -99,7 +102,26 @@ func New(namespace string, reg prometheus.Registerer) *Metrics {
 		m.IngestionFailures,
 		m.IngestionDuration,
 		m.DatabaseBackendInfo,
-	)
+	}
+	if costStatsEnabled {
+		m.CostTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "cost_total",
+			Help:      "Last observed total cost for a Grafana aggregate query.",
+		}, []string{"window"})
+		m.CostServiceCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "cost_services",
+			Help:      "Last observed distinct service count for a Grafana aggregate query.",
+		}, []string{"window"})
+		m.CostAnomalyCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "cost_anomalies",
+			Help:      "Last observed anomaly count for a Grafana aggregate query.",
+		}, []string{"window"})
+		collectors = append(collectors, m.CostTotal, m.CostServiceCount, m.CostAnomalyCount)
+	}
+	reg.MustRegister(collectors...)
 	m.DatabaseBackendInfo.WithLabelValues("postgresql").Set(1)
 	return m
 }
@@ -157,4 +179,13 @@ func (m *Metrics) ObserveFailure(provider, stage string, count int) {
 		return
 	}
 	m.IngestionFailures.WithLabelValues(provider, stage).Add(float64(count))
+}
+
+func (m *Metrics) ObserveGrafanaCostStats(window string, totalCost float64, serviceCount, anomalyCount int) {
+	if m.CostTotal == nil || window == "" {
+		return
+	}
+	m.CostTotal.WithLabelValues(window).Set(totalCost)
+	m.CostServiceCount.WithLabelValues(window).Set(float64(serviceCount))
+	m.CostAnomalyCount.WithLabelValues(window).Set(float64(anomalyCount))
 }

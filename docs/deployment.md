@@ -55,9 +55,10 @@ The development setup is self-contained and starts all dependencies.
 The dev Grafana datasource provisioning expects:
 
 - Prometheus datasource UID: `Prometheus`
-- PostgreSQL datasource UID: `PostgreSQL`
+- CloudPulse API datasource UID: `CloudPulseAPI`
+- PostgreSQL datasource UID: `PostgreSQL` for local inspection only
 
-Those UIDs match `dashboards/cloudpulse-overview.json`.
+The bundled dashboard uses `CloudPulseAPI` and `Prometheus`. It does not query PostgreSQL directly.
 
 ## Production Setup
 
@@ -181,37 +182,59 @@ cloudpulse_processed_records_total
 cloudpulse_collector_runs_total
 cloudpulse_ingestion_duration_seconds_count
 cloudpulse_ingestion_failures_total
-cloudpulse_records_pruned_total
+cloudpulse_records_deleted_total
 cloudpulse_compressed_chunks_total
 ```
 
-## Import Dashboard Into Production Grafana
+If `metrics.cost_stats_enabled` is enabled, CloudPulse also exposes coarse aggregate cost gauges from Grafana summary API calls:
 
-The dashboard file is:
-
-```text
-dashboards/cloudpulse-overview.json
+```promql
+cloudpulse_cost_total
+cloudpulse_cost_services
+cloudpulse_cost_anomalies
 ```
 
-The dashboard expects these Grafana datasource UIDs:
+These metrics only use a low-cardinality `window` label. Do not add service, account, resource, tag, source object, or raw billing dimensions as Prometheus labels.
+
+## Import Dashboard Into Production Grafana
+
+CloudPulse supports two Grafana access modes:
+
+- Local development: `dashboards/cloudpulse-overview.json` uses the local CloudPulse API datasource and Prometheus. The local PostgreSQL datasource is provisioned only for direct developer inspection.
+- Production: `dashboards/cloudpulse-overview.json` or `dashboards/cloudpulse-api-overview.prod.json.example` uses CloudPulse HTTP API endpoints through a Grafana HTTP JSON datasource.
+
+PostgreSQL must remain private in production. Do not expose the TimescaleDB port to Grafana users or public networks, and do not provision a production PostgreSQL datasource for dashboards. Production Grafana should read only from CloudPulse API endpoints and Prometheus.
+
+The production dashboard expects these Grafana datasource UIDs:
 
 - `Prometheus`: your production Prometheus datasource.
-- `PostgreSQL`: your production PostgreSQL/TimescaleDB datasource.
+- `CloudPulseAPI`: an HTTP JSON datasource that points at the CloudPulse API.
+
+The production API endpoints are:
+
+```text
+GET /api/v1/grafana/timeseries/cost
+GET /api/v1/grafana/table/top-services
+GET /api/v1/grafana/table/anomalies
+GET /api/v1/grafana/stat/summary
+```
+
+Each endpoint accepts `from=YYYY-MM-DD` and `to=YYYY-MM-DD`. Cost time series and top-services endpoints also accept `window=daily|weekly|monthly`.
 
 ### Option 1: Grafana UI Import
 
 1. In Grafana, go to **Dashboards -> New -> Import**.
-2. Upload or paste `dashboards/cloudpulse-overview.json`.
-3. If Grafana asks for datasources, map:
+2. Install and configure an HTTP JSON datasource such as the Infinity datasource plugin.
+3. Upload or paste `dashboards/cloudpulse-overview.json`.
+4. If Grafana asks for datasources, map:
    - `Prometheus` to your production Prometheus datasource.
-   - `PostgreSQL` to your production PostgreSQL/TimescaleDB datasource.
-4. Open the dashboard and select the relevant `Currency` variable.
+   - `CloudPulseAPI` to your CloudPulse API datasource.
 
 If your existing datasource UIDs are different and Grafana does not prompt for mapping, either create datasource aliases with the UIDs above or edit the JSON before import.
 
 ### Option 2: Grafana Provisioning
 
-Copy the dashboard JSON to your Grafana dashboard provisioning path and configure a provider similar to:
+Copy `dashboards/cloudpulse-overview.json` to your Grafana dashboard provisioning path and configure a provider similar to:
 
 ```yaml
 apiVersion: 1
@@ -226,7 +249,7 @@ providers:
       path: /var/lib/grafana/dashboards
 ```
 
-Create or update Grafana datasource provisioning so the UIDs match:
+Create or update Grafana datasource provisioning so the UIDs match. A starter file is available at `docker/grafana/provisioning/datasources/datasources.prod.yml.example`:
 
 ```yaml
 apiVersion: 1
@@ -239,22 +262,30 @@ datasources:
     url: http://prometheus.example.internal:9090
     isDefault: true
 
-  - name: PostgreSQL
-    uid: PostgreSQL
-    type: postgres
+  - name: CloudPulse API
+    uid: CloudPulseAPI
+    type: yesoreyeram-infinity-datasource
     access: proxy
-    url: postgres.example.internal:5432
-    database: cloudpulse
-    user: cloudpulse
-    secureJsonData:
-      password: replace_with_password
+    url: https://cloudpulse.example.internal
     jsonData:
-      sslmode: require
-      postgresVersion: 16
-      timescaledb: true
+      auth_method: "bearerToken"
+      httpHeaderName1: "Authorization"
+    secureJsonData:
+      httpHeaderValue1: "Bearer replace_with_cloudpulse_grafana_token"
 ```
 
 Restart or reload Grafana provisioning after copying the files.
+
+Enable the CloudPulse Grafana API auth placeholder in production config:
+
+```yaml
+grafana:
+  api_auth:
+    enabled: true
+    bearer_token: "replace_with_long_random_token"
+```
+
+The same value can be supplied with `CLOUDPULSE_GRAFANA_API_BEARER_TOKEN`. When auth is enabled, production Grafana must send `Authorization: Bearer <token>` to `/api/v1/grafana/*`.
 
 ## Operational Notes
 
@@ -262,3 +293,4 @@ Restart or reload Grafana provisioning after copying the files.
 - CloudPulse applies SQL migrations on startup, so the configured database user needs permissions to create tables, indexes, Timescale hypertables, compression policies, and retention policies.
 - Keep `configs/config.prod.yaml` outside git. It is ignored by `.gitignore`.
 - The app should be reachable by Prometheus over the network path configured in the scrape target.
+- The database should be reachable only by CloudPulse and database administration paths, not by production Grafana.

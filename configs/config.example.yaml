@@ -79,3 +79,9 @@ reporting:
 
 metrics:
   namespace: cloudpulse
+  cost_stats_enabled: false
+
+grafana:
+  api_auth:
+    enabled: false
+    bearer_token: ""

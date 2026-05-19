@@ -110,6 +110,10 @@ When enabled alerting targets are configured, CloudPulse sends an ingestion comp
 - `GET /api/v1/analytics/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&window=daily|weekly|monthly`
 - `GET /api/v1/analytics/anomalies?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/analytics/forecast?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /api/v1/grafana/timeseries/cost?from=YYYY-MM-DD&to=YYYY-MM-DD&window=daily`
+- `GET /api/v1/grafana/table/top-services?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /api/v1/grafana/table/anomalies?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /api/v1/grafana/stat/summary?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/reports/daily?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/reports/weekly?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/reports/monthly?from=YYYY-MM-DD&to=YYYY-MM-DD`
@@ -142,8 +146,10 @@ CloudPulse has two Docker Compose entry points:
 
 - **API:** `http://localhost:8080`
 - **Swagger UI:** `http://localhost:8080/swagger/index.html`
-- **Grafana:** `http://localhost:3000` (PostgreSQL and Prometheus datasources are automatically provisioned)
+- **Grafana:** `http://localhost:3000` (CloudPulse API, Prometheus, and local PostgreSQL datasources are automatically provisioned)
 - **Prometheus:** `http://localhost:9090`
+
+The bundled Grafana dashboard reads from the CloudPulse API and Prometheus. The local PostgreSQL datasource is only for direct development inspection; production Grafana should keep PostgreSQL private.
 
 CloudPulse listens on `http.address` from config by default. Override the actual app listener at runtime with `CLOUDPULSE_HTTP_ADDRESS` or `CLOUDPULSE_HTTP_PORT`, which is useful when using host networking.
 

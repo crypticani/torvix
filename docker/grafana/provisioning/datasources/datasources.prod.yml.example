@@ -1,0 +1,22 @@
+apiVersion: 1
+
+# Production mode keeps PostgreSQL private. Grafana reads dashboard data through
+# CloudPulse HTTP API endpoints using the Infinity datasource plugin.
+datasources:
+  - name: Prometheus
+    uid: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus.example.internal:9090
+    isDefault: true
+
+  - name: CloudPulse API
+    uid: CloudPulseAPI
+    type: yesoreyeram-infinity-datasource
+    access: proxy
+    url: https://cloudpulse.example.internal
+    jsonData:
+      auth_method: "bearerToken"
+      httpHeaderName1: "Authorization"
+    secureJsonData:
+      httpHeaderValue1: "Bearer replace_with_cloudpulse_grafana_token"

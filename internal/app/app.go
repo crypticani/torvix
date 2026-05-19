@@ -67,7 +67,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	}
 
 	reg := prom.NewRegistry()
-	metrics := metricsadapter.New(cfg.Metrics.Namespace, reg)
+	metrics := metricsadapter.New(cfg.Metrics.Namespace, reg, cfg.Metrics.CostStatsEnabled)
 
 	normalizer := normalize.New()
 	collectorSvc := collect.NewWithPolicy(logger, repo, normalizer, collectors, metrics, collect.Policy{
@@ -79,7 +79,12 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	forecastingSvc := forecasting.New(repo)
 	reportingSvc := reporting.New(analyticsSvc, forecastingSvc)
 	alertingSvc := alerting.New(&http.Client{Timeout: 10 * time.Second}, cfg.Reporting.Webhooks)
-	handler := httpapi.NewWithLookback(collectorSvc, analyticsSvc, forecastingSvc, reportingSvc, alertingSvc, reg, cfg.Ingestion.LookbackDays)
+	handler := httpapi.NewWithOptions(collectorSvc, analyticsSvc, forecastingSvc, reportingSvc, alertingSvc, reg, httpapi.HandlerOptions{
+		LookbackDays:       cfg.Ingestion.LookbackDays,
+		GrafanaAuthEnabled: cfg.Grafana.APIAuth.Enabled,
+		GrafanaAuthToken:   cfg.Grafana.APIAuth.BearerToken,
+		GrafanaMetrics:     metrics,
+	})
 
 	schedulerCtx, cancelScheduler := context.WithCancel(context.Background())
 	return &App{

@@ -1,0 +1,238 @@
+{
+  "title": "CloudPulse API FinOps Overview",
+  "uid": "cloudpulse-api-finops-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Total Cost",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "CloudPulseAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/api/v1/grafana/stat/summary?from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}&window=daily",
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "total_cost",
+              "text": "total_cost",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Anomalies",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "CloudPulseAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/api/v1/grafana/stat/summary?from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}&window=daily",
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "anomaly_count",
+              "text": "anomaly_count",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Daily Cost Trend",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "CloudPulseAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "format": "time_series",
+          "url": "/api/v1/grafana/timeseries/cost?from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}&window=daily",
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "time",
+              "text": "time",
+              "type": "timestamp"
+            },
+            {
+              "selector": "value",
+              "text": "value",
+              "type": "number"
+            },
+            {
+              "selector": "metric",
+              "text": "metric",
+              "type": "string"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Top Services",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "CloudPulseAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/api/v1/grafana/table/top-services?from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}&window=daily&limit=15",
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "rank",
+              "text": "rank",
+              "type": "number"
+            },
+            {
+              "selector": "provider",
+              "text": "provider",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "total_cost",
+              "text": "total_cost",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      }
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Anomaly Table",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "CloudPulseAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "format": "table",
+          "url": "/api/v1/grafana/table/anomalies?from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}&limit=25",
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "date",
+              "text": "date",
+              "type": "timestamp"
+            },
+            {
+              "selector": "provider",
+              "text": "provider",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "actual",
+              "text": "actual",
+              "type": "number"
+            },
+            {
+              "selector": "baseline",
+              "text": "baseline",
+              "type": "number"
+            },
+            {
+              "selector": "z_score",
+              "text": "z_score",
+              "type": "number"
+            },
+            {
+              "selector": "severity",
+              "text": "severity",
+              "type": "string"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      }
+    }
+  ]
+}

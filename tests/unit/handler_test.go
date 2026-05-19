@@ -40,6 +40,10 @@ func TestHandlerRoutes(t *testing.T) {
 		{"GET", "/api/v1/analytics/summary?window=daily", http.StatusOK},
 		{"GET", "/api/v1/analytics/anomalies", http.StatusOK},
 		{"GET", "/api/v1/analytics/forecast", http.StatusOK},
+		{"GET", "/api/v1/grafana/timeseries/cost", http.StatusOK},
+		{"GET", "/api/v1/grafana/table/top-services", http.StatusOK},
+		{"GET", "/api/v1/grafana/table/anomalies", http.StatusOK},
+		{"GET", "/api/v1/grafana/stat/summary", http.StatusOK},
 		{"GET", "/api/v1/reports/daily", http.StatusOK},
 		{"GET", "/metrics", http.StatusOK},
 	}

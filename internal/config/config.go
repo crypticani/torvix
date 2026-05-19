@@ -10,8 +10,9 @@ import (
 )
 
 const (
-	EnvHTTPAddress = "CLOUDPULSE_HTTP_ADDRESS"
-	EnvHTTPPort    = "CLOUDPULSE_HTTP_PORT"
+	EnvHTTPAddress           = "CLOUDPULSE_HTTP_ADDRESS"
+	EnvHTTPPort              = "CLOUDPULSE_HTTP_PORT"
+	EnvGrafanaAPIBearerToken = "CLOUDPULSE_GRAFANA_API_BEARER_TOKEN"
 )
 
 type Config struct {
@@ -25,6 +26,7 @@ type Config struct {
 	Scheduler Scheduler `yaml:"scheduler"`
 	Reporting Reporting `yaml:"reporting"`
 	Metrics   Metrics   `yaml:"metrics"`
+	Grafana   Grafana   `yaml:"grafana"`
 }
 
 type Scheduler struct {
@@ -105,7 +107,17 @@ type Webhook struct {
 }
 
 type Metrics struct {
-	Namespace string `yaml:"namespace"`
+	Namespace        string `yaml:"namespace"`
+	CostStatsEnabled bool   `yaml:"cost_stats_enabled"`
+}
+
+type Grafana struct {
+	APIAuth GrafanaAPIAuth `yaml:"api_auth"`
+}
+
+type GrafanaAPIAuth struct {
+	Enabled     bool   `yaml:"enabled"`
+	BearerToken string `yaml:"bearer_token"`
 }
 
 func Load(path string) (Config, error) {
@@ -138,6 +150,10 @@ func applyEnvOverrides(cfg *Config) {
 	}
 	if port := strings.TrimSpace(os.Getenv(EnvHTTPPort)); port != "" {
 		cfg.HTTP.Address = normalizeHTTPPort(port)
+	}
+	if token := strings.TrimSpace(os.Getenv(EnvGrafanaAPIBearerToken)); token != "" {
+		cfg.Grafana.APIAuth.Enabled = true
+		cfg.Grafana.APIAuth.BearerToken = token
 	}
 }
 

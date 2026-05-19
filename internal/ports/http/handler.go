@@ -32,6 +32,24 @@ type Handler struct {
 	metrics      http.Handler
 	lookbackDays int
 	ingestions   *ingestionJobStore
+	grafana      grafanaOptions
+}
+
+type HandlerOptions struct {
+	LookbackDays       int
+	GrafanaAuthEnabled bool
+	GrafanaAuthToken   string
+	GrafanaMetrics     GrafanaMetricsRecorder
+}
+
+type GrafanaMetricsRecorder interface {
+	ObserveGrafanaCostStats(window string, totalCost float64, serviceCount, anomalyCount int)
+}
+
+type grafanaOptions struct {
+	authEnabled bool
+	authToken   string
+	metrics     GrafanaMetricsRecorder
 }
 
 func New(collector *collect.Service, analytics *analytics.Service, forecasting *forecasting.Service, reporting *reporting.Service, alerting *alerting.Service, reg *prometheus.Registry) *Handler {
@@ -39,6 +57,11 @@ func New(collector *collect.Service, analytics *analytics.Service, forecasting *
 }
 
 func NewWithLookback(collector *collect.Service, analytics *analytics.Service, forecasting *forecasting.Service, reporting *reporting.Service, alerting *alerting.Service, reg *prometheus.Registry, lookbackDays int) *Handler {
+	return NewWithOptions(collector, analytics, forecasting, reporting, alerting, reg, HandlerOptions{LookbackDays: lookbackDays})
+}
+
+func NewWithOptions(collector *collect.Service, analytics *analytics.Service, forecasting *forecasting.Service, reporting *reporting.Service, alerting *alerting.Service, reg *prometheus.Registry, opts HandlerOptions) *Handler {
+	lookbackDays := opts.LookbackDays
 	if lookbackDays <= 0 {
 		lookbackDays = 30
 	}
@@ -52,6 +75,11 @@ func NewWithLookback(collector *collect.Service, analytics *analytics.Service, f
 		metrics:      promhttp.HandlerFor(reg, promhttp.HandlerOpts{}),
 		lookbackDays: lookbackDays,
 		ingestions:   newIngestionJobStore(),
+		grafana: grafanaOptions{
+			authEnabled: opts.GrafanaAuthEnabled,
+			authToken:   strings.TrimSpace(opts.GrafanaAuthToken),
+			metrics:     opts.GrafanaMetrics,
+		},
 	}
 	h.routes()
 	return h
@@ -65,6 +93,10 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/v1/analytics/variance", h.variance)
 	h.mux.HandleFunc("/api/v1/analytics/anomalies", h.anomalies)
 	h.mux.HandleFunc("/api/v1/analytics/forecast", h.forecast)
+	h.mux.HandleFunc("/api/v1/grafana/timeseries/cost", h.withGrafanaAuth(h.grafanaCostTimeseries))
+	h.mux.HandleFunc("/api/v1/grafana/table/top-services", h.withGrafanaAuth(h.grafanaTopServices))
+	h.mux.HandleFunc("/api/v1/grafana/table/anomalies", h.withGrafanaAuth(h.grafanaAnomalies))
+	h.mux.HandleFunc("/api/v1/grafana/stat/summary", h.withGrafanaAuth(h.grafanaSummary))
 	h.mux.HandleFunc("/api/v1/reports/daily", h.dailyReport)
 	h.mux.HandleFunc("/api/v1/reports/weekly", h.weeklyReport)
 	h.mux.HandleFunc("/api/v1/reports/monthly", h.monthlyReport)
