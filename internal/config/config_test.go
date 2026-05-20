@@ -45,6 +45,21 @@ func TestIngestionDefaultsUseNinetyDayOperationalHorizon(t *testing.T) {
 	if cfg.Ingestion.CompressionAfterDays != 7 {
 		t.Fatalf("expected default compression_after_days 7, got %d", cfg.Ingestion.CompressionAfterDays)
 	}
+	if cfg.Ingestion.MaxZeroYieldFiles != 25 {
+		t.Fatalf("expected default max_zero_yield_files 25, got %d", cfg.Ingestion.MaxZeroYieldFiles)
+	}
+}
+
+func TestProviderInheritsMaxZeroYieldFilesDefault(t *testing.T) {
+	cfg := loadTestConfig(t, "ingestion:\n  max_zero_yield_files: 17\n")
+	provider := cfg.Providers.OCI.WithIngestionDefaults(cfg.Ingestion)
+
+	if provider.MaxZeroYieldFiles != 17 {
+		t.Fatalf("expected provider max_zero_yield_files 17, got %d", provider.MaxZeroYieldFiles)
+	}
+	if provider.IngestionLimits().MaxZeroYieldFiles != 17 {
+		t.Fatalf("expected provider ingestion limit max_zero_yield_files 17, got %d", provider.IngestionLimits().MaxZeroYieldFiles)
+	}
 }
 
 func TestLoadHTTPPortEnvOverride(t *testing.T) {

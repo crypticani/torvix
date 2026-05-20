@@ -395,8 +395,11 @@ func (r *Repository) DashboardOverview(ctx context.Context, currentFrom, current
 			WHERE period_start >= $1 AND period_start < $2
 		),
 		latest_ingestion AS (
-			SELECT COALESCE(MAX(last_successful_ingestion_at), 'epoch'::timestamptz) AS at
-			FROM ingestion_checkpoints
+			SELECT COALESCE(
+				(SELECT MAX(processed_at) FROM processed_reports WHERE status = 'processed'),
+				(SELECT MAX(last_successful_ingestion_at) FROM ingestion_checkpoints),
+				'epoch'::timestamptz
+			) AS at
 		)
 		SELECT
 			current_spend.total,
@@ -415,7 +418,12 @@ func (r *Repository) DashboardOverview(ctx context.Context, currentFrom, current
 
 func (r *Repository) LatestIngestionStatus(ctx context.Context) (domain.IngestionStatusSummary, error) {
 	rows, err := r.db.Query(ctx, `
-		WITH report_totals AS (
+		WITH providers AS (
+			SELECT provider FROM ingestion_checkpoints
+			UNION
+			SELECT provider FROM processed_reports
+		),
+		report_totals AS (
 			SELECT provider,
 			       MAX(processed_at) AS latest_report_processed_at,
 			       COUNT(*)::bigint AS files_processed,
@@ -433,18 +441,19 @@ func (r *Repository) LatestIngestionStatus(ctx context.Context) (domain.Ingestio
 			ORDER BY provider, processed_at DESC
 		)
 		SELECT
-			c.provider,
-			c.last_successful_ingestion_at,
-			c.updated_at,
+			p.provider,
+			COALESCE(c.last_successful_ingestion_at, 'epoch'::timestamptz),
+			COALESCE(c.updated_at, 'epoch'::timestamptz),
 			COALESCE(t.latest_report_processed_at, 'epoch'::timestamptz),
 			COALESCE(t.files_processed, 0)::bigint,
 			COALESCE(t.records_processed, 0)::bigint,
 			COALESCE(l.status, ''),
 			COALESCE(l.error_message, '')
-		FROM ingestion_checkpoints c
-		LEFT JOIN report_totals t ON t.provider = c.provider
-		LEFT JOIN latest_report l ON l.provider = c.provider
-		ORDER BY c.provider
+		FROM providers p
+		LEFT JOIN ingestion_checkpoints c ON c.provider = p.provider
+		LEFT JOIN report_totals t ON t.provider = p.provider
+		LEFT JOIN latest_report l ON l.provider = p.provider
+		ORDER BY p.provider
 	`)
 	if err != nil {
 		return domain.IngestionStatusSummary{}, err
@@ -459,6 +468,9 @@ func (r *Repository) LatestIngestionStatus(ctx context.Context) (domain.Ingestio
 		}
 		if row.LastSuccessfulIngestionAt.After(summary.LatestIngestionAt) {
 			summary.LatestIngestionAt = row.LastSuccessfulIngestionAt
+		}
+		if row.LatestReportProcessedAt.After(summary.LatestIngestionAt) {
+			summary.LatestIngestionAt = row.LatestReportProcessedAt
 		}
 		summary.Providers = append(summary.Providers, row)
 	}

@@ -23,6 +23,7 @@ type ObjectInfo struct {
 type ObjectStorageClient interface {
 	GetNamespace(ctx context.Context) (string, error)
 	ListObjects(ctx context.Context, namespace, bucket, prefix string, limit int) ([]ObjectInfo, error)
+	ListObjectsPage(ctx context.Context, namespace, bucket, prefix, start string, limit int) ([]ObjectInfo, string, error)
 	GetObject(ctx context.Context, namespace, bucket, objectName string) (io.ReadCloser, error)
 }
 
@@ -86,7 +87,6 @@ func (c *SDKObjectStorageClient) GetNamespace(ctx context.Context) (string, erro
 }
 
 func (c *SDKObjectStorageClient) ListObjects(ctx context.Context, namespace, bucket, prefix string, limit int) ([]ObjectInfo, error) {
-	fields := "name,etag,size,timeModified"
 	start := ""
 	var out []ObjectInfo
 	seenPageStart := map[string]struct{}{}
@@ -98,52 +98,72 @@ func (c *SDKObjectStorageClient) ListObjects(ctx context.Context, namespace, buc
 		if limit > 0 && limit-len(out) < pageLimit {
 			pageLimit = limit - len(out)
 		}
-		req := objectstorage.ListObjectsRequest{
-			NamespaceName: common.String(namespace),
-			BucketName:    common.String(bucket),
-			Prefix:        common.String(prefix),
-			Fields:        common.String(fields),
-			Limit:         common.Int(pageLimit),
-		}
-		if start != "" {
-			req.Start = common.String(start)
-		}
-		resp, err := c.client.ListObjects(ctx, req)
+		objects, nextStart, err := c.ListObjectsPage(ctx, namespace, bucket, prefix, start, pageLimit)
 		if err != nil {
-			return nil, fmt.Errorf("list objects: %w", err)
+			return nil, err
 		}
-		if len(resp.Objects) == 0 {
+		if len(objects) == 0 {
 			break
 		}
-		for _, item := range resp.Objects {
-			info := ObjectInfo{}
-			if item.Name != nil {
-				info.Name = *item.Name
-			}
-			if item.Etag != nil {
-				info.ETag = *item.Etag
-			}
-			if item.Size != nil {
-				info.Size = *item.Size
-			}
-			if item.TimeModified != nil {
-				info.LastModified = item.TimeModified.Time
-			}
-			out = append(out, info)
+		for _, item := range objects {
+			out = append(out, item)
 			if limit > 0 && len(out) >= limit {
 				return out, nil
 			}
 		}
-		if resp.NextStartWith == nil || *resp.NextStartWith == "" {
+		if nextStart == "" {
 			break
 		}
-		if _, ok := seenPageStart[*resp.NextStartWith]; ok {
-			return nil, fmt.Errorf("list objects pagination repeated token %q", *resp.NextStartWith)
+		if _, ok := seenPageStart[nextStart]; ok {
+			return nil, fmt.Errorf("list objects pagination repeated token %q", nextStart)
 		}
-		seenPageStart[*resp.NextStartWith] = struct{}{}
-		start = *resp.NextStartWith
+		seenPageStart[nextStart] = struct{}{}
+		start = nextStart
 	}
 	return out, nil
+}
+
+func (c *SDKObjectStorageClient) ListObjectsPage(ctx context.Context, namespace, bucket, prefix, start string, limit int) ([]ObjectInfo, string, error) {
+	fields := "name,etag,size,timeModified"
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
+	req := objectstorage.ListObjectsRequest{
+		NamespaceName: common.String(namespace),
+		BucketName:    common.String(bucket),
+		Prefix:        common.String(prefix),
+		Fields:        common.String(fields),
+		Limit:         common.Int(limit),
+	}
+	if start != "" {
+		req.Start = common.String(start)
+	}
+	resp, err := c.client.ListObjects(ctx, req)
+	if err != nil {
+		return nil, "", fmt.Errorf("list objects: %w", err)
+	}
+	out := make([]ObjectInfo, 0, len(resp.Objects))
+	for _, item := range resp.Objects {
+		info := ObjectInfo{}
+		if item.Name != nil {
+			info.Name = *item.Name
+		}
+		if item.Etag != nil {
+			info.ETag = *item.Etag
+		}
+		if item.Size != nil {
+			info.Size = *item.Size
+		}
+		if item.TimeModified != nil {
+			info.LastModified = item.TimeModified.Time
+		}
+		out = append(out, info)
+	}
+	nextStart := ""
+	if resp.NextStartWith != nil {
+		nextStart = *resp.NextStartWith
+	}
+	return out, nextStart, nil
 }
 
 func (c *SDKObjectStorageClient) GetObject(ctx context.Context, namespace, bucket, objectName string) (io.ReadCloser, error) {

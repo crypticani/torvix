@@ -55,6 +55,7 @@ type Provider struct {
 	Passphrase             string `yaml:"passphrase"`
 	LookbackDays           int    `yaml:"lookback_days"`
 	MaxObjectScan          int    `yaml:"max_object_scan"`
+	MaxZeroYieldFiles      int    `yaml:"max_zero_yield_files"`
 	MaxFilesPerRun         int    `yaml:"max_files_per_run"`
 	MaxRecordsPerBatch     int    `yaml:"max_records_per_batch"`
 	MaxRuntime             string `yaml:"max_runtime"`
@@ -68,6 +69,7 @@ type Ingestion struct {
 	RetentionDays          int    `yaml:"retention_days"`
 	CompressionAfterDays   int    `yaml:"compression_after_days"`
 	MaxFilesPerRun         int    `yaml:"max_files_per_run"`
+	MaxZeroYieldFiles      int    `yaml:"max_zero_yield_files"`
 	MaxRecordsPerBatch     int    `yaml:"max_records_per_batch"`
 	MaxRuntime             string `yaml:"max_runtime"`
 	MaxMemoryBufferRecords int    `yaml:"max_memory_buffer_records"`
@@ -77,6 +79,7 @@ type Ingestion struct {
 
 type IngestionLimits struct {
 	MaxFilesPerRun         int
+	MaxZeroYieldFiles      int
 	MaxRecordsPerBatch     int
 	MaxRuntime             time.Duration
 	MaxMemoryBufferRecords int
@@ -177,6 +180,9 @@ func (i Ingestion) WithDefaults() Ingestion {
 	if i.MaxFilesPerRun <= 0 {
 		i.MaxFilesPerRun = 25
 	}
+	if i.MaxZeroYieldFiles <= 0 {
+		i.MaxZeroYieldFiles = 25
+	}
 	if i.MaxRecordsPerBatch <= 0 {
 		i.MaxRecordsPerBatch = 1000
 	}
@@ -197,6 +203,9 @@ func (p Provider) WithIngestionDefaults(ingestion Ingestion) Provider {
 	if p.MaxFilesPerRun <= 0 {
 		p.MaxFilesPerRun = ingestion.MaxFilesPerRun
 	}
+	if p.MaxZeroYieldFiles <= 0 {
+		p.MaxZeroYieldFiles = ingestion.MaxZeroYieldFiles
+	}
 	if p.MaxRecordsPerBatch <= 0 {
 		p.MaxRecordsPerBatch = ingestion.MaxRecordsPerBatch
 	}
@@ -214,6 +223,7 @@ func (p Provider) WithIngestionDefaults(ingestion Ingestion) Provider {
 func (p Provider) IngestionLimits() IngestionLimits {
 	limits := IngestionLimits{
 		MaxFilesPerRun:         p.MaxFilesPerRun,
+		MaxZeroYieldFiles:      p.MaxZeroYieldFiles,
 		MaxRecordsPerBatch:     p.MaxRecordsPerBatch,
 		MaxMemoryBufferRecords: p.MaxMemoryBufferRecords,
 		DryRun:                 p.DryRun,
@@ -221,6 +231,9 @@ func (p Provider) IngestionLimits() IngestionLimits {
 	}
 	if limits.MaxFilesPerRun <= 0 {
 		limits.MaxFilesPerRun = 25
+	}
+	if limits.MaxZeroYieldFiles <= 0 {
+		limits.MaxZeroYieldFiles = 25
 	}
 	if limits.MaxRecordsPerBatch <= 0 {
 		limits.MaxRecordsPerBatch = 1000
@@ -241,6 +254,9 @@ func (p Provider) IngestionLimits() IngestionLimits {
 	if limits.SampleMode {
 		if limits.MaxFilesPerRun > 3 {
 			limits.MaxFilesPerRun = 3
+		}
+		if limits.MaxZeroYieldFiles > 3 {
+			limits.MaxZeroYieldFiles = 3
 		}
 		if limits.MaxRecordsPerBatch > 100 {
 			limits.MaxRecordsPerBatch = 100

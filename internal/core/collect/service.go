@@ -122,7 +122,7 @@ func (s *Service) Run(ctx context.Context, since time.Time) ([]ProviderResult, e
 			if s.logger != nil {
 				s.logger.Info("collector done", "provider", c.Name(), "files_processed", result.FilesProcessed, "files_skipped", result.FilesSkipped, "skipped_old_files", result.SkippedOldFiles, "records_parsed", result.RecordsProcessed, "records_within_lookback", pr.RecordsWithinLookback, "records_skipped_old", pr.RecordsSkippedOld, "records_inserted", recordsInserted, "duration", pr.Duration.String())
 			}
-			if err == nil && result.FilesProcessed > 0 && !result.HitFileLimit && !result.HitRuntimeLimit {
+			if err == nil && result.FilesProcessed > 0 && !result.HitFileLimit && !result.HitRuntimeLimit && !result.HitZeroYieldLimit {
 				if checkpointErr := s.repo.MarkIngestionCheckpoint(ctx, providerName(c.Name()), time.Now().UTC()); checkpointErr != nil {
 					mu.Lock()
 					allErrs = append(allErrs, checkpointErr)
@@ -132,7 +132,7 @@ func (s *Service) Run(ctx context.Context, since time.Time) ([]ProviderResult, e
 					}
 				}
 			} else if err == nil && s.logger != nil {
-				s.logger.Info("ingestion checkpoint unchanged", "provider", c.Name(), "files_processed", result.FilesProcessed, "hit_file_limit", result.HitFileLimit, "hit_runtime_limit", result.HitRuntimeLimit)
+				s.logger.Info("ingestion checkpoint unchanged", "provider", c.Name(), "files_processed", result.FilesProcessed, "hit_file_limit", result.HitFileLimit, "hit_runtime_limit", result.HitRuntimeLimit, "hit_zero_yield_limit", result.HitZeroYieldLimit)
 			}
 
 			mu.Lock()
@@ -269,6 +269,7 @@ func (s *Service) collectProvider(ctx context.Context, c providers.Collector, si
 func (s *Service) storeNormalizedBatch(ctx context.Context, provider string, batch providers.FileBatch, pr *ProviderResult, recordsInserted *int, streaming bool) error {
 	normalized := s.normalizer.Normalize(batch.Records)
 	cutoff := time.Now().UTC().AddDate(0, 0, -s.policy.LookbackDays)
+	s.logLookbackDiagnostics(provider, batch.Metadata.ObjectName, normalized, cutoff)
 	retained, skippedOld := filterRecordsWithinLookback(normalized, cutoff)
 	pr.RecordsWithinLookback += len(retained)
 	pr.RecordsSkippedOld += skippedOld
@@ -310,6 +311,51 @@ func (s *Service) storeNormalizedBatch(ctx context.Context, provider string, bat
 		}
 	}
 	return nil
+}
+
+func (s *Service) logLookbackDiagnostics(provider, object string, records []domain.CanonicalCostRecord, cutoff time.Time) {
+	if s.logger == nil || len(records) == 0 {
+		return
+	}
+	const maxPerDecision = 3
+	loggedRetained := 0
+	loggedSkipped := 0
+	for _, record := range records {
+		skipReason := ""
+		decision := "within_lookback"
+		if record.Timestamp.IsZero() {
+			decision = "timestamp_zero_retained"
+		} else if record.Timestamp.Before(cutoff) {
+			skipReason = "timestamp_before_lookback_cutoff"
+			decision = "skipped_old"
+		}
+		if skipReason == "" {
+			if loggedRetained >= maxPerDecision {
+				continue
+			}
+			loggedRetained++
+		} else {
+			if loggedSkipped >= maxPerDecision {
+				continue
+			}
+			loggedSkipped++
+		}
+		s.logger.Debug("record lookback decision", "provider", provider, "source_object", object, "raw_usage_start", rawString(record.RawData, "oci_usage_start"), "raw_usage_end", rawString(record.RawData, "oci_usage_end"), "normalized_timestamp", record.Timestamp, "lookback_cutoff", cutoff, "decision", decision, "skip_reason", skipReason)
+	}
+}
+
+func rawString(values map[string]any, key string) string {
+	if values == nil {
+		return ""
+	}
+	value, ok := values[key]
+	if !ok || value == nil {
+		return ""
+	}
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return ""
 }
 
 func filterRecordsWithinLookback(records []domain.CanonicalCostRecord, cutoff time.Time) ([]domain.CanonicalCostRecord, int) {

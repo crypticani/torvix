@@ -14,6 +14,7 @@ ingestion:
   retention_days: 90
   compression_after_days: 7
   max_files_per_run: 10
+  max_zero_yield_files: 25
   max_records_per_batch: 1000
   max_memory_buffer_records: 1000
   max_runtime: "10m"
@@ -35,6 +36,7 @@ providers:
     lookback_days: 30
     max_object_scan: 10000
     max_files_per_run: 10
+    max_zero_yield_files: 25
     max_records_per_batch: 1000
     max_memory_buffer_records: 1000
     max_runtime: "10m"

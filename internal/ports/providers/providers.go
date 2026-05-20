@@ -15,15 +15,16 @@ type FileBatch struct {
 }
 
 type CollectResult struct {
-	Batches          []FileBatch
-	FilesProcessed   int
-	FilesSkipped     int
-	SkippedOldFiles  int
-	RecordsProcessed int
-	BatchesInserted  int
-	HitFileLimit     bool
-	HitRuntimeLimit  bool
-	Failures         int
+	Batches           []FileBatch
+	FilesProcessed    int
+	FilesSkipped      int
+	SkippedOldFiles   int
+	RecordsProcessed  int
+	BatchesInserted   int
+	HitFileLimit      bool
+	HitRuntimeLimit   bool
+	HitZeroYieldLimit bool
+	Failures          int
 }
 
 type Collector interface {

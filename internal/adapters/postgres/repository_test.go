@@ -166,6 +166,65 @@ func TestDashboardCostTimeseriesReadsPrecomputedDailySummaries(t *testing.T) {
 	}
 }
 
+func TestDashboardOverviewUsesLatestProcessedReportWhenCheckpointIsUnchanged(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	defer mock.Close()
+
+	currentFrom := time.Date(2026, 4, 20, 0, 0, 0, 0, time.UTC)
+	currentTo := time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC)
+	previousFrom := time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC)
+	previousTo := time.Date(2026, 4, 20, 0, 0, 0, 0, time.UTC)
+	latestProcessed := time.Date(2026, 5, 20, 3, 27, 9, 0, time.UTC)
+	rows := pgxmock.NewRows([]string{"current", "previous", "change", "anomalies", "latest_ingestion"}).
+		AddRow(100.0, 50.0, 100.0, int64(2), latestProcessed)
+	mock.ExpectQuery("FROM processed_reports").
+		WithArgs(currentFrom, currentTo, previousFrom, previousTo).
+		WillReturnRows(rows)
+
+	repo := NewWithDB(mock)
+	out, err := repo.DashboardOverview(context.Background(), currentFrom, currentTo, previousFrom, previousTo)
+	if err != nil {
+		t.Fatalf("DashboardOverview() error = %v", err)
+	}
+	if !out.LatestIngestionAt.Equal(latestProcessed) {
+		t.Fatalf("expected latest processed report time %s, got %s", latestProcessed, out.LatestIngestionAt)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestLatestIngestionStatusUsesLatestProcessedReportForSummaryTimestamp(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	defer mock.Close()
+
+	checkpoint := time.Unix(0, 0).UTC()
+	updatedAt := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	latestProcessed := time.Date(2026, 5, 20, 3, 27, 9, 0, time.UTC)
+	rows := pgxmock.NewRows([]string{"provider", "last_successful_ingestion_at", "updated_at", "latest_report_processed_at", "files_processed", "records_processed", "status", "error_message"}).
+		AddRow(domain.ProviderOCI, checkpoint, updatedAt, latestProcessed, int64(25), int64(564983), "processed", "")
+	mock.ExpectQuery("WITH providers AS").
+		WillReturnRows(rows)
+
+	repo := NewWithDB(mock)
+	out, err := repo.LatestIngestionStatus(context.Background())
+	if err != nil {
+		t.Fatalf("LatestIngestionStatus() error = %v", err)
+	}
+	if !out.LatestIngestionAt.Equal(latestProcessed) {
+		t.Fatalf("expected summary latest ingestion %s, got %s", latestProcessed, out.LatestIngestionAt)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
 func TestIsReportProcessed(t *testing.T) {
 	mock, err := pgxmock.NewPool()
 	if err != nil {

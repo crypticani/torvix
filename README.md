@@ -53,15 +53,15 @@ Production Grafana must not connect directly to PostgreSQL. Direct database acce
 OCI support is production-oriented and first-class. The collector:
 
 - authenticates with the official OCI Go SDK using an OCI config file and API keys
-- lists report objects from OCI Object Storage
-- ranks OCI proprietary reports under `reports/cost-csv/` newest-first by their numeric report suffix before applying `max_files_per_run`
+- lists OCI proprietary cost report objects from `reports/cost-csv/`
+- seeks into the recent cost-report object range using Object Storage metadata, selects bounded candidates newest-first, and stops early after `max_zero_yield_files` consecutive reports contain zero rows inside the rolling lookback
 - streams CSV and gzip-compressed exports
 - tolerates schema drift through dynamic header matching
 - normalizes OCI services into Compute, Storage, Networking, Database, Load Balancer, Monitoring, Security, and Kubernetes categories
 - skips files already recorded in `processed_report_files`
 - filters parsed records by the configured rolling lookback before insertion, so historical rows older than `ingestion.lookback_days` are counted as skipped and never inserted
 
-Object ranking is only an efficiency heuristic for reaching recent OCI reports quickly when the bucket contains many historical files. Row-level lookback remains the source of truth for deciding which billing records are inserted.
+Object selection is only an efficiency heuristic for reaching usable reports quickly when the bucket contains many historical files. For broad OCI prefixes such as `reports/`, CloudPulse narrows selection to `reports/cost-csv/`, uses metadata to seek near the configured lookback window, and processes the bounded candidate set newest-first. CloudPulse does not treat the auto-incrementing numeric report suffix as proof that a row belongs in the dashboard. Row-level lookback remains the source of truth for deciding which billing records are inserted, and `max_zero_yield_files` prevents long no-op runs through historical reports.
 
 Oracle deprecated older usage reports on January 31, 2025, so the parser accepts both older usage-style headers and current OCI cost report layouts.
 
@@ -221,7 +221,7 @@ In `configs/config.yaml`:
     retention_days: 90
     compression_after_days: 7
   ```
-  Object-level report ranking and dedupe reduce unnecessary downloads. OCI proprietary cost reports under `reports/cost-csv/` are processed newest-first by numeric report suffix before `max_files_per_run` is applied. Record-level lookback filtering is the correctness boundary for dashboard data: records older than `lookback_days` are skipped before insertion. Retention remains a storage lifecycle safety net, not the primary ingestion lookback filter.
+  Object-level report selection and dedupe reduce unnecessary downloads. For OCI proprietary cost reports, CloudPulse uses `reports/cost-csv/` candidates, seeks near the recent metadata window, sorts the bounded candidate set newest-first, skips already processed reports, and stops after `max_zero_yield_files` consecutive processed reports contain zero rows inside the lookback window. Record-level lookback filtering is the correctness boundary for dashboard data: records older than `lookback_days` are skipped before insertion. Retention remains a storage lifecycle safety net, not the primary ingestion lookback filter.
 - **Scheduler:** CloudPulse includes an in-process scheduler to run ingestion automatically.
   ```yaml
   scheduler:

@@ -129,21 +129,23 @@ func parseRow(index map[string]int, row []string, objectName, configuredAccount 
 	description := lookup(index, row, "product/description", "description")
 	sku := lookup(index, row, "cost/productsku", "cost/skuunitdescription", "product/sku")
 
-	usageStart, ok := parseTimeField(lookup(index, row,
+	usageStartRaw := lookup(index, row,
 		"lineitem/intervalusagestart",
 		"lineitem/usagestart",
 		"usagestarttime",
 		"usage/intervalstart",
-	))
+	)
+	usageStart, ok := parseTimeField(usageStartRaw)
 	if !ok {
 		return domain.RawBillingRecord{}, false
 	}
-	usageEnd, _ := parseTimeField(lookup(index, row,
+	usageEndRaw := lookup(index, row,
 		"lineitem/intervalusageend",
 		"lineitem/usageend",
 		"usageendtime",
 		"usage/intervalend",
-	))
+	)
+	usageEnd, _ := parseTimeField(usageEndRaw)
 	if usageEnd.IsZero() {
 		usageEnd = usageStart
 	}
@@ -194,6 +196,8 @@ func parseRow(index map[string]int, row []string, objectName, configuredAccount 
 		RawData: map[string]any{
 			"description":       description,
 			"sku":               sku,
+			"oci_usage_start":   usageStartRaw,
+			"oci_usage_end":     usageEndRaw,
 			"availability_zone": lookup(index, row, "product/availabilitydomain"),
 			"source_type":       "oci_object_storage_report",
 		},

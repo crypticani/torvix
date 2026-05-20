@@ -70,6 +70,69 @@ func TestRunInsertsRecentRecords(t *testing.T) {
 	}
 }
 
+func TestRunInsertsRecentMay2026OCIRecordAndRefreshesDashboardSummary(t *testing.T) {
+	recentRecord := rawCostRecord(time.Date(2026, 5, 17, 2, 30, 0, 0, time.UTC), 12)
+	repo := &recordFilteringRepo{}
+	svc := NewWithPolicy(nil, repo, normalize.New(), []providers.Collector{
+		&batchCollector{result: providers.CollectResult{
+			FilesProcessed:   1,
+			RecordsProcessed: 1,
+			Batches: []providers.FileBatch{{
+				Metadata: processedFile("reports/cost-csv/0001000000670898.csv.gz"),
+				Records:  []domain.RawBillingRecord{recentRecord},
+			}},
+		}},
+	}, nil, Policy{LookbackDays: 30, RetentionDays: 90, CompressionAfterDays: 7})
+
+	results, err := svc.Run(context.Background(), time.Time{})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if results[0].RecordsWithinLookback != 1 || results[0].RecordsInserted != 1 {
+		t.Fatalf("expected recent May 2026 record to be inserted, got %+v", results[0])
+	}
+	summaries, err := repo.DashboardCostSummaries(context.Background(), "daily", time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("DashboardCostSummaries() error = %v", err)
+	}
+	if len(summaries) == 0 {
+		t.Fatalf("expected dashboard summary for inserted May 2026 record")
+	}
+	if summaries[0].PeriodStart != time.Date(2026, 5, 17, 0, 0, 0, 0, time.UTC) || summaries[0].TotalCost != 12 {
+		t.Fatalf("unexpected summary: %+v", summaries[0])
+	}
+}
+
+func TestRunSkipsGenuinelyOldOCI2022Record(t *testing.T) {
+	oldRecord := rawCostRecord(time.Date(2022, 5, 17, 2, 30, 0, 0, time.UTC), 12)
+	repo := &recordFilteringRepo{}
+	svc := NewWithPolicy(nil, repo, normalize.New(), []providers.Collector{
+		&batchCollector{result: providers.CollectResult{
+			FilesProcessed:   1,
+			RecordsProcessed: 1,
+			Batches: []providers.FileBatch{{
+				Metadata: processedFile("reports/cost-csv/0001000000999999.csv.gz"),
+				Records:  []domain.RawBillingRecord{oldRecord},
+			}},
+		}},
+	}, nil, Policy{LookbackDays: 30, RetentionDays: 90, CompressionAfterDays: 7})
+
+	results, err := svc.Run(context.Background(), time.Time{})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if results[0].RecordsWithinLookback != 0 || results[0].RecordsSkippedOld != 1 || results[0].RecordsInserted != 0 {
+		t.Fatalf("expected old 2022 record to be skipped, got %+v", results[0])
+	}
+	summaries, err := repo.DashboardCostSummaries(context.Background(), "daily", time.Date(2022, 5, 1, 0, 0, 0, 0, time.UTC), time.Date(2022, 6, 1, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("DashboardCostSummaries() error = %v", err)
+	}
+	if len(summaries) != 0 {
+		t.Fatalf("expected no dashboard summaries for skipped old record, got %+v", summaries)
+	}
+}
+
 func TestRunInsertsOnlyRecentRecordsFromMixedReport(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &recordFilteringRepo{}
@@ -113,8 +176,9 @@ func (c *batchCollector) Collect(context.Context, time.Time) (providers.CollectR
 }
 
 type recordFilteringRepo struct {
-	ingestedBatches [][]domain.CanonicalCostRecord
-	lifecycle       domain.DataLifecycleMaintenance
+	ingestedBatches    [][]domain.CanonicalCostRecord
+	dashboardSummaries []domain.DashboardCostSummary
+	lifecycle          domain.DataLifecycleMaintenance
 }
 
 func (r *recordFilteringRepo) StoreIngestedBatch(_ context.Context, _ domain.ProcessedReportFile, records []domain.CanonicalCostRecord) error {
@@ -162,13 +226,37 @@ func (r *recordFilteringRepo) RefreshAggregates(context.Context, time.Time, time
 	return nil
 }
 func (r *recordFilteringRepo) RefreshDashboardAnalytics(context.Context, time.Time, time.Time, int) error {
+	totals := map[time.Time]float64{}
+	for _, batch := range r.ingestedBatches {
+		for _, record := range batch {
+			day := record.Timestamp.UTC().Truncate(24 * time.Hour)
+			totals[day] += record.Cost
+		}
+	}
+	r.dashboardSummaries = r.dashboardSummaries[:0]
+	for day, total := range totals {
+		r.dashboardSummaries = append(r.dashboardSummaries, domain.DashboardCostSummary{
+			PeriodStart: day,
+			PeriodEnd:   day.Add(24 * time.Hour),
+			Provider:    domain.ProviderOCI,
+			TotalCost:   total,
+			UpdatedAt:   time.Now().UTC(),
+		})
+	}
 	return nil
 }
 func (r *recordFilteringRepo) DashboardOverview(context.Context, time.Time, time.Time, time.Time, time.Time) (domain.DashboardOverview, error) {
 	return domain.DashboardOverview{}, nil
 }
-func (r *recordFilteringRepo) DashboardCostSummaries(context.Context, string, time.Time, time.Time) ([]domain.DashboardCostSummary, error) {
-	return nil, nil
+func (r *recordFilteringRepo) DashboardCostSummaries(_ context.Context, _ string, from, to time.Time) ([]domain.DashboardCostSummary, error) {
+	var out []domain.DashboardCostSummary
+	for _, summary := range r.dashboardSummaries {
+		if summary.PeriodStart.Before(from) || !summary.PeriodStart.Before(to) {
+			continue
+		}
+		out = append(out, summary)
+	}
+	return out, nil
 }
 func (r *recordFilteringRepo) DashboardAnomalies(context.Context, time.Time, time.Time, string) ([]domain.DashboardAnomaly, error) {
 	return nil, nil
