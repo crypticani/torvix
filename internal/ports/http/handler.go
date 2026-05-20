@@ -23,20 +23,22 @@ import (
 )
 
 type Handler struct {
-	mux          *http.ServeMux
-	collector    *collect.Service
-	analytics    *analytics.Service
-	forecasting  *forecasting.Service
-	reporting    *reporting.Service
-	alerting     *alerting.Service
-	metrics      http.Handler
-	lookbackDays int
-	ingestions   *ingestionJobStore
-	grafana      grafanaOptions
+	mux           *http.ServeMux
+	collector     *collect.Service
+	analytics     *analytics.Service
+	forecasting   *forecasting.Service
+	reporting     *reporting.Service
+	alerting      *alerting.Service
+	metrics       http.Handler
+	lookbackDays  int
+	retentionDays int
+	ingestions    *ingestionJobStore
+	grafana       grafanaOptions
 }
 
 type HandlerOptions struct {
 	LookbackDays       int
+	RetentionDays      int
 	GrafanaAuthEnabled bool
 	GrafanaAuthToken   string
 	GrafanaMetrics     GrafanaMetricsRecorder
@@ -65,16 +67,21 @@ func NewWithOptions(collector *collect.Service, analytics *analytics.Service, fo
 	if lookbackDays <= 0 {
 		lookbackDays = 30
 	}
+	retentionDays := opts.RetentionDays
+	if retentionDays <= 0 {
+		retentionDays = 90
+	}
 	h := &Handler{
-		mux:          http.NewServeMux(),
-		collector:    collector,
-		analytics:    analytics,
-		forecasting:  forecasting,
-		reporting:    reporting,
-		alerting:     alerting,
-		metrics:      promhttp.HandlerFor(reg, promhttp.HandlerOpts{}),
-		lookbackDays: lookbackDays,
-		ingestions:   newIngestionJobStore(),
+		mux:           http.NewServeMux(),
+		collector:     collector,
+		analytics:     analytics,
+		forecasting:   forecasting,
+		reporting:     reporting,
+		alerting:      alerting,
+		metrics:       promhttp.HandlerFor(reg, promhttp.HandlerOpts{}),
+		lookbackDays:  lookbackDays,
+		retentionDays: retentionDays,
+		ingestions:    newIngestionJobStore(),
 		grafana: grafanaOptions{
 			authEnabled: opts.GrafanaAuthEnabled,
 			authToken:   strings.TrimSpace(opts.GrafanaAuthToken),
@@ -93,6 +100,13 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/v1/analytics/variance", h.variance)
 	h.mux.HandleFunc("/api/v1/analytics/anomalies", h.anomalies)
 	h.mux.HandleFunc("/api/v1/analytics/forecast", h.forecast)
+	h.mux.HandleFunc("/api/v1/dashboard/overview", h.withGrafanaAuth(h.dashboardOverview))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-timeseries", h.withGrafanaAuth(h.dashboardCostTimeseries))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-by-category", h.withGrafanaAuth(h.dashboardCostByCategory))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-by-service", h.withGrafanaAuth(h.dashboardCostByService))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-by-provider", h.withGrafanaAuth(h.dashboardCostByProvider))
+	h.mux.HandleFunc("/api/v1/dashboard/anomalies", h.withGrafanaAuth(h.dashboardAnomalies))
+	h.mux.HandleFunc("/api/v1/dashboard/ingestion-status", h.withGrafanaAuth(h.dashboardIngestionStatus))
 	h.mux.HandleFunc("/api/v1/grafana/timeseries/cost", h.withGrafanaAuth(h.grafanaCostTimeseries))
 	h.mux.HandleFunc("/api/v1/grafana/table/top-services", h.withGrafanaAuth(h.grafanaTopServices))
 	h.mux.HandleFunc("/api/v1/grafana/table/anomalies", h.withGrafanaAuth(h.grafanaAnomalies))
@@ -223,14 +237,16 @@ func ingestionResponses(results []collect.ProviderResult) []IngestResponse {
 	resp := make([]IngestResponse, 0, len(results))
 	for _, pr := range results {
 		resp = append(resp, IngestResponse{
-			Provider:        pr.Provider,
-			FilesProcessed:  pr.FilesProcessed,
-			FilesSkipped:    pr.FilesSkipped,
-			SkippedOldFiles: pr.SkippedOldFiles,
-			RecordsParsed:   pr.RecordsParsed,
-			RecordsInserted: pr.RecordsInserted,
-			DurationSeconds: pr.Duration.Seconds(),
-			Error:           pr.Error,
+			Provider:              pr.Provider,
+			FilesProcessed:        pr.FilesProcessed,
+			FilesSkipped:          pr.FilesSkipped,
+			SkippedOldFiles:       pr.SkippedOldFiles,
+			RecordsParsed:         pr.RecordsParsed,
+			RecordsWithinLookback: pr.RecordsWithinLookback,
+			RecordsSkippedOld:     pr.RecordsSkippedOld,
+			RecordsInserted:       pr.RecordsInserted,
+			DurationSeconds:       pr.Duration.Seconds(),
+			Error:                 pr.Error,
 		})
 	}
 	return resp
@@ -248,12 +264,14 @@ func (h *Handler) notifyIngestionComplete(job IngestionJobResponse) {
 }
 
 func ingestionNotification(job IngestionJobResponse) alerting.Notification {
-	filesProcessed, filesSkipped, skippedOld, recordsParsed, recordsInserted := 0, 0, 0, 0, 0
+	filesProcessed, filesSkipped, skippedOld, recordsParsed, recordsWithinLookback, recordsSkippedOld, recordsInserted := 0, 0, 0, 0, 0, 0, 0
 	for _, result := range job.Results {
 		filesProcessed += result.FilesProcessed
 		filesSkipped += result.FilesSkipped
 		skippedOld += result.SkippedOldFiles
 		recordsParsed += result.RecordsParsed
+		recordsWithinLookback += result.RecordsWithinLookback
+		recordsSkippedOld += result.RecordsSkippedOld
 		recordsInserted += result.RecordsInserted
 	}
 
@@ -279,6 +297,8 @@ func ingestionNotification(job IngestionJobResponse) alerting.Notification {
 			{Name: "Files skipped", Value: strconv.Itoa(filesSkipped)},
 			{Name: "Old files skipped", Value: strconv.Itoa(skippedOld)},
 			{Name: "Records parsed", Value: strconv.Itoa(recordsParsed)},
+			{Name: "Records within lookback", Value: strconv.Itoa(recordsWithinLookback)},
+			{Name: "Old records skipped", Value: strconv.Itoa(recordsSkippedOld)},
 			{Name: "Records inserted", Value: strconv.Itoa(recordsInserted)},
 			{Name: "Duration", Value: fmt.Sprintf("%.1fs", job.DurationSeconds)},
 		},

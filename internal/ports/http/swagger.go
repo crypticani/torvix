@@ -42,12 +42,14 @@ type IngestionJobResponse struct {
 // IngestResponse represents the result of an ingestion run for a single provider.
 // @Description Per-provider ingestion result with metrics.
 type IngestResponse struct {
-	Provider        string  `json:"provider" example:"oci"`
-	FilesProcessed  int     `json:"files_processed" example:"5"`
-	FilesSkipped    int     `json:"files_skipped" example:"2"`
-	SkippedOldFiles int     `json:"skipped_old_files" example:"1"`
-	RecordsParsed   int     `json:"records_parsed" example:"1234"`
-	RecordsInserted int     `json:"records_inserted" example:"1234"`
-	DurationSeconds float64 `json:"duration_seconds" example:"12.4"`
-	Error           string  `json:"error,omitempty" example:""`
+	Provider              string  `json:"provider" example:"oci"`
+	FilesProcessed        int     `json:"files_processed" example:"5"`
+	FilesSkipped          int     `json:"files_skipped" example:"2"`
+	SkippedOldFiles       int     `json:"skipped_old_files" example:"1"`
+	RecordsParsed         int     `json:"records_parsed" example:"1234"`
+	RecordsWithinLookback int     `json:"records_within_lookback" example:"1200"`
+	RecordsSkippedOld     int     `json:"records_skipped_old" example:"34"`
+	RecordsInserted       int     `json:"records_inserted" example:"1200"`
+	DurationSeconds       float64 `json:"duration_seconds" example:"12.4"`
+	Error                 string  `json:"error,omitempty" example:""`
 }

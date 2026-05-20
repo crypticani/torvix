@@ -37,7 +37,7 @@ func NewWithPolicy(logger *slog.Logger, repo storage.Repository, normalizer *nor
 		policy.LookbackDays = 30
 	}
 	if policy.RetentionDays <= 0 {
-		policy.RetentionDays = 180
+		policy.RetentionDays = 90
 	}
 	if policy.CompressionAfterDays <= 0 {
 		policy.CompressionAfterDays = 7
@@ -47,15 +47,17 @@ func NewWithPolicy(logger *slog.Logger, repo storage.Repository, normalizer *nor
 
 // ProviderResult holds per-provider ingestion metrics returned by Run.
 type ProviderResult struct {
-	Provider        string        `json:"provider"`
-	FilesProcessed  int           `json:"files_processed"`
-	FilesSkipped    int           `json:"files_skipped"`
-	SkippedOldFiles int           `json:"skipped_old_files"`
-	RecordsParsed   int           `json:"records_parsed"`
-	RecordsInserted int           `json:"records_inserted"`
-	Duration        time.Duration `json:"duration_ns"`
-	EarliestRecord  time.Time     `json:"earliest_record"`
-	Error           string        `json:"error,omitempty"`
+	Provider              string        `json:"provider"`
+	FilesProcessed        int           `json:"files_processed"`
+	FilesSkipped          int           `json:"files_skipped"`
+	SkippedOldFiles       int           `json:"skipped_old_files"`
+	RecordsParsed         int           `json:"records_parsed"`
+	RecordsWithinLookback int           `json:"records_within_lookback"`
+	RecordsSkippedOld     int           `json:"records_skipped_old"`
+	RecordsInserted       int           `json:"records_inserted"`
+	Duration              time.Duration `json:"duration_ns"`
+	EarliestRecord        time.Time     `json:"earliest_record"`
+	Error                 string        `json:"error,omitempty"`
 }
 
 func (s *Service) Run(ctx context.Context, since time.Time) ([]ProviderResult, error) {
@@ -118,7 +120,7 @@ func (s *Service) Run(ctx context.Context, since time.Time) ([]ProviderResult, e
 				s.metrics.ObserveFailure(c.Name(), "parse", result.Failures)
 			}
 			if s.logger != nil {
-				s.logger.Info("collector done", "provider", c.Name(), "files_processed", result.FilesProcessed, "files_skipped", result.FilesSkipped, "skipped_old_files", result.SkippedOldFiles, "records_parsed", result.RecordsProcessed, "records_inserted", recordsInserted, "duration", pr.Duration.String())
+				s.logger.Info("collector done", "provider", c.Name(), "files_processed", result.FilesProcessed, "files_skipped", result.FilesSkipped, "skipped_old_files", result.SkippedOldFiles, "records_parsed", result.RecordsProcessed, "records_within_lookback", pr.RecordsWithinLookback, "records_skipped_old", pr.RecordsSkippedOld, "records_inserted", recordsInserted, "duration", pr.Duration.String())
 			}
 			if err == nil && result.FilesProcessed > 0 && !result.HitFileLimit && !result.HitRuntimeLimit {
 				if checkpointErr := s.repo.MarkIngestionCheckpoint(ctx, providerName(c.Name()), time.Now().UTC()); checkpointErr != nil {
@@ -165,6 +167,16 @@ func (s *Service) Run(ctx context.Context, since time.Time) ([]ProviderResult, e
 			if s.logger != nil {
 				s.logger.Info("continuous aggregates refreshed", "from", refreshSince, "to", refreshEnd)
 			}
+		}
+		if err := s.repo.RefreshDashboardAnalytics(ctx, refreshSince, refreshEnd, s.policy.RetentionDays); err != nil {
+			if s.logger != nil {
+				s.logger.Error("failed to refresh dashboard analytics", "from", refreshSince, "to", refreshEnd, "error", err)
+			}
+			mu.Lock()
+			allErrs = append(allErrs, err)
+			mu.Unlock()
+		} else if s.logger != nil {
+			s.logger.Info("dashboard analytics refreshed", "from", refreshSince, "to", refreshEnd)
 		}
 	}
 
@@ -256,8 +268,12 @@ func (s *Service) collectProvider(ctx context.Context, c providers.Collector, si
 
 func (s *Service) storeNormalizedBatch(ctx context.Context, provider string, batch providers.FileBatch, pr *ProviderResult, recordsInserted *int, streaming bool) error {
 	normalized := s.normalizer.Normalize(batch.Records)
+	cutoff := time.Now().UTC().AddDate(0, 0, -s.policy.LookbackDays)
+	retained, skippedOld := filterRecordsWithinLookback(normalized, cutoff)
+	pr.RecordsWithinLookback += len(retained)
+	pr.RecordsSkippedOld += skippedOld
 	if s.logger != nil {
-		s.logger.Info("records normalized", "provider", provider, "object", batch.Metadata.ObjectName, "records_parsed", len(batch.Records), "records_normalized", len(normalized), "streaming", streaming)
+		s.logger.Info("records normalized", "provider", provider, "object", batch.Metadata.ObjectName, "records_parsed", len(batch.Records), "records_normalized", len(normalized), "records_within_lookback", len(retained), "records_skipped_old", skippedOld, "lookback_days", s.policy.LookbackDays, "lookback_cutoff", cutoff, "streaming", streaming)
 	}
 	var err error
 	if streaming {
@@ -266,12 +282,14 @@ func (s *Service) storeNormalizedBatch(ctx context.Context, provider string, bat
 				return err
 			}
 		}
-		err = s.repo.StoreCostRecords(ctx, normalized)
+		if len(retained) > 0 {
+			err = s.repo.StoreCostRecords(ctx, retained)
+		}
 	} else {
 		batch.Metadata.ProcessedAt = time.Now().UTC()
 		batch.Metadata.RecordCount = len(batch.Records)
 		batch.Metadata.Status = "processed"
-		err = s.repo.StoreIngestedBatch(ctx, batch.Metadata, normalized)
+		err = s.repo.StoreIngestedBatch(ctx, batch.Metadata, retained)
 	}
 	if err != nil {
 		if s.metrics != nil {
@@ -282,14 +300,30 @@ func (s *Service) storeNormalizedBatch(ctx context.Context, provider string, bat
 		}
 		return err
 	}
-	*recordsInserted += len(normalized)
+	*recordsInserted += len(retained)
 	if s.logger != nil {
-		s.logger.Info("records inserted", "provider", provider, "object", batch.Metadata.ObjectName, "records_inserted", len(normalized))
+		s.logger.Info("records inserted", "provider", provider, "object", batch.Metadata.ObjectName, "records_parsed", len(batch.Records), "records_skipped_old", skippedOld, "records_inserted", len(retained))
 	}
-	for _, rec := range normalized {
+	for _, rec := range retained {
 		if pr.EarliestRecord.IsZero() || rec.Timestamp.Before(pr.EarliestRecord) {
 			pr.EarliestRecord = rec.Timestamp
 		}
 	}
 	return nil
+}
+
+func filterRecordsWithinLookback(records []domain.CanonicalCostRecord, cutoff time.Time) ([]domain.CanonicalCostRecord, int) {
+	if len(records) == 0 {
+		return nil, 0
+	}
+	retained := make([]domain.CanonicalCostRecord, 0, len(records))
+	skippedOld := 0
+	for _, record := range records {
+		if !record.Timestamp.IsZero() && record.Timestamp.Before(cutoff) {
+			skippedOld++
+			continue
+		}
+		retained = append(retained, record)
+	}
+	return retained, skippedOld
 }

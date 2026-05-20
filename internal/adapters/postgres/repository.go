@@ -183,7 +183,7 @@ func (r *Repository) MarkIngestionCheckpoint(ctx context.Context, provider domai
 
 func (r *Repository) ApplyDataLifecyclePolicies(ctx context.Context, retentionDays, compressionAfterDays int) error {
 	if retentionDays <= 0 {
-		retentionDays = 180
+		retentionDays = 90
 	}
 	if compressionAfterDays <= 0 {
 		compressionAfterDays = 7
@@ -206,20 +206,32 @@ func (r *Repository) ApplyDataLifecyclePolicies(ctx context.Context, retentionDa
 
 func (r *Repository) RunDataLifecycleMaintenance(ctx context.Context, retentionDays, compressionAfterDays int) (domain.DataLifecycleMaintenance, error) {
 	if retentionDays <= 0 {
-		retentionDays = 180
+		retentionDays = 90
 	}
 	if compressionAfterDays <= 0 {
 		compressionAfterDays = 7
 	}
+	retentionCutoff := time.Now().UTC().AddDate(0, 0, -retentionDays)
 	var result domain.DataLifecycleMaintenance
 	tag, err := r.db.Exec(ctx, `
 		DELETE FROM cost_records
-		WHERE "timestamp" < NOW() - make_interval(days => $1)
-	`, retentionDays)
+		WHERE "timestamp" < $1
+	`, retentionCutoff)
 	if err != nil {
 		return result, fmt.Errorf("prune old cost records: %w", err)
 	}
 	result.RecordsDeleted = tag.RowsAffected()
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return result, fmt.Errorf("begin dashboard analytics prune: %w", err)
+	}
+	if err = pruneDashboardAnalytics(ctx, tx, retentionCutoff); err != nil {
+		_ = tx.Rollback(ctx)
+		return result, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return result, fmt.Errorf("commit dashboard analytics prune: %w", err)
+	}
 
 	err = r.db.QueryRow(ctx, `
 		SELECT COUNT(*)::bigint
@@ -306,6 +318,9 @@ func (r *Repository) ensureCostRecordChunksWritable(ctx context.Context, from, t
 }
 
 func storeCostRecordsTx(ctx context.Context, tx pgx.Tx, records []domain.CanonicalCostRecord) error {
+	if len(records) == 0 {
+		return nil
+	}
 	const insertSQL = `
 		INSERT INTO cost_records
 		(timestamp, cloud_provider, account_id, service, category, resource_id, region, usage_quantity, usage_unit, cost, currency, tags, raw_json, source_object, meter)

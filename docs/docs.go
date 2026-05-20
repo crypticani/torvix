@@ -665,9 +665,17 @@ const docTemplate = `{
                     "type": "integer",
                     "example": 1234
                 },
+                "records_within_lookback": {
+                    "type": "integer",
+                    "example": 1200
+                },
+                "records_skipped_old": {
+                    "type": "integer",
+                    "example": 34
+                },
                 "records_inserted": {
                     "type": "integer",
-                    "example": 1234
+                    "example": 1200
                 },
                 "skipped_old_files": {
                     "type": "integer",
@@ -695,7 +703,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{"http"},
 	Title:            "CloudPulse API",
-	Description:      "Multi-cloud FinOps cost analytics platform. Collects billing data from AWS, Azure, GCP, and OCI, normalises it into a canonical schema, and provides real-time cost summaries, anomaly detection, forecasting, and automated reporting.",
+	Description:      "Multi-cloud FinOps cost analytics platform. Collects daily billing data from AWS, Azure, GCP, and OCI, normalises it into a canonical schema, and provides precomputed cost summaries, deterministic anomaly detection, forecasting, and automated reporting.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

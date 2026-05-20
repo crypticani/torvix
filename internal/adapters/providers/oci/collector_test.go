@@ -162,6 +162,150 @@ func TestCollectorUsesProcessedReportsInsteadOfLastModifiedForDedupe(t *testing.
 	}
 }
 
+func TestCollectorRanksCostCsvReportsByNumericSuffixNewestFirst(t *testing.T) {
+	repo := &fakeRepository{processed: map[string]bool{}}
+	objects := []ObjectInfo{
+		{Name: "reports/cost-csv/0001000000670898.csv.gz", ETag: "etag-1"},
+		{Name: "reports/cost-csv/0001000000676802.csv.gz", ETag: "etag-2"},
+		{Name: "reports/cost-csv/0001000000999999.csv.gz", ETag: "etag-3"},
+	}
+	client := &fakeObjectStorageClient{
+		namespace: "bling",
+		objects:   objects,
+		bodies:    costReportBodies(t, objects),
+		downloads: map[string]int{},
+	}
+	collector := NewWithClient(config.Provider{
+		Bucket:                 "tenant-bucket",
+		Prefix:                 "reports/cost-csv/",
+		Account:                "ocid1.tenancy.oc1..example",
+		MaxFilesPerRun:         1,
+		MaxRecordsPerBatch:     1,
+		MaxMemoryBufferRecords: 1,
+		MaxRuntime:             "1m",
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, client)
+
+	var selected []string
+	result, err := collector.CollectStream(context.Background(), time.Time{}, func(_ context.Context, batch providers.FileBatch) error {
+		if !batch.Final && len(batch.Records) > 0 {
+			selected = append(selected, batch.Metadata.ObjectName)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("CollectStream() error = %v", err)
+	}
+	if result.FilesProcessed != 1 {
+		t.Fatalf("expected one file to be processed, got %d", result.FilesProcessed)
+	}
+	if len(selected) == 0 || selected[0] != "reports/cost-csv/0001000000999999.csv.gz" {
+		t.Fatalf("expected newest numeric report first, got %v", selected)
+	}
+	if client.downloads["reports/cost-csv/0001000000670898.csv.gz"] != 0 {
+		t.Fatalf("oldest report should not be downloaded before max file limit")
+	}
+}
+
+func TestCollectorAppliesMaxFilesAfterDescendingCostCsvSelection(t *testing.T) {
+	repo := &fakeRepository{processed: map[string]bool{}}
+	objects := []ObjectInfo{
+		{Name: "reports/cost-csv/0001000000670898.csv.gz", ETag: "etag-1"},
+		{Name: "reports/cost-csv/0001000000676802.csv.gz", ETag: "etag-2"},
+		{Name: "reports/cost-csv/0001000000999999.csv.gz", ETag: "etag-3"},
+	}
+	client := &fakeObjectStorageClient{
+		namespace: "bling",
+		objects:   objects,
+		bodies:    costReportBodies(t, objects),
+		downloads: map[string]int{},
+	}
+	collector := NewWithClient(config.Provider{
+		Bucket:                 "tenant-bucket",
+		Prefix:                 "reports/cost-csv/",
+		Account:                "ocid1.tenancy.oc1..example",
+		MaxFilesPerRun:         2,
+		MaxRecordsPerBatch:     1,
+		MaxMemoryBufferRecords: 1,
+		MaxRuntime:             "1m",
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, client)
+
+	var selected []string
+	result, err := collector.CollectStream(context.Background(), time.Time{}, func(_ context.Context, batch providers.FileBatch) error {
+		if !batch.Final && len(batch.Records) > 0 {
+			selected = append(selected, batch.Metadata.ObjectName)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("CollectStream() error = %v", err)
+	}
+	if result.FilesProcessed != 2 {
+		t.Fatalf("expected two files to be processed, got %d", result.FilesProcessed)
+	}
+	want := []string{
+		"reports/cost-csv/0001000000999999.csv.gz",
+		"reports/cost-csv/0001000000676802.csv.gz",
+	}
+	if strings.Join(selected, ",") != strings.Join(want, ",") {
+		t.Fatalf("expected max files after newest-first ranking %v, got %v", want, selected)
+	}
+	if client.downloads["reports/cost-csv/0001000000670898.csv.gz"] != 0 {
+		t.Fatalf("oldest report should not be downloaded when max file limit is reached")
+	}
+}
+
+func TestCollectorSkipsProcessedNewestAndContinuesToNextNewestCostCsv(t *testing.T) {
+	repo := &fakeRepository{
+		processed: map[string]bool{
+			"reports/cost-csv/0001000000999999.csv.gz|etag-3": true,
+		},
+	}
+	objects := []ObjectInfo{
+		{Name: "reports/cost-csv/0001000000670898.csv.gz", ETag: "etag-1"},
+		{Name: "reports/cost-csv/0001000000676802.csv.gz", ETag: "etag-2"},
+		{Name: "reports/cost-csv/0001000000999999.csv.gz", ETag: "etag-3"},
+	}
+	client := &fakeObjectStorageClient{
+		namespace: "bling",
+		objects:   objects,
+		bodies:    costReportBodies(t, objects),
+		downloads: map[string]int{},
+	}
+	collector := NewWithClient(config.Provider{
+		Bucket:                 "tenant-bucket",
+		Prefix:                 "reports/cost-csv/",
+		Account:                "ocid1.tenancy.oc1..example",
+		MaxFilesPerRun:         2,
+		MaxRecordsPerBatch:     1,
+		MaxMemoryBufferRecords: 1,
+		MaxRuntime:             "1m",
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)), repo, client)
+
+	var selected []string
+	result, err := collector.CollectStream(context.Background(), time.Time{}, func(_ context.Context, batch providers.FileBatch) error {
+		if !batch.Final && len(batch.Records) > 0 {
+			selected = append(selected, batch.Metadata.ObjectName)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("CollectStream() error = %v", err)
+	}
+	if result.FilesSkipped != 1 {
+		t.Fatalf("expected newest processed report to be skipped, got %d skipped files", result.FilesSkipped)
+	}
+	want := []string{
+		"reports/cost-csv/0001000000676802.csv.gz",
+		"reports/cost-csv/0001000000670898.csv.gz",
+	}
+	if strings.Join(selected, ",") != strings.Join(want, ",") {
+		t.Fatalf("expected next newest unprocessed reports %v, got %v", want, selected)
+	}
+	if client.downloads["reports/cost-csv/0001000000999999.csv.gz"] != 0 {
+		t.Fatalf("processed newest report should not be downloaded")
+	}
+}
+
 func TestCollectorRuntimeLimitStopsBeforeNextFile(t *testing.T) {
 	repo := &fakeRepository{processed: map[string]bool{}}
 	client := &fakeObjectStorageClient{
@@ -334,6 +478,26 @@ func (f *fakeRepository) RefreshAggregates(context.Context, time.Time, time.Time
 	return nil
 }
 
+func (f *fakeRepository) RefreshDashboardAnalytics(context.Context, time.Time, time.Time, int) error {
+	return nil
+}
+
+func (f *fakeRepository) DashboardOverview(context.Context, time.Time, time.Time, time.Time, time.Time) (domain.DashboardOverview, error) {
+	return domain.DashboardOverview{}, nil
+}
+
+func (f *fakeRepository) DashboardCostSummaries(context.Context, string, time.Time, time.Time) ([]domain.DashboardCostSummary, error) {
+	return []domain.DashboardCostSummary{}, nil
+}
+
+func (f *fakeRepository) DashboardAnomalies(context.Context, time.Time, time.Time, string) ([]domain.DashboardAnomaly, error) {
+	return []domain.DashboardAnomaly{}, nil
+}
+
+func (f *fakeRepository) LatestIngestionStatus(context.Context) (domain.IngestionStatusSummary, error) {
+	return domain.IngestionStatusSummary{Providers: []domain.ProviderIngestionStatus{}}, nil
+}
+
 func gzipString(t *testing.T, value string) string {
 	t.Helper()
 	var b strings.Builder
@@ -345,4 +509,16 @@ func gzipString(t *testing.T, value string) string {
 		t.Fatalf("gzip close failed: %v", err)
 	}
 	return b.String()
+}
+
+func costReportBodies(t *testing.T, objects []ObjectInfo) map[string]string {
+	t.Helper()
+	bodies := make(map[string]string, len(objects))
+	for _, object := range objects {
+		bodies[object.Name] = gzipString(t, strings.Join([]string{
+			"lineItem/intervalUsageStart,product/service,usage/billedQuantity,cost/myCost",
+			"2026-05-19T00:00:00Z,Compute,1,3.5",
+		}, "\n"))
+	}
+	return bodies
 }

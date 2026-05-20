@@ -1,15 +1,16 @@
 # CloudPulse
 
-CloudPulse is a self-hosted multi-cloud FinOps analytics platform for ingesting billing exports, normalizing cost data, detecting anomalies, forecasting spend, generating reports, and exposing Prometheus-compatible metrics.
+CloudPulse is a self-hosted multi-cloud FinOps analytics platform for ingesting daily billing exports, normalizing cost data, detecting anomalies, forecasting spend, generating reports, and exposing Prometheus-compatible metrics.
 
 CloudPulse now uses PostgreSQL with the TimescaleDB extension as its permanent and only database backend.
+It is operational FinOps tooling, not long-term archival billing warehousing; the supported default historical horizon is 90 days.
 
 ## Capabilities
 
 - Daily billing export ingestion
 - Canonical multi-cloud normalization
-- Daily, weekly, and monthly Timescale continuous aggregates
-- Anomaly detection using moving averages, z-score, and percentage deviation
+- Daily, weekly, and monthly precomputed dashboard summaries
+- Explainable anomaly detection using trailing baselines, percentage deviation, and optional z-score thresholds
 - Rolling forecast generation
 - Slack, Microsoft Teams, Telegram, Discord, and SMTP email report delivery
 - Prometheus metrics and Grafana dashboards
@@ -34,9 +35,18 @@ dashboards                   sample Grafana dashboard JSON
 
 - `cost_records` is a Timescale hypertable partitioned on `timestamp`
 - tags and provider metadata are stored in `JSONB`
-- continuous aggregates power daily, weekly, and monthly rollups
-- compression and retention policies are defined in migrations
+- `daily_cost_summaries`, `weekly_cost_summaries`, `monthly_cost_summaries`, `cost_anomalies`, and `cost_forecasts` are precomputed after ingestion for dashboard APIs
+- compression and retention policies are defined in migrations; raw records are retained for 90 days by default and compressed after 7 days
 - `processed_report_files` tracks incremental billing ingestion and idempotency
+
+Production dashboard flow:
+
+```text
+Grafana Infinity datasource -> CloudPulse dashboard APIs -> precomputed PostgreSQL/TimescaleDB analytics tables
+Grafana Prometheus datasource -> Prometheus -> CloudPulse operational metrics
+```
+
+Production Grafana must not connect directly to PostgreSQL. Direct database access is kept for local developer inspection only.
 
 ## OCI Billing Ingestion
 
@@ -44,10 +54,14 @@ OCI support is production-oriented and first-class. The collector:
 
 - authenticates with the official OCI Go SDK using an OCI config file and API keys
 - lists report objects from OCI Object Storage
+- ranks OCI proprietary reports under `reports/cost-csv/` newest-first by their numeric report suffix before applying `max_files_per_run`
 - streams CSV and gzip-compressed exports
 - tolerates schema drift through dynamic header matching
 - normalizes OCI services into Compute, Storage, Networking, Database, Load Balancer, Monitoring, Security, and Kubernetes categories
 - skips files already recorded in `processed_report_files`
+- filters parsed records by the configured rolling lookback before insertion, so historical rows older than `ingestion.lookback_days` are counted as skipped and never inserted
+
+Object ranking is only an efficiency heuristic for reaching recent OCI reports quickly when the bucket contains many historical files. Row-level lookback remains the source of truth for deciding which billing records are inserted.
 
 Oracle deprecated older usage reports on January 31, 2025, so the parser accepts both older usage-style headers and current OCI cost report layouts.
 
@@ -85,7 +99,14 @@ Trigger ingestion and validate results:
 curl -X POST http://localhost:8080/api/v1/ingest
 curl http://localhost:8080/api/v1/ingest/status/<job_id>
 psql "$DATABASE_URL" -c "SELECT count(*) FROM cost_records;"
-curl "http://localhost:8080/api/v1/analytics/summary?window=weekly"
+psql "$DATABASE_URL" -c "SELECT count(*) FROM daily_cost_summaries;"
+psql "$DATABASE_URL" -c "SELECT count(*) FROM cost_anomalies;"
+curl "http://localhost:8080/api/v1/dashboard/overview"
+curl "http://localhost:8080/api/v1/dashboard/cost-timeseries?window=daily&from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-category?from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-service?from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)&limit=15"
+curl "http://localhost:8080/api/v1/dashboard/anomalies?from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)"
+curl "http://localhost:8080/api/v1/dashboard/ingestion-status"
 ```
 
 `POST /api/v1/ingest` returns immediately with a background job. This keeps API clients from timing out while large OCI reports are streamed and inserted. If an ingestion is already running, CloudPulse returns the active job instead of starting a duplicate run. Recent job status is retained in memory for follow-up checks.
@@ -102,6 +123,37 @@ curl "http://localhost:8080/api/v1/analytics/summary?window=weekly"
 
 When enabled alerting targets are configured, CloudPulse sends an ingestion completion notification with success, partial failure, or failure status plus files and record counts.
 
+Ingestion status separates parsing from retained inserts. `records_parsed` is the number of billing rows read from downloaded reports, `records_within_lookback` is the number of rows whose usage timestamp is inside the configured lookback window, `records_skipped_old` is the number of historical rows skipped before storage, and `records_inserted` is the number of records actually handed to PostgreSQL. If an OCI report contains only historical data, a successful job can report:
+
+```json
+{
+  "records_parsed": 5911,
+  "records_within_lookback": 0,
+  "records_skipped_old": 5911,
+  "records_inserted": 0
+}
+```
+
+After new records are inserted, CloudPulse refreshes the affected daily, weekly, and monthly dashboard summary windows, recomputes anomalies for the affected daily window, recomputes a 7-day trailing-average forecast, prunes dashboard tables outside the 90-day horizon, and then serves Grafana from those precomputed tables.
+
+## Anomaly Detection
+
+CloudPulse does not use AI/ML for anomaly detection today. The v1 anomaly model is deterministic and explainable:
+
+- It evaluates daily precomputed spend by provider, account, service, category, and region.
+- It compares each day against the trailing 7-day baseline within the retained 90-day horizon.
+- It stores observed cost, expected cost, absolute delta, percentage delta, severity, method, and an explanation in `cost_anomalies`.
+- A row is flagged when the absolute delta is at least `1.00` and either percentage deviation is at least `30%` or z-score is at least `2`.
+- Severity is `high` at `50%` deviation or z-score `3`; otherwise matching rows are `medium`.
+
+Example explanation:
+
+```text
+OCI Object Storage daily spend was 82.0% above its trailing baseline: observed 18.40, expected 10.11.
+```
+
+This is intentionally debuggable operational statistics, not predictive ML. Tune thresholds in code only after validating false positives against real billing history.
+
 ## API
 
 - `GET /healthz`
@@ -110,10 +162,13 @@ When enabled alerting targets are configured, CloudPulse sends an ingestion comp
 - `GET /api/v1/analytics/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&window=daily|weekly|monthly`
 - `GET /api/v1/analytics/anomalies?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/analytics/forecast?from=YYYY-MM-DD&to=YYYY-MM-DD`
-- `GET /api/v1/grafana/timeseries/cost?from=YYYY-MM-DD&to=YYYY-MM-DD&window=daily`
-- `GET /api/v1/grafana/table/top-services?from=YYYY-MM-DD&to=YYYY-MM-DD`
-- `GET /api/v1/grafana/table/anomalies?from=YYYY-MM-DD&to=YYYY-MM-DD`
-- `GET /api/v1/grafana/stat/summary?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /api/v1/dashboard/overview`
+- `GET /api/v1/dashboard/cost-timeseries?from=YYYY-MM-DD&to=YYYY-MM-DD&window=daily|weekly|monthly`
+- `GET /api/v1/dashboard/cost-by-category?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /api/v1/dashboard/cost-by-service?from=YYYY-MM-DD&to=YYYY-MM-DD&limit=15`
+- `GET /api/v1/dashboard/cost-by-provider?from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /api/v1/dashboard/anomalies?from=YYYY-MM-DD&to=YYYY-MM-DD&severity=high`
+- `GET /api/v1/dashboard/ingestion-status`
 - `GET /api/v1/reports/daily?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/reports/weekly?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/reports/monthly?from=YYYY-MM-DD&to=YYYY-MM-DD`
@@ -146,7 +201,7 @@ CloudPulse has two Docker Compose entry points:
 
 - **API:** `http://localhost:8080`
 - **Swagger UI:** `http://localhost:8080/swagger/index.html`
-- **Grafana:** `http://localhost:3000` (CloudPulse API, Prometheus, and local PostgreSQL datasources are automatically provisioned)
+- **Grafana:** `http://localhost:3000` (CloudPulse API, Prometheus, and local PostgreSQL datasources are automatically provisioned; the dev container installs the Infinity datasource with `GF_PLUGINS_PREINSTALL_SYNC`)
 - **Prometheus:** `http://localhost:9090`
 
 The bundled Grafana dashboard reads from the CloudPulse API and Prometheus. The local PostgreSQL datasource is only for direct development inspection; production Grafana should keep PostgreSQL private.
@@ -159,6 +214,14 @@ For production setup, Prometheus scraping, and Grafana dashboard import instruct
 
 In `configs/config.yaml`:
 
+- **Ingestion lifecycle:** CloudPulse ingests daily billing exports with a 30-day lookback and retains operational analytics for 90 days by default.
+  ```yaml
+  ingestion:
+    lookback_days: 30
+    retention_days: 90
+    compression_after_days: 7
+  ```
+  Object-level report ranking and dedupe reduce unnecessary downloads. OCI proprietary cost reports under `reports/cost-csv/` are processed newest-first by numeric report suffix before `max_files_per_run` is applied. Record-level lookback filtering is the correctness boundary for dashboard data: records older than `lookback_days` are skipped before insertion. Retention remains a storage lifecycle safety net, not the primary ingestion lookback filter.
 - **Scheduler:** CloudPulse includes an in-process scheduler to run ingestion automatically.
   ```yaml
   scheduler:

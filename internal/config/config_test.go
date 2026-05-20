@@ -33,6 +33,20 @@ func TestLoadHTTPAddressEnvOverride(t *testing.T) {
 	}
 }
 
+func TestIngestionDefaultsUseNinetyDayOperationalHorizon(t *testing.T) {
+	cfg := loadTestConfig(t, "log_level: debug\n")
+
+	if cfg.Ingestion.LookbackDays != 30 {
+		t.Fatalf("expected default lookback_days 30, got %d", cfg.Ingestion.LookbackDays)
+	}
+	if cfg.Ingestion.RetentionDays != 90 {
+		t.Fatalf("expected default retention_days 90, got %d", cfg.Ingestion.RetentionDays)
+	}
+	if cfg.Ingestion.CompressionAfterDays != 7 {
+		t.Fatalf("expected default compression_after_days 7, got %d", cfg.Ingestion.CompressionAfterDays)
+	}
+}
+
 func TestLoadHTTPPortEnvOverride(t *testing.T) {
 	t.Setenv(EnvHTTPPort, "18080")
 

@@ -79,9 +79,13 @@ func bearerToken(header string) string {
 }
 
 func (h *Handler) grafanaCostTimeseries(w http.ResponseWriter, r *http.Request) {
-	from, to := h.parseRange(r)
+	from, to, _, ok := h.dashboardRange(r)
+	if !ok {
+		writeJSON(w, http.StatusOK, []grafanaCostPoint{})
+		return
+	}
 	window := grafanaWindow(r)
-	summary, err := h.analytics.AggregateWindow(r.Context(), from, to, window)
+	summary, err := h.analytics.DashboardCostSummaries(r.Context(), window, from, to)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -89,8 +93,8 @@ func (h *Handler) grafanaCostTimeseries(w http.ResponseWriter, r *http.Request) 
 	points := make([]grafanaCostPoint, 0, len(summary))
 	for _, row := range summary {
 		points = append(points, grafanaCostPoint{
-			Time:      row.WindowStart,
-			Metric:    grafanaMetric(row),
+			Time:      row.PeriodStart,
+			Metric:    grafanaMetricFromDashboard(row),
 			Value:     row.TotalCost,
 			Provider:  row.Provider,
 			AccountID: row.AccountID,
@@ -101,10 +105,13 @@ func (h *Handler) grafanaCostTimeseries(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) grafanaTopServices(w http.ResponseWriter, r *http.Request) {
-	from, to := h.parseRange(r)
-	window := grafanaWindow(r)
+	from, to, _, ok := h.dashboardRange(r)
+	if !ok {
+		writeJSON(w, http.StatusOK, []grafanaTopServiceRow{})
+		return
+	}
 	limit := grafanaLimit(r, 15)
-	summary, err := h.analytics.AggregateWindow(r.Context(), from, to, window)
+	summary, err := h.analytics.DashboardCostSummaries(r.Context(), "daily", from, to)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -145,9 +152,13 @@ func (h *Handler) grafanaTopServices(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) grafanaAnomalies(w http.ResponseWriter, r *http.Request) {
-	from, to := h.parseRange(r)
+	from, to, _, ok := h.dashboardRange(r)
+	if !ok {
+		writeJSON(w, http.StatusOK, []grafanaAnomalyRow{})
+		return
+	}
 	limit := grafanaLimit(r, 25)
-	anomalies, err := h.analytics.DetectAnomalies(r.Context(), from, to)
+	anomalies, err := h.analytics.DashboardAnomalies(r.Context(), from, to, r.URL.Query().Get("severity"))
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -155,14 +166,14 @@ func (h *Handler) grafanaAnomalies(w http.ResponseWriter, r *http.Request) {
 	rows := make([]grafanaAnomalyRow, 0, len(anomalies))
 	for _, anomaly := range anomalies {
 		rows = append(rows, grafanaAnomalyRow{
-			Date:             anomaly.Date,
+			Date:             anomaly.PeriodStart,
 			Provider:         anomaly.Provider,
 			AccountID:        anomaly.AccountID,
 			Service:          anomaly.Service,
-			Baseline:         anomaly.Baseline,
-			Actual:           anomaly.Actual,
-			ZScore:           anomaly.ZScore,
-			PercentDeviation: anomaly.PercentDeviation,
+			Baseline:         anomaly.ExpectedCost,
+			Actual:           anomaly.ObservedCost,
+			ZScore:           0,
+			PercentDeviation: anomaly.PercentageDelta,
 			Severity:         anomaly.Severity,
 		})
 	}
@@ -173,14 +184,18 @@ func (h *Handler) grafanaAnomalies(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) grafanaSummary(w http.ResponseWriter, r *http.Request) {
-	from, to := h.parseRange(r)
+	from, to, _, ok := h.dashboardRange(r)
+	if !ok {
+		writeJSON(w, http.StatusOK, grafanaSummaryStat{From: from, To: to, Window: grafanaWindow(r), GeneratedAt: time.Now().UTC()})
+		return
+	}
 	window := grafanaWindow(r)
-	summary, err := h.analytics.AggregateWindow(r.Context(), from, to, window)
+	summary, err := h.analytics.DashboardCostSummaries(r.Context(), window, from, to)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	anomalies, err := h.analytics.DetectAnomalies(r.Context(), from, to)
+	anomalies, err := h.analytics.DashboardAnomalies(r.Context(), from, to, "")
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -192,7 +207,7 @@ func (h *Handler) grafanaSummary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stat)
 }
 
-func grafanaSummaryFrom(summary []domain.AggregatedCost, anomalies []domain.Anomaly, from, to time.Time, window string) grafanaSummaryStat {
+func grafanaSummaryFrom(summary []domain.DashboardCostSummary, anomalies []domain.DashboardAnomaly, from, to time.Time, window string) grafanaSummaryStat {
 	services := make(map[string]struct{})
 	providers := make(map[domain.Provider]struct{})
 	var total float64

@@ -55,6 +55,21 @@ func (m *mockReportingRepo) RunDataLifecycleMaintenance(ctx context.Context, ret
 func (m *mockReportingRepo) RefreshAggregates(ctx context.Context, from, to time.Time) error {
 	return nil
 }
+func (m *mockReportingRepo) RefreshDashboardAnalytics(ctx context.Context, from, to time.Time, retentionDays int) error {
+	return nil
+}
+func (m *mockReportingRepo) DashboardOverview(ctx context.Context, currentFrom, currentTo, previousFrom, previousTo time.Time) (domain.DashboardOverview, error) {
+	return domain.DashboardOverview{}, nil
+}
+func (m *mockReportingRepo) DashboardCostSummaries(ctx context.Context, window string, from, to time.Time) ([]domain.DashboardCostSummary, error) {
+	return []domain.DashboardCostSummary{}, nil
+}
+func (m *mockReportingRepo) DashboardAnomalies(ctx context.Context, from, to time.Time, severity string) ([]domain.DashboardAnomaly, error) {
+	return []domain.DashboardAnomaly{}, nil
+}
+func (m *mockReportingRepo) LatestIngestionStatus(ctx context.Context) (domain.IngestionStatusSummary, error) {
+	return domain.IngestionStatusSummary{Providers: []domain.ProviderIngestionStatus{}}, nil
+}
 
 func TestBuildReport(t *testing.T) {
 	repo := &mockReportingRepo{}

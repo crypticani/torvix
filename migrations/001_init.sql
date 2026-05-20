@@ -64,4 +64,4 @@ ALTER TABLE cost_records SET (
 );
 
 SELECT add_compression_policy('cost_records', INTERVAL '7 days', if_not_exists => TRUE);
-SELECT add_retention_policy('cost_records', INTERVAL '180 days', if_not_exists => TRUE);
+SELECT add_retention_policy('cost_records', INTERVAL '90 days', if_not_exists => TRUE);

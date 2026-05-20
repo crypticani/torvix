@@ -79,7 +79,7 @@ SELECT add_continuous_aggregate_policy(
 
 SELECT add_continuous_aggregate_policy(
     'cost_summary_weekly',
-    start_offset => INTERVAL '365 days',
+    start_offset => INTERVAL '90 days',
     end_offset => INTERVAL '1 day',
     schedule_interval => INTERVAL '2 hours',
     if_not_exists => TRUE
@@ -87,7 +87,7 @@ SELECT add_continuous_aggregate_policy(
 
 SELECT add_continuous_aggregate_policy(
     'cost_summary_monthly',
-    start_offset => INTERVAL '730 days',
+    start_offset => INTERVAL '90 days',
     end_offset => INTERVAL '1 day',
     schedule_interval => INTERVAL '12 hours',
     if_not_exists => TRUE

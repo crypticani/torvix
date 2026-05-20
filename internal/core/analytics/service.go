@@ -34,6 +34,27 @@ func (s *Service) DetectAnomalies(ctx context.Context, from, to time.Time) ([]do
 	return s.repo.DetectAnomalies(ctx, from, to)
 }
 
+func (s *Service) DashboardOverview(ctx context.Context, now time.Time) (domain.DashboardOverview, error) {
+	now = now.UTC()
+	currentTo := now
+	currentFrom := currentTo.AddDate(0, 0, -30)
+	previousTo := currentFrom
+	previousFrom := previousTo.AddDate(0, 0, -30)
+	return s.repo.DashboardOverview(ctx, currentFrom, currentTo, previousFrom, previousTo)
+}
+
+func (s *Service) DashboardCostSummaries(ctx context.Context, window string, from, to time.Time) ([]domain.DashboardCostSummary, error) {
+	return s.repo.DashboardCostSummaries(ctx, window, from, to)
+}
+
+func (s *Service) DashboardAnomalies(ctx context.Context, from, to time.Time, severity string) ([]domain.DashboardAnomaly, error) {
+	return s.repo.DashboardAnomalies(ctx, from, to, severity)
+}
+
+func (s *Service) LatestIngestionStatus(ctx context.Context) (domain.IngestionStatusSummary, error) {
+	return s.repo.LatestIngestionStatus(ctx)
+}
+
 func detectSeriesAnomalies(series []domain.AggregatedCost) []domain.Anomaly {
 	if len(series) < 7 {
 		return nil

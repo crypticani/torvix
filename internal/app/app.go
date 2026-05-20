@@ -81,6 +81,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	alertingSvc := alerting.New(&http.Client{Timeout: 10 * time.Second}, cfg.Reporting.Webhooks)
 	handler := httpapi.NewWithOptions(collectorSvc, analyticsSvc, forecastingSvc, reportingSvc, alertingSvc, reg, httpapi.HandlerOptions{
 		LookbackDays:       cfg.Ingestion.LookbackDays,
+		RetentionDays:      cfg.Ingestion.RetentionDays,
 		GrafanaAuthEnabled: cfg.Grafana.APIAuth.Enabled,
 		GrafanaAuthToken:   cfg.Grafana.APIAuth.BearerToken,
 		GrafanaMetrics:     metrics,

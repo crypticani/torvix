@@ -60,6 +60,19 @@ The dev Grafana datasource provisioning expects:
 
 The bundled dashboard uses `CloudPulseAPI` and `Prometheus`. It does not query PostgreSQL directly.
 
+CloudPulse is daily operational FinOps tooling, not long-term archival billing warehousing. The default lifecycle is:
+
+```yaml
+ingestion:
+  lookback_days: 30
+  retention_days: 90
+  compression_after_days: 7
+```
+
+Raw `cost_records` older than 90 days are removed by TimescaleDB retention and lifecycle maintenance. Precomputed dashboard summary and anomaly tables are refreshed after ingestion and pruned to the same 90-day horizon. Forecast rows are regenerated for the current forward-looking 7-day horizon and old forecast rows are pruned.
+
+Object-level ranking and `processed_report_files` dedupe reduce unnecessary OCI downloads. OCI Object Storage listings are lexicological by object name, so CloudPulse ranks proprietary reports under `reports/cost-csv/` newest-first by numeric report suffix before applying `max_files_per_run`. Record-level filtering is still required because a recently modified billing export can contain historical usage rows. CloudPulse filters each parsed record by `ingestion.lookback_days` before insertion, so old rows are reported as `records_skipped_old` and never rely on retention cleanup to disappear.
+
 ## Production Setup
 
 Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are managed outside the CloudPulse Compose stack.
@@ -186,7 +199,9 @@ cloudpulse_records_deleted_total
 cloudpulse_compressed_chunks_total
 ```
 
-If `metrics.cost_stats_enabled` is enabled, CloudPulse also exposes coarse aggregate cost gauges from Grafana summary API calls:
+Cost values belong in PostgreSQL-backed CloudPulse APIs, not Prometheus labels. Prometheus should carry operational health metrics only: ingestion duration, files processed, records inserted, failures, skipped old files, records pruned, compressed chunks, and API/runtime status.
+
+If `metrics.cost_stats_enabled` is enabled, CloudPulse also exposes coarse aggregate cost gauges from dashboard summary API calls:
 
 ```promql
 cloudpulse_cost_total
@@ -213,18 +228,23 @@ The production dashboard expects these Grafana datasource UIDs:
 The production API endpoints are:
 
 ```text
-GET /api/v1/grafana/timeseries/cost
-GET /api/v1/grafana/table/top-services
-GET /api/v1/grafana/table/anomalies
-GET /api/v1/grafana/stat/summary
+GET /api/v1/dashboard/overview
+GET /api/v1/dashboard/cost-timeseries
+GET /api/v1/dashboard/cost-by-category
+GET /api/v1/dashboard/cost-by-service
+GET /api/v1/dashboard/cost-by-provider
+GET /api/v1/dashboard/anomalies
+GET /api/v1/dashboard/ingestion-status
 ```
 
-Each endpoint accepts `from=YYYY-MM-DD` and `to=YYYY-MM-DD`. Cost time series and top-services endpoints also accept `window=daily|weekly|monthly`.
+The range endpoints accept `from=YYYY-MM-DD` and `to=YYYY-MM-DD`. Cost time series accepts `window=daily|weekly|monthly`. Service breakdown accepts `limit=15`. Anomalies accepts `severity=low|medium|high`.
+
+Dashboard APIs read precomputed tables and return metadata with `retention_days`, `source: "precomputed"`, and an empty `data` array plus a clear message when the requested range is outside the retained 90-day window.
 
 ### Option 1: Grafana UI Import
 
 1. In Grafana, go to **Dashboards -> New -> Import**.
-2. Install and configure an HTTP JSON datasource such as the Infinity datasource plugin.
+2. Install and configure an HTTP JSON datasource such as the Infinity datasource plugin. For Grafana Docker, use `GF_PLUGINS_PREINSTALL_SYNC=yesoreyeram-infinity-datasource` so provisioning does not create the datasource before the plugin is available.
 3. Upload or paste `dashboards/cloudpulse-overview.json`.
 4. If Grafana asks for datasources, map:
    - `Prometheus` to your production Prometheus datasource.
@@ -285,7 +305,57 @@ grafana:
     bearer_token: "replace_with_long_random_token"
 ```
 
-The same value can be supplied with `CLOUDPULSE_GRAFANA_API_BEARER_TOKEN`. When auth is enabled, production Grafana must send `Authorization: Bearer <token>` to `/api/v1/grafana/*`.
+The same value can be supplied with `CLOUDPULSE_GRAFANA_API_BEARER_TOKEN`. When auth is enabled, production Grafana must send `Authorization: Bearer <token>` to `/api/v1/dashboard/*`.
+
+## Verify Dashboard Data After Ingestion
+
+Use this sequence when cost panels are empty. It checks each layer in order instead of changing the dashboard cosmetically:
+
+```bash
+psql "$DATABASE_URL" -c "SELECT count(*) FROM cost_records;"
+psql "$DATABASE_URL" -c "SELECT count(*) FROM daily_cost_summaries;"
+psql "$DATABASE_URL" -c "SELECT count(*) FROM weekly_cost_summaries;"
+psql "$DATABASE_URL" -c "SELECT count(*) FROM monthly_cost_summaries;"
+psql "$DATABASE_URL" -c "SELECT count(*) FROM cost_anomalies;"
+```
+
+```bash
+curl "http://localhost:8080/api/v1/dashboard/overview"
+curl "http://localhost:8080/api/v1/dashboard/cost-timeseries?window=daily&from=2026-05-01&to=2026-05-31"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-category?from=2026-05-01&to=2026-05-31"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-service?from=2026-05-01&to=2026-05-31&limit=15"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-provider?from=2026-05-01&to=2026-05-31"
+curl "http://localhost:8080/api/v1/dashboard/anomalies?from=2026-05-01&to=2026-05-31"
+curl "http://localhost:8080/api/v1/dashboard/ingestion-status"
+```
+
+If `cost_records` has rows but `daily_cost_summaries` is empty, rerun ingestion after this release so the post-ingest analysis step executes. Dashboards intentionally do not scan raw billing rows. In the current lifecycle, `POST /api/v1/ingest` is the supported path: ingest, normalize, store raw records, recompute summaries, recompute anomalies, recompute forecasts, prune retained data, then serve dashboard APIs from precomputed tables.
+
+Ingestion status counters distinguish these stages:
+
+- `records_parsed`: rows read from downloaded billing reports.
+- `records_within_lookback`: parsed rows whose usage timestamp is inside `ingestion.lookback_days`.
+- `records_skipped_old`: parsed rows skipped before insertion because they are older than the lookback cutoff.
+- `records_inserted`: records actually inserted into `cost_records`.
+
+When all downloaded rows are historical, expect `records_inserted: 0`. In that case dashboard APIs should be empty because there is genuinely no recent retained billing data, not because PostgreSQL immediately pruned misleading inserts.
+
+## Anomaly Detection
+
+CloudPulse anomaly detection is deterministic. It does not use AI/ML today.
+
+- Dimensions: provider, account, service, category, and region.
+- Baseline: trailing 7 daily summary rows from `daily_cost_summaries`.
+- Minimum absolute delta: `1.00`.
+- Minimum percentage deviation: `30%`.
+- Optional statistical threshold: z-score `2`.
+- High severity: `50%` deviation or z-score `3`; otherwise matching anomalies are medium severity.
+
+Each stored anomaly includes observed cost, expected cost, absolute delta, percentage delta, severity, method, and an explanation such as:
+
+```text
+OCI Storage daily spend was 82.0% above its trailing baseline: observed 18.40, expected 10.11.
+```
 
 ## Operational Notes
 

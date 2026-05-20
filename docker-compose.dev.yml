@@ -79,9 +79,7 @@ services:
     mem_limit: 256m
     cpus: "0.5"
     environment:
-      GF_INSTALL_PLUGINS: "yesoreyeram-infinity-datasource"
-      GF_PLUGINS_PREINSTALL_DISABLED: "true"
-      GF_PLUGINS_PREINSTALL_AUTO_UPDATE: "false"
+      GF_PLUGINS_PREINSTALL_SYNC: "yesoreyeram-infinity-datasource"
     volumes:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./dashboards:/var/lib/grafana/dashboards:ro

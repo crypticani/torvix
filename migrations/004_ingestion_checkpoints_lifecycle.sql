@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS ingestion_checkpoints
 DO $$
 BEGIN
     PERFORM remove_retention_policy('cost_records', if_exists => TRUE);
-    PERFORM add_retention_policy('cost_records', INTERVAL '180 days', if_not_exists => TRUE);
+    PERFORM add_retention_policy('cost_records', INTERVAL '90 days', if_not_exists => TRUE);
 END $$;
 
 DO $$

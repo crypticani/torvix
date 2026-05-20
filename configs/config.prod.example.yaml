@@ -13,8 +13,8 @@ db:
 
 ingestion:
   lookback_days: 30
-  retention_days: 180
-  compression_after_days: 45
+  retention_days: 90
+  compression_after_days: 7
   max_files_per_run: 25
   max_records_per_batch: 1000
   max_memory_buffer_records: 1000

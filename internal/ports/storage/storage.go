@@ -22,4 +22,9 @@ type Repository interface {
 	ApplyDataLifecyclePolicies(ctx context.Context, retentionDays, compressionAfterDays int) error
 	RunDataLifecycleMaintenance(ctx context.Context, retentionDays, compressionAfterDays int) (domain.DataLifecycleMaintenance, error)
 	RefreshAggregates(ctx context.Context, from, to time.Time) error
+	RefreshDashboardAnalytics(ctx context.Context, from, to time.Time, retentionDays int) error
+	DashboardOverview(ctx context.Context, currentFrom, currentTo, previousFrom, previousTo time.Time) (domain.DashboardOverview, error)
+	DashboardCostSummaries(ctx context.Context, window string, from, to time.Time) ([]domain.DashboardCostSummary, error)
+	DashboardAnomalies(ctx context.Context, from, to time.Time, severity string) ([]domain.DashboardAnomaly, error)
+	LatestIngestionStatus(ctx context.Context) (domain.IngestionStatusSummary, error)
 }

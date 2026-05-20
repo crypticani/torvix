@@ -163,8 +163,14 @@ definitions:
       records_parsed:
         example: 1234
         type: integer
+      records_within_lookback:
+        example: 1200
+        type: integer
+      records_skipped_old:
+        example: 34
+        type: integer
       records_inserted:
-        example: 1234
+        example: 1200
         type: integer
       skipped_old_files:
         example: 1
@@ -183,7 +189,8 @@ info:
     name: CloudPulse Team
   description: Multi-cloud FinOps cost analytics platform. Collects billing data from
     AWS, Azure, GCP, and OCI, normalises it into a canonical schema, and provides
-    real-time cost summaries, anomaly detection, forecasting, and automated reporting.
+    precomputed cost summaries, deterministic anomaly detection, forecasting, and
+    automated reporting.
   title: CloudPulse API
   version: "1.0"
 paths:
