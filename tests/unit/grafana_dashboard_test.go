@@ -20,6 +20,7 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 			Datasource struct {
 				UID string `json:"uid"`
 			} `json:"datasource"`
+			TimeFrom string `json:"timeFrom"`
 			Targets []struct {
 				URL            string `json:"url"`
 				Expr           string `json:"expr"`
@@ -58,6 +59,9 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	for _, panel := range dashboard.Panels {
 		if panel.Datasource.UID != "CloudPulseAPI" {
 			continue
+		}
+		if panel.TimeFrom != "30d" {
+			t.Fatalf("CloudPulse API panel must use a 30-day panel time override for daily billing data, got %q", panel.TimeFrom)
 		}
 		for _, target := range panel.Targets {
 			if target.Parser != "backend" {

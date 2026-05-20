@@ -13,6 +13,7 @@
       "id": 1,
       "type": "stat",
       "title": "Current 30-Day Spend",
+      "timeFrom": "30d",
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "CloudPulseAPI" },
       "targets": [
         {
@@ -38,6 +39,7 @@
       "id": 2,
       "type": "stat",
       "title": "Previous 30-Day Spend",
+      "timeFrom": "30d",
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "CloudPulseAPI" },
       "targets": [
         {
@@ -61,6 +63,7 @@
       "id": 3,
       "type": "stat",
       "title": "Anomalies",
+      "timeFrom": "30d",
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "CloudPulseAPI" },
       "targets": [
         {
@@ -93,6 +96,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "Daily Cost Trend",
+      "timeFrom": "30d",
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "CloudPulseAPI" },
       "targets": [
         {
@@ -127,6 +131,7 @@
       "id": 7,
       "type": "table",
       "title": "Top Services",
+      "timeFrom": "30d",
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "CloudPulseAPI" },
       "targets": [
         {
@@ -152,6 +157,7 @@
       "id": 8,
       "type": "table",
       "title": "Cost By Category",
+      "timeFrom": "30d",
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "CloudPulseAPI" },
       "targets": [
         {
@@ -176,6 +182,7 @@
       "id": 9,
       "type": "table",
       "title": "Cost By Provider",
+      "timeFrom": "30d",
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "CloudPulseAPI" },
       "targets": [
         {
@@ -200,6 +207,7 @@
       "id": 10,
       "type": "table",
       "title": "Anomaly Table",
+      "timeFrom": "30d",
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "CloudPulseAPI" },
       "targets": [
         {
@@ -229,6 +237,7 @@
       "id": 11,
       "type": "table",
       "title": "Latest Billing Period Status",
+      "timeFrom": "30d",
       "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "CloudPulseAPI" },
       "targets": [
         {
