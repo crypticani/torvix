@@ -56,6 +56,9 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	if strings.Contains(joined, "\"uid\": \"PostgreSQL\"") || strings.Contains(joined, "/api/v1/grafana/") {
 		t.Fatalf("dashboard must not depend on PostgreSQL datasource or legacy grafana raw endpoints")
 	}
+	if strings.Contains(joined, "__from") || strings.Contains(joined, "__to") {
+		t.Fatalf("dashboard API panels must not depend on Grafana date macros; CloudPulse APIs provide a default 30-day window")
+	}
 	for _, panel := range dashboard.Panels {
 		if panel.Datasource.UID != "CloudPulseAPI" {
 			continue

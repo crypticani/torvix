@@ -105,7 +105,7 @@
           "source": "url",
           "parser": "backend",
           "format": "time_series",
-          "url": "/api/v1/dashboard/cost-timeseries?window=daily&from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}",
+          "url": "/api/v1/dashboard/cost-timeseries?window=daily",
           "root_selector": "data",
           "columns": [
             { "selector": "time", "text": "time", "type": "timestamp" },
@@ -140,7 +140,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/cost-by-service?from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}&limit=15",
+          "url": "/api/v1/dashboard/cost-by-service?limit=15",
           "root_selector": "data",
           "columns": [
             { "selector": "rank", "text": "rank", "type": "number" },
@@ -166,7 +166,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/cost-by-category?from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}",
+          "url": "/api/v1/dashboard/cost-by-category",
           "root_selector": "data",
           "columns": [
             { "selector": "rank", "text": "rank", "type": "number" },
@@ -191,7 +191,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/cost-by-provider?from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}",
+          "url": "/api/v1/dashboard/cost-by-provider",
           "root_selector": "data",
           "columns": [
             { "selector": "rank", "text": "rank", "type": "number" },
@@ -216,7 +216,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/anomalies?from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}",
+          "url": "/api/v1/dashboard/anomalies",
           "root_selector": "data",
           "columns": [
             { "selector": "period_start", "text": "period_start", "type": "timestamp" },
