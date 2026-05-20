@@ -86,21 +86,40 @@ func (h *Handler) dashboardCostTimeseries(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	points := make([]grafanaCostPoint, 0, len(rows))
 	provider, hasProvider := dashboardProvider(r)
+	type timeseriesKey struct {
+		at        time.Time
+		provider  domain.Provider
+		accountID string
+	}
+	totals := map[timeseriesKey]float64{}
 	for _, row := range rows {
 		if hasProvider && row.Provider != provider {
 			continue
 		}
+		k := timeseriesKey{at: row.PeriodStart, provider: row.Provider, accountID: row.AccountID}
+		totals[k] += row.TotalCost
+	}
+	points := make([]grafanaCostPoint, 0, len(totals))
+	for k, total := range totals {
 		points = append(points, grafanaCostPoint{
-			Time:      row.PeriodStart,
-			Metric:    grafanaMetricFromDashboard(row),
-			Value:     row.TotalCost,
-			Provider:  row.Provider,
-			AccountID: row.AccountID,
-			Service:   row.Service,
+			Time:      k.at,
+			Metric:    dashboardTotalMetric(k.provider, k.accountID),
+			Value:     total,
+			Provider:  k.provider,
+			AccountID: k.accountID,
+			Service:   "total",
 		})
 	}
+	sort.Slice(points, func(i, j int) bool {
+		if points[i].Time.Equal(points[j].Time) {
+			if points[i].Provider == points[j].Provider {
+				return points[i].AccountID < points[j].AccountID
+			}
+			return points[i].Provider < points[j].Provider
+		}
+		return points[i].Time.Before(points[j].Time)
+	})
 	writeJSON(w, http.StatusOK, dashboardTimeseriesResponse{Meta: meta, Data: points})
 }
 
@@ -384,4 +403,11 @@ func grafanaMetricFromDashboard(row domain.DashboardCostSummary) string {
 		return string(row.Provider) + "/" + service
 	}
 	return string(row.Provider) + "/" + row.AccountID + "/" + service
+}
+
+func dashboardTotalMetric(provider domain.Provider, accountID string) string {
+	if accountID == "" {
+		return string(provider) + "/total"
+	}
+	return string(provider) + "/" + accountID + "/total"
 }

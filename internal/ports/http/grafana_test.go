@@ -122,7 +122,7 @@ func TestDashboardCostTimeseriesShape(t *testing.T) {
 	if len(got.Data) != 2 {
 		t.Fatalf("expected 2 points, got %d", len(got.Data))
 	}
-	if got.Data[0].Metric != "oci/tenancy-a/Compute" {
+	if got.Data[0].Metric != "oci/tenancy-a/total" {
 		t.Fatalf("unexpected metric %q", got.Data[0].Metric)
 	}
 	if got.Meta.Source != "precomputed" {
