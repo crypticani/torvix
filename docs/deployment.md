@@ -228,16 +228,18 @@ The production dashboard expects these Grafana datasource UIDs:
 The production API endpoints are:
 
 ```text
-GET /api/v1/dashboard/overview
-GET /api/v1/dashboard/cost-timeseries
-GET /api/v1/dashboard/cost-by-category
-GET /api/v1/dashboard/cost-by-service
-GET /api/v1/dashboard/cost-by-provider
-GET /api/v1/dashboard/anomalies
+GET /api/v1/dashboard/overview?provider=oci
+GET /api/v1/dashboard/cost-timeseries?provider=oci
+GET /api/v1/dashboard/cost-by-category?provider=oci
+GET /api/v1/dashboard/cost-by-service?provider=oci
+GET /api/v1/dashboard/cost-by-provider?provider=oci
+GET /api/v1/dashboard/cost-by-compartment?provider=oci
+GET /api/v1/dashboard/cost-by-region?provider=oci
+GET /api/v1/dashboard/anomalies?provider=oci
 GET /api/v1/dashboard/ingestion-status
 ```
 
-The range endpoints accept `from=YYYY-MM-DD` and `to=YYYY-MM-DD`. Cost time series accepts `window=daily|weekly|monthly`. Service breakdown accepts `limit=15`. Anomalies accepts `severity=low|medium|high`.
+The range endpoints accept `from=YYYY-MM-DD` and `to=YYYY-MM-DD`. Cost time series accepts `window=daily|weekly|monthly`. Service and compartment breakdowns accept `limit=15`. The OCI dashboard uses compartment and region endpoints because OCI service ownership is usually organized around compartments. Anomalies accepts `severity=low|medium|high`.
 
 Dashboard APIs read precomputed tables and return metadata with `retention_days`, `source: "precomputed"`, and an empty `data` array plus a clear message when the requested range is outside the retained 90-day window.
 
@@ -320,12 +322,14 @@ psql "$DATABASE_URL" -c "SELECT count(*) FROM cost_anomalies;"
 ```
 
 ```bash
-curl "http://localhost:8080/api/v1/dashboard/overview"
-curl "http://localhost:8080/api/v1/dashboard/cost-timeseries?window=daily&from=2026-05-01&to=2026-05-31"
-curl "http://localhost:8080/api/v1/dashboard/cost-by-category?from=2026-05-01&to=2026-05-31"
-curl "http://localhost:8080/api/v1/dashboard/cost-by-service?from=2026-05-01&to=2026-05-31&limit=15"
-curl "http://localhost:8080/api/v1/dashboard/cost-by-provider?from=2026-05-01&to=2026-05-31"
-curl "http://localhost:8080/api/v1/dashboard/anomalies?from=2026-05-01&to=2026-05-31"
+curl "http://localhost:8080/api/v1/dashboard/overview?provider=oci"
+curl "http://localhost:8080/api/v1/dashboard/cost-timeseries?window=daily&provider=oci&from=2026-05-01&to=2026-05-31"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-category?provider=oci&from=2026-05-01&to=2026-05-31"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-service?provider=oci&from=2026-05-01&to=2026-05-31&limit=15"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-provider?provider=oci&from=2026-05-01&to=2026-05-31"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-compartment?provider=oci&from=2026-05-01&to=2026-05-31&limit=15"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-region?provider=oci&from=2026-05-01&to=2026-05-31"
+curl "http://localhost:8080/api/v1/dashboard/anomalies?provider=oci&from=2026-05-01&to=2026-05-31"
 curl "http://localhost:8080/api/v1/dashboard/ingestion-status"
 ```
 

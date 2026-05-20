@@ -29,8 +29,8 @@ func (g *grafanaRepo) DashboardOverview(context.Context, time.Time, time.Time, t
 
 func (g *grafanaRepo) DashboardCostSummaries(context.Context, string, time.Time, time.Time) ([]domain.DashboardCostSummary, error) {
 	return []domain.DashboardCostSummary{
-		{PeriodStart: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderOCI, Service: "Compute", Category: "compute", Region: "us-ashburn-1", TotalCost: 12.5},
-		{PeriodStart: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderOCI, Service: "Object Storage", Category: "storage", Region: "us-ashburn-1", TotalCost: 7.5},
+		{PeriodStart: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderOCI, AccountID: "tenancy-a", CompartmentID: "ocid1.compartment.oc1..app", CompartmentName: "app-prod", Service: "Compute", Category: "compute", Region: "us-ashburn-1", TotalCost: 12.5},
+		{PeriodStart: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderOCI, AccountID: "tenancy-a", CompartmentID: "ocid1.compartment.oc1..data", CompartmentName: "data-prod", Service: "Object Storage", Category: "storage", Region: "ap-mumbai-1", TotalCost: 7.5},
 	}, nil
 }
 
@@ -122,11 +122,26 @@ func TestDashboardCostTimeseriesShape(t *testing.T) {
 	if len(got.Data) != 2 {
 		t.Fatalf("expected 2 points, got %d", len(got.Data))
 	}
-	if got.Data[0].Metric != "oci/Compute" {
+	if got.Data[0].Metric != "oci/tenancy-a/Compute" {
 		t.Fatalf("unexpected metric %q", got.Data[0].Metric)
 	}
 	if got.Meta.Source != "precomputed" {
 		t.Fatalf("expected precomputed source metadata, got %q", got.Meta.Source)
+	}
+}
+
+func TestDashboardOverviewCanBeProviderScoped(t *testing.T) {
+	handler := NewWithOptions(nil, analytics.New(&grafanaRepo{}), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
+
+	got, err := handler.dashboardOverviewForProvider(context.Background(), domain.ProviderOCI, time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("provider overview: %v", err)
+	}
+	if got.Current30DaySpend != 20 {
+		t.Fatalf("expected provider current spend 20, got %f", got.Current30DaySpend)
+	}
+	if got.AnomalyCount != 1 {
+		t.Fatalf("expected provider anomaly count 1, got %d", got.AnomalyCount)
 	}
 }
 
@@ -148,6 +163,38 @@ func TestDashboardCostTimeseriesAcceptsRFC3339DateRange(t *testing.T) {
 	}
 	if got.Meta.Message != "" {
 		t.Fatalf("expected no metadata warning for RFC3339 range, got %q", got.Meta.Message)
+	}
+}
+
+func TestDashboardBreakdownSupportsOCICompartmentAndRegion(t *testing.T) {
+	handler := NewWithOptions(nil, analytics.New(&grafanaRepo{}), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
+
+	for _, tc := range []struct {
+		path    string
+		want    string
+		wantSum float64
+	}{
+		{path: "/api/v1/dashboard/cost-by-compartment?from=2026-05-01&to=2026-05-03", want: "app-prod", wantSum: 12.5},
+		{path: "/api/v1/dashboard/cost-by-region?from=2026-05-01&to=2026-05-03", want: "us-ashburn-1", wantSum: 12.5},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("expected ok, got %d", rr.Code)
+			}
+			var got dashboardBreakdownResponse
+			if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+				t.Fatalf("decode breakdown: %v", err)
+			}
+			if len(got.Data) == 0 {
+				t.Fatalf("expected breakdown data for %s", tc.path)
+			}
+			if got.Data[0].Name != tc.want || got.Data[0].TotalCost != tc.wantSum {
+				t.Fatalf("unexpected top breakdown row: %+v", got.Data[0])
+			}
+		})
 	}
 }
 

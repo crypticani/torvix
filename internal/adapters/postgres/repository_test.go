@@ -144,8 +144,8 @@ func TestDashboardCostTimeseriesReadsPrecomputedDailySummaries(t *testing.T) {
 
 	from := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC)
-	rows := pgxmock.NewRows([]string{"period_start", "period_end", "provider", "account_id", "service", "category", "region", "total_cost", "previous_period_cost", "absolute_change", "percentage_change", "updated_at"}).
-		AddRow(from, from.AddDate(0, 0, 1), "oci", "acct", "Compute", "compute", "us-ashburn-1", 12.5, 10.0, 2.5, 25.0, time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC))
+	rows := pgxmock.NewRows([]string{"period_start", "period_end", "provider", "account_id", "compartment_id", "compartment_name", "service", "category", "region", "total_cost", "previous_period_cost", "absolute_change", "percentage_change", "updated_at"}).
+		AddRow(from, from.AddDate(0, 0, 1), "oci", "acct", "ocid1.compartment.oc1..app", "app-prod", "Compute", "compute", "us-ashburn-1", 12.5, 10.0, 2.5, 25.0, time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC))
 	mock.ExpectQuery("FROM daily_cost_summaries").
 		WithArgs(from, to).
 		WillReturnRows(rows)
@@ -158,7 +158,7 @@ func TestDashboardCostTimeseriesReadsPrecomputedDailySummaries(t *testing.T) {
 	if len(out) != 1 {
 		t.Fatalf("expected 1 row, got %d", len(out))
 	}
-	if out[0].Category != "compute" || out[0].Region != "us-ashburn-1" || out[0].PercentageChange != 25 {
+	if out[0].Category != "compute" || out[0].CompartmentName != "app-prod" || out[0].Region != "us-ashburn-1" || out[0].PercentageChange != 25 {
 		t.Fatalf("unexpected dashboard summary row: %+v", out[0])
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

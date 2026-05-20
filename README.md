@@ -101,11 +101,13 @@ curl http://localhost:8080/api/v1/ingest/status/<job_id>
 psql "$DATABASE_URL" -c "SELECT count(*) FROM cost_records;"
 psql "$DATABASE_URL" -c "SELECT count(*) FROM daily_cost_summaries;"
 psql "$DATABASE_URL" -c "SELECT count(*) FROM cost_anomalies;"
-curl "http://localhost:8080/api/v1/dashboard/overview"
-curl "http://localhost:8080/api/v1/dashboard/cost-timeseries?window=daily&from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)"
-curl "http://localhost:8080/api/v1/dashboard/cost-by-category?from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)"
-curl "http://localhost:8080/api/v1/dashboard/cost-by-service?from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)&limit=15"
-curl "http://localhost:8080/api/v1/dashboard/anomalies?from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)"
+curl "http://localhost:8080/api/v1/dashboard/overview?provider=oci"
+curl "http://localhost:8080/api/v1/dashboard/cost-timeseries?window=daily&provider=oci&from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-category?provider=oci&from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-service?provider=oci&from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)&limit=15"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-compartment?provider=oci&from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)&limit=15"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-region?provider=oci&from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)"
+curl "http://localhost:8080/api/v1/dashboard/anomalies?provider=oci&from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)"
 curl "http://localhost:8080/api/v1/dashboard/ingestion-status"
 ```
 
@@ -162,12 +164,14 @@ This is intentionally debuggable operational statistics, not predictive ML. Tune
 - `GET /api/v1/analytics/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&window=daily|weekly|monthly`
 - `GET /api/v1/analytics/anomalies?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/analytics/forecast?from=YYYY-MM-DD&to=YYYY-MM-DD`
-- `GET /api/v1/dashboard/overview`
-- `GET /api/v1/dashboard/cost-timeseries?from=YYYY-MM-DD&to=YYYY-MM-DD&window=daily|weekly|monthly`
-- `GET /api/v1/dashboard/cost-by-category?from=YYYY-MM-DD&to=YYYY-MM-DD`
-- `GET /api/v1/dashboard/cost-by-service?from=YYYY-MM-DD&to=YYYY-MM-DD&limit=15`
-- `GET /api/v1/dashboard/cost-by-provider?from=YYYY-MM-DD&to=YYYY-MM-DD`
-- `GET /api/v1/dashboard/anomalies?from=YYYY-MM-DD&to=YYYY-MM-DD&severity=high`
+- `GET /api/v1/dashboard/overview?provider=oci`
+- `GET /api/v1/dashboard/cost-timeseries?provider=oci&from=YYYY-MM-DD&to=YYYY-MM-DD&window=daily|weekly|monthly`
+- `GET /api/v1/dashboard/cost-by-category?provider=oci&from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /api/v1/dashboard/cost-by-service?provider=oci&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=15`
+- `GET /api/v1/dashboard/cost-by-provider?provider=oci&from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /api/v1/dashboard/cost-by-compartment?provider=oci&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=15`
+- `GET /api/v1/dashboard/cost-by-region?provider=oci&from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /api/v1/dashboard/anomalies?provider=oci&from=YYYY-MM-DD&to=YYYY-MM-DD&severity=high`
 - `GET /api/v1/dashboard/ingestion-status`
 - `GET /api/v1/reports/daily?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/reports/weekly?from=YYYY-MM-DD&to=YYYY-MM-DD`

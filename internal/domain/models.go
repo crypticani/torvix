@@ -71,6 +71,8 @@ type DashboardCostSummary struct {
 	PeriodEnd          time.Time `json:"period_end"`
 	Provider           Provider  `json:"provider"`
 	AccountID          string    `json:"account_id"`
+	CompartmentID      string    `json:"compartment_id"`
+	CompartmentName    string    `json:"compartment_name"`
 	Service            string    `json:"service"`
 	Category           string    `json:"category"`
 	Region             string    `json:"region"`

@@ -1,5 +1,5 @@
 {
-  "title": "CloudPulse API FinOps Overview",
+  "title": "CloudPulse OCI API FinOps Overview",
   "uid": "cloudpulse-rolling-finops-overview",
   "schemaVersion": 39,
   "version": 7,
@@ -22,7 +22,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/overview",
+          "url": "/api/v1/dashboard/overview?provider=oci",
           "root_selector": "data",
           "root_is_not_array": true,
           "columns": [
@@ -32,7 +32,7 @@
         }
       ],
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" } },
+      "fieldConfig": { "defaults": { "unit": "locale" } },
       "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false } }
     },
     {
@@ -48,7 +48,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/overview",
+          "url": "/api/v1/dashboard/overview?provider=oci",
           "root_selector": "data",
           "root_is_not_array": true,
           "columns": [
@@ -57,7 +57,7 @@
         }
       ],
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+      "fieldConfig": { "defaults": { "unit": "locale" } }
     },
     {
       "id": 3,
@@ -72,7 +72,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/overview",
+          "url": "/api/v1/dashboard/overview?provider=oci",
           "root_selector": "data",
           "root_is_not_array": true,
           "columns": [
@@ -105,7 +105,7 @@
           "source": "url",
           "parser": "backend",
           "format": "time_series",
-          "url": "/api/v1/dashboard/cost-timeseries?window=daily",
+          "url": "/api/v1/dashboard/cost-timeseries?window=daily&provider=oci",
           "root_selector": "data",
           "columns": [
             { "selector": "time", "text": "time", "type": "timestamp" },
@@ -115,7 +115,7 @@
         }
       ],
       "gridPos": { "h": 9, "w": 16, "x": 0, "y": 4 },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+      "fieldConfig": { "defaults": { "unit": "locale" } }
     },
     {
       "id": 6,
@@ -140,7 +140,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/cost-by-service?limit=15",
+          "url": "/api/v1/dashboard/cost-by-service?limit=15&provider=oci",
           "root_selector": "data",
           "columns": [
             { "selector": "rank", "text": "rank", "type": "number" },
@@ -151,7 +151,7 @@
         }
       ],
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 13 },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+      "fieldConfig": { "defaults": { "unit": "locale" } }
     },
     {
       "id": 8,
@@ -166,7 +166,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/cost-by-category",
+          "url": "/api/v1/dashboard/cost-by-category?provider=oci",
           "root_selector": "data",
           "columns": [
             { "selector": "rank", "text": "rank", "type": "number" },
@@ -176,7 +176,7 @@
         }
       ],
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 13 },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+      "fieldConfig": { "defaults": { "unit": "locale" } }
     },
     {
       "id": 9,
@@ -191,7 +191,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/cost-by-provider",
+          "url": "/api/v1/dashboard/cost-by-provider?provider=oci",
           "root_selector": "data",
           "columns": [
             { "selector": "rank", "text": "rank", "type": "number" },
@@ -201,7 +201,59 @@
         }
       ],
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 13 },
-      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+      "fieldConfig": { "defaults": { "unit": "locale" } }
+    },
+    {
+      "id": 18,
+      "type": "table",
+      "title": "Cost By Compartment",
+      "timeFrom": "30d",
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "CloudPulseAPI" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-by-compartment?limit=15&provider=oci",
+          "root_selector": "data",
+          "columns": [
+            { "selector": "rank", "text": "rank", "type": "number" },
+            { "selector": "provider", "text": "provider", "type": "string" },
+            { "selector": "name", "text": "compartment", "type": "string" },
+            { "selector": "total_cost", "text": "total_cost", "type": "number" }
+          ]
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 21 },
+      "fieldConfig": { "defaults": { "unit": "locale" } }
+    },
+    {
+      "id": 19,
+      "type": "table",
+      "title": "Cost By Region",
+      "timeFrom": "30d",
+      "datasource": { "type": "yesoreyeram-infinity-datasource", "uid": "CloudPulseAPI" },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-by-region?provider=oci",
+          "root_selector": "data",
+          "columns": [
+            { "selector": "rank", "text": "rank", "type": "number" },
+            { "selector": "provider", "text": "provider", "type": "string" },
+            { "selector": "name", "text": "region", "type": "string" },
+            { "selector": "total_cost", "text": "total_cost", "type": "number" }
+          ]
+        }
+      ],
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 21 },
+      "fieldConfig": { "defaults": { "unit": "locale" } }
     },
     {
       "id": 10,
@@ -216,7 +268,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/anomalies",
+          "url": "/api/v1/dashboard/anomalies?provider=oci",
           "root_selector": "data",
           "columns": [
             { "selector": "period_start", "text": "period_start", "type": "timestamp" },
@@ -230,7 +282,7 @@
           ]
         }
       ],
-      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 21 },
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 29 },
       "fieldConfig": { "defaults": { "unit": "short" } }
     },
     {
@@ -258,7 +310,7 @@
           ]
         }
       ],
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 21 }
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 29 }
     },
     {
       "id": 12,
@@ -268,7 +320,7 @@
       "targets": [
         { "expr": "sum(increase(cloudpulse_ingestion_duration_seconds_sum[$__range])) / sum(increase(cloudpulse_ingestion_duration_seconds_count[$__range]))", "instant": true, "refId": "A" }
       ],
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 29 },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 37 },
       "fieldConfig": { "defaults": { "unit": "s" } }
     },
     {
@@ -279,7 +331,7 @@
       "targets": [
         { "expr": "round(sum(increase(cloudpulse_processed_files_total{status=\"processed\"}[$__range])))", "instant": true, "refId": "A" }
       ],
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 29 }
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 37 }
     },
     {
       "id": 14,
@@ -289,7 +341,7 @@
       "targets": [
         { "expr": "round(sum(increase(cloudpulse_processed_records_total[$__range])))", "instant": true, "refId": "A" }
       ],
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 29 }
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 37 }
     },
     {
       "id": 15,
@@ -299,7 +351,7 @@
       "targets": [
         { "expr": "round(sum(increase(cloudpulse_processed_files_total{status=\"skipped_old\"}[$__range])))", "instant": true, "refId": "A" }
       ],
-      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 29 }
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 37 }
     },
     {
       "id": 16,
@@ -309,7 +361,7 @@
       "targets": [
         { "expr": "round(sum(increase(cloudpulse_records_deleted_total[$__range])))", "instant": true, "refId": "A" }
       ],
-      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 29 }
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 37 }
     },
     {
       "id": 17,
@@ -319,7 +371,7 @@
       "targets": [
         { "expr": "round(sum(increase(cloudpulse_compressed_chunks_total[$__range])))", "instant": true, "refId": "A" }
       ],
-      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 29 }
+      "gridPos": { "h": 4, "w": 4, "x": 20, "y": 37 }
     }
   ]
 }

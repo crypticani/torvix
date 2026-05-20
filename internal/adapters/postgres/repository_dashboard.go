@@ -93,6 +93,8 @@ func refreshCostSummary(ctx context.Context, tx pgx.Tx, table, interval string, 
 				time_bucket(INTERVAL '%s', "timestamp") AS period_start,
 				cloud_provider AS provider,
 				COALESCE(account_id, '') AS account_id,
+				COALESCE(tags->>'oci_compartment_id', '') AS compartment_id,
+				COALESCE(NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', '') AS compartment_name,
 				COALESCE(service, 'unknown') AS service,
 				COALESCE(category, 'uncategorized') AS category,
 				COALESCE(region, '') AS region,
@@ -100,13 +102,15 @@ func refreshCostSummary(ctx context.Context, tx pgx.Tx, table, interval string, 
 				COALESCE(SUM(cost), 0)::double precision AS total_cost
 			FROM cost_records
 			WHERE "timestamp" >= $1 AND "timestamp" < $2
-			GROUP BY 1, 2, 3, 4, 5, 6, 7
+			GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
 		),
 		previous_period AS (
 			SELECT
 				time_bucket(INTERVAL '%s', "timestamp") + INTERVAL '%s' AS period_start,
 				cloud_provider AS provider,
 				COALESCE(account_id, '') AS account_id,
+				COALESCE(tags->>'oci_compartment_id', '') AS compartment_id,
+				COALESCE(NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', '') AS compartment_name,
 				COALESCE(service, 'unknown') AS service,
 				COALESCE(category, 'uncategorized') AS category,
 				COALESCE(region, '') AS region,
@@ -114,15 +118,17 @@ func refreshCostSummary(ctx context.Context, tx pgx.Tx, table, interval string, 
 				COALESCE(SUM(cost), 0)::double precision AS total_cost
 			FROM cost_records
 			WHERE "timestamp" >= $3 AND "timestamp" < $4
-			GROUP BY 1, 2, 3, 4, 5, 6, 7
+			GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
 		)
 		INSERT INTO %s
-		(period_start, period_end, provider, account_id, service, category, region, currency, total_cost, previous_period_cost, absolute_change, percentage_change, updated_at)
+		(period_start, period_end, provider, account_id, compartment_id, compartment_name, service, category, region, currency, total_cost, previous_period_cost, absolute_change, percentage_change, updated_at)
 		SELECT
 			c.period_start,
 			c.period_start + INTERVAL '%s',
 			c.provider,
 			c.account_id,
+			c.compartment_id,
+			c.compartment_name,
 			c.service,
 			c.category,
 			c.region,
@@ -141,6 +147,8 @@ func refreshCostSummary(ctx context.Context, tx pgx.Tx, table, interval string, 
 		  ON p.period_start = c.period_start
 		 AND p.provider = c.provider
 		 AND p.account_id = c.account_id
+		 AND p.compartment_id = c.compartment_id
+		 AND p.compartment_name = c.compartment_name
 		 AND p.service = c.service
 		 AND p.category = c.category
 		 AND p.region = c.region
@@ -321,12 +329,12 @@ func previousSummaryWindow(interval string, from, to time.Time) (time.Time, time
 func (r *Repository) DashboardCostSummaries(ctx context.Context, window string, from, to time.Time) ([]domain.DashboardCostSummary, error) {
 	table := dashboardSummaryTable(window)
 	rows, err := r.db.Query(ctx, fmt.Sprintf(`
-		SELECT period_start, period_end, provider, account_id, service, category, region,
+		SELECT period_start, period_end, provider, account_id, compartment_id, compartment_name, service, category, region,
 		       total_cost::double precision, previous_period_cost::double precision,
 		       absolute_change::double precision, percentage_change::double precision, updated_at
 		FROM %s
 		WHERE period_start >= $1 AND period_start < $2
-		ORDER BY period_start ASC, provider, account_id, service, category, region
+		ORDER BY period_start ASC, provider, account_id, compartment_name, service, category, region
 	`, table), from.UTC(), to.UTC())
 	if err != nil {
 		return nil, err
@@ -336,7 +344,7 @@ func (r *Repository) DashboardCostSummaries(ctx context.Context, window string, 
 	out := make([]domain.DashboardCostSummary, 0)
 	for rows.Next() {
 		var row domain.DashboardCostSummary
-		if err := rows.Scan(&row.PeriodStart, &row.PeriodEnd, &row.Provider, &row.AccountID, &row.Service, &row.Category, &row.Region, &row.TotalCost, &row.PreviousPeriodCost, &row.AbsoluteChange, &row.PercentageChange, &row.UpdatedAt); err != nil {
+		if err := rows.Scan(&row.PeriodStart, &row.PeriodEnd, &row.Provider, &row.AccountID, &row.CompartmentID, &row.CompartmentName, &row.Service, &row.Category, &row.Region, &row.TotalCost, &row.PreviousPeriodCost, &row.AbsoluteChange, &row.PercentageChange, &row.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, row)

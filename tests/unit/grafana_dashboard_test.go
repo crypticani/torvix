@@ -14,7 +14,7 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	}
 	var dashboard struct {
 		Refresh string `json:"refresh"`
-		Time struct {
+		Time    struct {
 			From string `json:"from"`
 		} `json:"time"`
 		Panels []struct {
@@ -22,7 +22,7 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 				UID string `json:"uid"`
 			} `json:"datasource"`
 			TimeFrom string `json:"timeFrom"`
-			Targets []struct {
+			Targets  []struct {
 				URL            string `json:"url"`
 				Expr           string `json:"expr"`
 				Parser         string `json:"parser"`
@@ -47,6 +47,8 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 		"/api/v1/dashboard/cost-by-category",
 		"/api/v1/dashboard/cost-by-service",
 		"/api/v1/dashboard/cost-by-provider",
+		"/api/v1/dashboard/cost-by-compartment",
+		"/api/v1/dashboard/cost-by-region",
 		"/api/v1/dashboard/anomalies",
 		"/api/v1/dashboard/ingestion-status",
 		"cloudpulse_processed_files_total{status=\\\"skipped_old\\\"}",
@@ -63,6 +65,9 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	if strings.Contains(joined, "__from") || strings.Contains(joined, "__to") {
 		t.Fatalf("dashboard API panels must not depend on Grafana date macros; CloudPulse APIs provide a default 30-day window")
 	}
+	if strings.Contains(joined, "currencyUSD") {
+		t.Fatalf("dashboard must not hardcode USD currency units for OCI cost panels")
+	}
 	for _, panel := range dashboard.Panels {
 		if panel.Datasource.UID != "CloudPulseAPI" {
 			continue
@@ -74,7 +79,7 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 			if target.Parser != "backend" {
 				t.Fatalf("CloudPulse API target %q must use Infinity backend parser, got %q", target.URL, target.Parser)
 			}
-			if target.URL == "/api/v1/dashboard/overview" && target.RootSelector == "data" && !target.RootIsNotArray {
+			if strings.HasPrefix(target.URL, "/api/v1/dashboard/overview") && target.RootSelector == "data" && !target.RootIsNotArray {
 				t.Fatalf("overview target must mark root data object as not an array for Infinity")
 			}
 		}

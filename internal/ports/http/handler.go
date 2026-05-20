@@ -105,6 +105,8 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/v1/dashboard/cost-by-category", h.withGrafanaAuth(h.dashboardCostByCategory))
 	h.mux.HandleFunc("/api/v1/dashboard/cost-by-service", h.withGrafanaAuth(h.dashboardCostByService))
 	h.mux.HandleFunc("/api/v1/dashboard/cost-by-provider", h.withGrafanaAuth(h.dashboardCostByProvider))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-by-compartment", h.withGrafanaAuth(h.dashboardCostByCompartment))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-by-region", h.withGrafanaAuth(h.dashboardCostByRegion))
 	h.mux.HandleFunc("/api/v1/dashboard/anomalies", h.withGrafanaAuth(h.dashboardAnomalies))
 	h.mux.HandleFunc("/api/v1/dashboard/ingestion-status", h.withGrafanaAuth(h.dashboardIngestionStatus))
 	h.mux.HandleFunc("/api/v1/grafana/timeseries/cost", h.withGrafanaAuth(h.grafanaCostTimeseries))

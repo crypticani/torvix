@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/crypticani/cloudpulse/internal/domain"
@@ -55,7 +57,16 @@ func (h *Handler) dashboardOverview(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "analytics service is not configured"})
 		return
 	}
-	overview, err := h.analytics.DashboardOverview(r.Context(), time.Now().UTC())
+	provider, hasProvider := dashboardProvider(r)
+	var (
+		overview domain.DashboardOverview
+		err      error
+	)
+	if hasProvider {
+		overview, err = h.dashboardOverviewForProvider(r.Context(), provider, time.Now().UTC())
+	} else {
+		overview, err = h.analytics.DashboardOverview(r.Context(), time.Now().UTC())
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -76,7 +87,11 @@ func (h *Handler) dashboardCostTimeseries(w http.ResponseWriter, r *http.Request
 		return
 	}
 	points := make([]grafanaCostPoint, 0, len(rows))
+	provider, hasProvider := dashboardProvider(r)
 	for _, row := range rows {
+		if hasProvider && row.Provider != provider {
+			continue
+		}
 		points = append(points, grafanaCostPoint{
 			Time:      row.PeriodStart,
 			Metric:    grafanaMetricFromDashboard(row),
@@ -101,6 +116,14 @@ func (h *Handler) dashboardCostByService(w http.ResponseWriter, r *http.Request)
 	h.dashboardBreakdown(w, r, "service")
 }
 
+func (h *Handler) dashboardCostByCompartment(w http.ResponseWriter, r *http.Request) {
+	h.dashboardBreakdown(w, r, "compartment")
+}
+
+func (h *Handler) dashboardCostByRegion(w http.ResponseWriter, r *http.Request) {
+	h.dashboardBreakdown(w, r, "region")
+}
+
 func (h *Handler) dashboardBreakdown(w http.ResponseWriter, r *http.Request, dimension string) {
 	from, to, meta, ok := h.dashboardRange(r)
 	if !ok {
@@ -117,7 +140,11 @@ func (h *Handler) dashboardBreakdown(w http.ResponseWriter, r *http.Request, dim
 		provider domain.Provider
 	}
 	totals := map[key]float64{}
+	provider, hasProvider := dashboardProvider(r)
 	for _, row := range rows {
+		if hasProvider && row.Provider != provider {
+			continue
+		}
 		k := key{name: row.Category}
 		switch dimension {
 		case "provider":
@@ -125,6 +152,18 @@ func (h *Handler) dashboardBreakdown(w http.ResponseWriter, r *http.Request, dim
 			k.provider = row.Provider
 		case "service":
 			k.name = row.Service
+			k.provider = row.Provider
+		case "compartment":
+			k.name = row.CompartmentName
+			if k.name == "" {
+				k.name = row.CompartmentID
+			}
+			if k.name == "" {
+				k.name = row.AccountID
+			}
+			k.provider = row.Provider
+		case "region":
+			k.name = row.Region
 			k.provider = row.Provider
 		}
 		if k.name == "" {
@@ -143,7 +182,7 @@ func (h *Handler) dashboardBreakdown(w http.ResponseWriter, r *http.Request, dim
 		return out[i].TotalCost > out[j].TotalCost
 	})
 	limit := grafanaLimit(r, 15)
-	if dimension != "service" {
+	if dimension != "service" && dimension != "compartment" {
 		limit = len(out)
 	}
 	if len(out) > limit {
@@ -170,6 +209,15 @@ func (h *Handler) dashboardAnomalies(w http.ResponseWriter, r *http.Request) {
 	}
 	if rows == nil {
 		rows = []domain.DashboardAnomaly{}
+	}
+	if provider, hasProvider := dashboardProvider(r); hasProvider {
+		filtered := rows[:0]
+		for _, row := range rows {
+			if row.Provider == provider {
+				filtered = append(filtered, row)
+			}
+		}
+		rows = filtered
 	}
 	if len(rows) == 0 {
 		meta.Message = "no anomalies detected"
@@ -239,6 +287,81 @@ func parseDashboardTime(value string) (time.Time, bool, error) {
 	}
 	t, err := time.Parse(time.RFC3339, value)
 	return t.UTC(), false, err
+}
+
+func (h *Handler) dashboardOverviewForProvider(ctx context.Context, provider domain.Provider, now time.Time) (domain.DashboardOverview, error) {
+	now = now.UTC()
+	currentTo := now
+	currentFrom := currentTo.AddDate(0, 0, -30)
+	previousTo := currentFrom
+	previousFrom := previousTo.AddDate(0, 0, -30)
+
+	rows, err := h.analytics.DashboardCostSummaries(ctx, "daily", previousFrom, currentTo)
+	if err != nil {
+		return domain.DashboardOverview{}, err
+	}
+	var current, previous float64
+	for _, row := range rows {
+		if row.Provider != provider {
+			continue
+		}
+		switch {
+		case !row.PeriodStart.Before(currentFrom) && row.PeriodStart.Before(currentTo):
+			current += row.TotalCost
+		case !row.PeriodStart.Before(previousFrom) && row.PeriodStart.Before(previousTo):
+			previous += row.TotalCost
+		}
+	}
+	percentageChange := 0.0
+	if previous > 0 {
+		percentageChange = ((current - previous) / previous) * 100
+	} else if current > 0 {
+		percentageChange = 100
+	}
+
+	anomalies, err := h.analytics.DashboardAnomalies(ctx, currentFrom, currentTo, "")
+	if err != nil {
+		return domain.DashboardOverview{}, err
+	}
+	anomalyCount := 0
+	for _, row := range anomalies {
+		if row.Provider == provider {
+			anomalyCount++
+		}
+	}
+
+	status, err := h.analytics.LatestIngestionStatus(ctx)
+	if err != nil {
+		return domain.DashboardOverview{}, err
+	}
+	latest := status.LatestIngestionAt
+	for _, row := range status.Providers {
+		if row.Provider != provider {
+			continue
+		}
+		if row.LastSuccessfulIngestionAt.After(latest) {
+			latest = row.LastSuccessfulIngestionAt
+		}
+		if row.LatestReportProcessedAt.After(latest) {
+			latest = row.LatestReportProcessedAt
+		}
+	}
+
+	return domain.DashboardOverview{
+		Current30DaySpend:  current,
+		Previous30DaySpend: previous,
+		PercentageChange:   percentageChange,
+		AnomalyCount:       anomalyCount,
+		LatestIngestionAt:  latest,
+	}, nil
+}
+
+func dashboardProvider(r *http.Request) (domain.Provider, bool) {
+	value := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("provider")))
+	if value == "" {
+		return "", false
+	}
+	return domain.Provider(value), true
 }
 
 func (h *Handler) dashboardMeta(from, to time.Time, message string) dashboardMeta {

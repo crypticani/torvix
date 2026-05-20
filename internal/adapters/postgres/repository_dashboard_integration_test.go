@@ -37,6 +37,8 @@ func TestRefreshCostAnomaliesExecutesAgainstPostgres(t *testing.T) {
 			period_end timestamptz NOT NULL,
 			provider text NOT NULL,
 			account_id text NOT NULL DEFAULT '',
+			compartment_id text NOT NULL DEFAULT '',
+			compartment_name text NOT NULL DEFAULT '',
 			service text NOT NULL DEFAULT 'unknown',
 			category text NOT NULL DEFAULT 'uncategorized',
 			region text NOT NULL DEFAULT '',

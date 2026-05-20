@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS daily_cost_summaries
     period_end TIMESTAMPTZ NOT NULL,
     provider TEXT NOT NULL,
     account_id TEXT NOT NULL DEFAULT '',
+    compartment_id TEXT NOT NULL DEFAULT '',
+    compartment_name TEXT NOT NULL DEFAULT '',
     service TEXT NOT NULL DEFAULT 'unknown',
     category TEXT NOT NULL DEFAULT 'uncategorized',
     region TEXT NOT NULL DEFAULT '',
@@ -17,7 +19,7 @@ CREATE TABLE IF NOT EXISTS daily_cost_summaries
     absolute_change NUMERIC(20,8) NOT NULL DEFAULT 0,
     percentage_change DOUBLE PRECISION NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (period_start, provider, account_id, service, category, region, currency)
+    PRIMARY KEY (period_start, provider, account_id, compartment_id, compartment_name, service, category, region, currency)
 );
 
 CREATE TABLE IF NOT EXISTS weekly_cost_summaries
@@ -26,6 +28,8 @@ CREATE TABLE IF NOT EXISTS weekly_cost_summaries
     period_end TIMESTAMPTZ NOT NULL,
     provider TEXT NOT NULL,
     account_id TEXT NOT NULL DEFAULT '',
+    compartment_id TEXT NOT NULL DEFAULT '',
+    compartment_name TEXT NOT NULL DEFAULT '',
     service TEXT NOT NULL DEFAULT 'unknown',
     category TEXT NOT NULL DEFAULT 'uncategorized',
     region TEXT NOT NULL DEFAULT '',
@@ -35,7 +39,7 @@ CREATE TABLE IF NOT EXISTS weekly_cost_summaries
     absolute_change NUMERIC(20,8) NOT NULL DEFAULT 0,
     percentage_change DOUBLE PRECISION NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (period_start, provider, account_id, service, category, region, currency)
+    PRIMARY KEY (period_start, provider, account_id, compartment_id, compartment_name, service, category, region, currency)
 );
 
 CREATE TABLE IF NOT EXISTS monthly_cost_summaries
@@ -44,6 +48,8 @@ CREATE TABLE IF NOT EXISTS monthly_cost_summaries
     period_end TIMESTAMPTZ NOT NULL,
     provider TEXT NOT NULL,
     account_id TEXT NOT NULL DEFAULT '',
+    compartment_id TEXT NOT NULL DEFAULT '',
+    compartment_name TEXT NOT NULL DEFAULT '',
     service TEXT NOT NULL DEFAULT 'unknown',
     category TEXT NOT NULL DEFAULT 'uncategorized',
     region TEXT NOT NULL DEFAULT '',
@@ -53,7 +59,7 @@ CREATE TABLE IF NOT EXISTS monthly_cost_summaries
     absolute_change NUMERIC(20,8) NOT NULL DEFAULT 0,
     percentage_change DOUBLE PRECISION NOT NULL DEFAULT 0,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (period_start, provider, account_id, service, category, region, currency)
+    PRIMARY KEY (period_start, provider, account_id, compartment_id, compartment_name, service, category, region, currency)
 );
 
 CREATE TABLE IF NOT EXISTS cost_anomalies
@@ -100,6 +106,12 @@ CREATE INDEX IF NOT EXISTS idx_daily_cost_summaries_service_range
 
 CREATE INDEX IF NOT EXISTS idx_daily_cost_summaries_category_range
     ON daily_cost_summaries (category, period_start DESC);
+
+CREATE INDEX IF NOT EXISTS idx_daily_cost_summaries_compartment_range
+    ON daily_cost_summaries (compartment_name, period_start DESC);
+
+CREATE INDEX IF NOT EXISTS idx_daily_cost_summaries_region_range
+    ON daily_cost_summaries (region, period_start DESC);
 
 CREATE INDEX IF NOT EXISTS idx_weekly_cost_summaries_range_provider
     ON weekly_cost_summaries (period_start DESC, provider, category, service);
