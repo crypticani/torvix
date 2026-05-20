@@ -130,6 +130,27 @@ func TestDashboardCostTimeseriesShape(t *testing.T) {
 	}
 }
 
+func TestDashboardCostTimeseriesAcceptsRFC3339DateRange(t *testing.T) {
+	handler := NewWithOptions(nil, analytics.New(&grafanaRepo{}), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cost-timeseries?from=2026-05-01T00:00:00Z&to=2026-05-03T00:00:00Z", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d", rr.Code)
+	}
+	var got dashboardTimeseriesResponse
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode timeseries: %v", err)
+	}
+	if len(got.Data) != 2 {
+		t.Fatalf("expected RFC3339 dashboard range to return data, got %d points with metadata %+v", len(got.Data), got.Meta)
+	}
+	if got.Meta.Message != "" {
+		t.Fatalf("expected no metadata warning for RFC3339 range, got %q", got.Meta.Message)
+	}
+}
+
 func TestDashboardAnomaliesReturnsEmptyArrayShape(t *testing.T) {
 	handler := NewWithOptions(nil, analytics.New(&emptyDashboardRepo{}), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
 

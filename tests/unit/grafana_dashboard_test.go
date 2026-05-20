@@ -21,8 +21,11 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 				UID string `json:"uid"`
 			} `json:"datasource"`
 			Targets []struct {
-				URL  string `json:"url"`
-				Expr string `json:"expr"`
+				URL            string `json:"url"`
+				Expr           string `json:"expr"`
+				Parser         string `json:"parser"`
+				RootSelector   string `json:"root_selector"`
+				RootIsNotArray bool   `json:"root_is_not_array"`
 			} `json:"targets"`
 		} `json:"panels"`
 	}
@@ -51,5 +54,18 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	}
 	if strings.Contains(joined, "\"uid\": \"PostgreSQL\"") || strings.Contains(joined, "/api/v1/grafana/") {
 		t.Fatalf("dashboard must not depend on PostgreSQL datasource or legacy grafana raw endpoints")
+	}
+	for _, panel := range dashboard.Panels {
+		if panel.Datasource.UID != "CloudPulseAPI" {
+			continue
+		}
+		for _, target := range panel.Targets {
+			if target.Parser != "backend" {
+				t.Fatalf("CloudPulse API target %q must use Infinity backend parser, got %q", target.URL, target.Parser)
+			}
+			if target.URL == "/api/v1/dashboard/overview" && target.RootSelector == "data" && !target.RootIsNotArray {
+				t.Fatalf("overview target must mark root data object as not an array for Infinity")
+			}
+		}
 	}
 }

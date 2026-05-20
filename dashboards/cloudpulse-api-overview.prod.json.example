@@ -19,9 +19,11 @@
           "refId": "A",
           "type": "json",
           "source": "url",
+          "parser": "backend",
           "format": "table",
           "url": "/api/v1/dashboard/overview",
           "root_selector": "data",
+          "root_is_not_array": true,
           "columns": [
             { "selector": "current_30_day_spend", "text": "current_30_day_spend", "type": "number" },
             { "selector": "percentage_change", "text": "percentage_change", "type": "number" }
@@ -42,9 +44,11 @@
           "refId": "A",
           "type": "json",
           "source": "url",
+          "parser": "backend",
           "format": "table",
           "url": "/api/v1/dashboard/overview",
           "root_selector": "data",
+          "root_is_not_array": true,
           "columns": [
             { "selector": "previous_30_day_spend", "text": "previous_30_day_spend", "type": "number" }
           ]
@@ -63,9 +67,11 @@
           "refId": "A",
           "type": "json",
           "source": "url",
+          "parser": "backend",
           "format": "table",
           "url": "/api/v1/dashboard/overview",
           "root_selector": "data",
+          "root_is_not_array": true,
           "columns": [
             { "selector": "anomaly_count", "text": "anomaly_count", "type": "number" }
           ]
@@ -93,6 +99,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
+          "parser": "backend",
           "format": "time_series",
           "url": "/api/v1/dashboard/cost-timeseries?window=daily&from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}",
           "root_selector": "data",
@@ -126,6 +133,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
+          "parser": "backend",
           "format": "table",
           "url": "/api/v1/dashboard/cost-by-service?from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}&limit=15",
           "root_selector": "data",
@@ -150,6 +158,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
+          "parser": "backend",
           "format": "table",
           "url": "/api/v1/dashboard/cost-by-category?from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}",
           "root_selector": "data",
@@ -173,6 +182,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
+          "parser": "backend",
           "format": "table",
           "url": "/api/v1/dashboard/cost-by-provider?from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}",
           "root_selector": "data",
@@ -196,6 +206,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
+          "parser": "backend",
           "format": "table",
           "url": "/api/v1/dashboard/anomalies?from=${__from:date:YYYY-MM-DD}&to=${__to:date:YYYY-MM-DD}",
           "root_selector": "data",
@@ -224,6 +235,7 @@
           "refId": "A",
           "type": "json",
           "source": "url",
+          "parser": "backend",
           "format": "table",
           "url": "/api/v1/dashboard/ingestion-status",
           "root_selector": "data.providers",

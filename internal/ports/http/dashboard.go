@@ -197,18 +197,21 @@ func (h *Handler) dashboardRange(r *http.Request) (time.Time, time.Time, dashboa
 	to := now
 	from := now.AddDate(0, 0, -h.lookbackDays)
 	if v := r.URL.Query().Get("from"); v != "" {
-		t, err := time.Parse(time.DateOnly, v)
+		t, _, err := parseDashboardTime(v)
 		if err != nil {
-			return time.Time{}, time.Time{}, h.dashboardMeta(from, to, "from must use YYYY-MM-DD"), false
+			return time.Time{}, time.Time{}, h.dashboardMeta(from, to, "from must use YYYY-MM-DD or RFC3339"), false
 		}
 		from = t.UTC()
 	}
 	if v := r.URL.Query().Get("to"); v != "" {
-		t, err := time.Parse(time.DateOnly, v)
+		t, dateOnly, err := parseDashboardTime(v)
 		if err != nil {
-			return time.Time{}, time.Time{}, h.dashboardMeta(from, to, "to must use YYYY-MM-DD"), false
+			return time.Time{}, time.Time{}, h.dashboardMeta(from, to, "to must use YYYY-MM-DD or RFC3339"), false
 		}
-		to = t.UTC().AddDate(0, 0, 1)
+		to = t.UTC()
+		if dateOnly {
+			to = to.AddDate(0, 0, 1)
+		}
 	}
 	availableFrom := now.AddDate(0, 0, -h.retentionDays)
 	if !to.After(from) {
@@ -225,6 +228,17 @@ func (h *Handler) dashboardRange(r *http.Request) (time.Time, time.Time, dashboa
 		from = maxFrom
 	}
 	return from, to, h.dashboardMeta(from, to, ""), true
+}
+
+func parseDashboardTime(value string) (time.Time, bool, error) {
+	if t, err := time.Parse(time.DateOnly, value); err == nil {
+		return t.UTC(), true, nil
+	}
+	if t, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return t.UTC(), false, nil
+	}
+	t, err := time.Parse(time.RFC3339, value)
+	return t.UTC(), false, err
 }
 
 func (h *Handler) dashboardMeta(from, to time.Time, message string) dashboardMeta {
