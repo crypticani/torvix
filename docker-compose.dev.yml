@@ -60,15 +60,15 @@ services:
       - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     network_mode: host
     restart: unless-stopped
-    mem_limit: 256m
+    mem_limit: 512m
     cpus: "0.5"
     deploy:
       resources:
         limits:
           cpus: "0.5"
-          memory: 256M
+          memory: 512M
         reservations:
-          cpus: "0.1"
+          cpus: "0.2"
           memory: 64M
 
   grafana:
@@ -76,7 +76,7 @@ services:
     container_name: cloudpulse-grafana
     network_mode: host
     restart: unless-stopped
-    mem_limit: 256m
+    mem_limit: 512m
     cpus: "0.5"
     environment:
       GF_PLUGINS_PREINSTALL_SYNC: "yesoreyeram-infinity-datasource"
@@ -87,9 +87,9 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 256M
+          memory: 512M
         reservations:
-          cpus: "0.1"
+          cpus: "0.2"
           memory: 64M
 
 volumes:
