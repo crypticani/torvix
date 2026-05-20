@@ -3,7 +3,7 @@
   "uid": "cloudpulse-rolling-finops-overview",
   "schemaVersion": 39,
   "version": 7,
-  "refresh": "1h",
+  "refresh": "1m",
   "time": {
     "from": "now-30d",
     "to": "now"

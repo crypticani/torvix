@@ -13,6 +13,7 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 		t.Fatalf("read dashboard: %v", err)
 	}
 	var dashboard struct {
+		Refresh string `json:"refresh"`
 		Time struct {
 			From string `json:"from"`
 		} `json:"time"`
@@ -35,6 +36,9 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	}
 	if dashboard.Time.From != "now-30d" {
 		t.Fatalf("expected 30-day default range, got %q", dashboard.Time.From)
+	}
+	if dashboard.Refresh != "1m" {
+		t.Fatalf("expected dashboard to retry transient initial empty results every minute, got refresh %q", dashboard.Refresh)
 	}
 	joined := string(b)
 	for _, required := range []string{
