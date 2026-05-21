@@ -12,7 +12,7 @@
         "version": "1.0"
     },
     "host": "localhost:8080",
-    "basePath": "/",
+    "basePath": "",
     "paths": {
         "/api/v1/analytics/anomalies": {
             "get": {
