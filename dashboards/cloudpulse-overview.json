@@ -2,7 +2,7 @@
   "title": "CloudPulse OCI API FinOps Overview",
   "uid": "cloudpulse-rolling-finops-overview",
   "schemaVersion": 39,
-  "version": 7,
+  "version": 9,
   "refresh": "1m",
   "time": {
     "from": "now-30d",
@@ -36,11 +36,6 @@
             {
               "selector": "current_30_day_spend",
               "text": "current_30_day_spend",
-              "type": "number"
-            },
-            {
-              "selector": "percentage_change",
-              "text": "percentage_change",
               "type": "number"
             }
           ]
@@ -162,7 +157,7 @@
       },
       "targets": [
         {
-          "expr": "round(sum(increase(cloudpulse_ingestion_failures_total[$__range])))",
+          "expr": "round(sum(increase(cloudpulse_ingestion_failures_total[$__range]))) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -251,8 +246,8 @@
     },
     {
       "id": 7,
-      "type": "table",
-      "title": "Top Services",
+      "type": "barchart",
+      "title": "Top Services By Cost",
       "timeFrom": "30d",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -287,7 +282,7 @@
       ],
       "gridPos": {
         "h": 8,
-        "w": 8,
+        "w": 12,
         "x": 0,
         "y": 13
       },
@@ -295,11 +290,26 @@
         "defaults": {
           "unit": "locale"
         }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "service",
+        "showValue": "never",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "tooltip": {
+          "mode": "single",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": false
+        }
       }
     },
     {
       "id": 8,
-      "type": "table",
+      "type": "barchart",
       "title": "Cost By Category",
       "timeFrom": "30d",
       "datasource": {
@@ -335,20 +345,35 @@
       ],
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 8,
+        "w": 12,
+        "x": 12,
         "y": 13
       },
       "fieldConfig": {
         "defaults": {
           "unit": "locale"
         }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "category",
+        "showValue": "never",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "tooltip": {
+          "mode": "single",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": false
+        }
       }
     },
     {
       "id": 18,
-      "type": "table",
-      "title": "Cost By Compartment",
+      "type": "barchart",
+      "title": "Top Compartments By Cost",
       "timeFrom": "30d",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -391,12 +416,27 @@
         "defaults": {
           "unit": "locale"
         }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "compartment",
+        "showValue": "never",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "tooltip": {
+          "mode": "single",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": false
+        }
       }
     },
     {
       "id": 19,
-      "type": "table",
-      "title": "Cost By Region",
+      "type": "barchart",
+      "title": "Regional Spend",
       "timeFrom": "30d",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
@@ -438,6 +478,21 @@
       "fieldConfig": {
         "defaults": {
           "unit": "locale"
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "region",
+        "showValue": "never",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "tooltip": {
+          "mode": "single",
+          "sort": "desc"
+        },
+        "legend": {
+          "showLegend": false
         }
       }
     },
@@ -582,7 +637,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(cloudpulse_ingestion_duration_seconds_sum[$__range])) / sum(increase(cloudpulse_ingestion_duration_seconds_count[$__range]))",
+          "expr": "((sum(increase(cloudpulse_ingestion_duration_seconds_sum[$__range])) / sum(increase(cloudpulse_ingestion_duration_seconds_count[$__range]))) and on() (sum(increase(cloudpulse_ingestion_duration_seconds_count[$__range])) > 0)) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -609,7 +664,7 @@
       },
       "targets": [
         {
-          "expr": "round(sum(increase(cloudpulse_processed_files_total{status=\"processed\"}[$__range])))",
+          "expr": "round(sum(increase(cloudpulse_processed_files_total{status=\"processed\"}[$__range]))) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -631,7 +686,7 @@
       },
       "targets": [
         {
-          "expr": "round(sum(increase(cloudpulse_processed_records_total[$__range])))",
+          "expr": "round(sum(increase(cloudpulse_processed_records_total[$__range]))) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -653,7 +708,7 @@
       },
       "targets": [
         {
-          "expr": "round(sum(increase(cloudpulse_processed_files_total{status=\"skipped_old\"}[$__range])))",
+          "expr": "round(sum(increase(cloudpulse_processed_files_total{status=\"skipped_old\"}[$__range]))) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -675,7 +730,7 @@
       },
       "targets": [
         {
-          "expr": "round(sum(increase(cloudpulse_records_deleted_total[$__range])))",
+          "expr": "round(sum(increase(cloudpulse_records_deleted_total[$__range]))) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -697,7 +752,7 @@
       },
       "targets": [
         {
-          "expr": "round(sum(increase(cloudpulse_compressed_chunks_total[$__range])))",
+          "expr": "round(sum(increase(cloudpulse_compressed_chunks_total[$__range]))) or vector(0)",
           "instant": true,
           "refId": "A"
         }

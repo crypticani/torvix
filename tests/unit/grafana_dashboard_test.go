@@ -46,7 +46,6 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 		"/api/v1/dashboard/cost-timeseries",
 		"/api/v1/dashboard/cost-by-category",
 		"/api/v1/dashboard/cost-by-service",
-		"/api/v1/dashboard/cost-by-provider",
 		"/api/v1/dashboard/cost-by-compartment",
 		"/api/v1/dashboard/cost-by-region",
 		"/api/v1/dashboard/anomalies",

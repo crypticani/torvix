@@ -14,6 +14,8 @@ func TestTimescaleMigrationsContainRequiredPrimitives(t *testing.T) {
 		"../../migrations/004_ingestion_checkpoints_lifecycle.sql",
 		"../../migrations/005_cost_records_source_object_index.sql",
 		"../../migrations/006_dashboard_analytics.sql",
+		"../../migrations/007_dashboard_compartment_summaries.sql",
+		"../../migrations/008_rebuild_dashboard_compartment_summaries.sql",
 	}
 
 	combined := ""
@@ -45,10 +47,34 @@ func TestTimescaleMigrationsContainRequiredPrimitives(t *testing.T) {
 		"idx_daily_cost_summaries_range_provider",
 		"idx_cost_anomalies_range_severity",
 		"idx_cost_forecasts_date_provider",
+		"oci_compartment_name",
 	}
 	for _, needle := range required {
 		if !strings.Contains(combined, needle) {
 			t.Fatalf("expected migrations to contain %q", needle)
+		}
+	}
+}
+
+func TestDashboardCompartmentBackfillMigrationRebuildsSummariesFromRawTags(t *testing.T) {
+	b, err := os.ReadFile("../../migrations/008_rebuild_dashboard_compartment_summaries.sql")
+	if err != nil {
+		t.Fatalf("read compartment backfill migration: %v", err)
+	}
+	migration := string(b)
+	for _, required := range []string{
+		"DELETE FROM daily_cost_summaries",
+		"INSERT INTO daily_cost_summaries",
+		"DELETE FROM weekly_cost_summaries",
+		"INSERT INTO weekly_cost_summaries",
+		"DELETE FROM monthly_cost_summaries",
+		"INSERT INTO monthly_cost_summaries",
+		"tags->>'oci_compartment_id'",
+		"tags->>'oci_compartment_name'",
+		"COALESCE(NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', account_id, '')",
+	} {
+		if !strings.Contains(migration, required) {
+			t.Fatalf("expected compartment backfill migration to contain %q", required)
 		}
 	}
 }
