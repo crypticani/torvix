@@ -46,6 +46,11 @@ type dashboardAnomaliesResponse struct {
 	Data []domain.DashboardAnomaly `json:"data"`
 }
 
+type dashboardCostIncreasesResponse struct {
+	Meta dashboardMeta         `json:"meta"`
+	Data []domain.CostVariance `json:"data"`
+}
+
 type dashboardIngestionStatusResponse struct {
 	Meta dashboardMeta                 `json:"meta"`
 	Data domain.IngestionStatusSummary `json:"data"`
@@ -141,6 +146,86 @@ func (h *Handler) dashboardCostByCompartment(w http.ResponseWriter, r *http.Requ
 
 func (h *Handler) dashboardCostByRegion(w http.ResponseWriter, r *http.Request) {
 	h.dashboardBreakdown(w, r, "region")
+}
+
+func (h *Handler) dashboardCostIncreases(w http.ResponseWriter, r *http.Request) {
+	period := r.URL.Query().Get("period")
+	if period == "" {
+		period = "daily"
+	}
+	switch period {
+	case "daily", "weekly", "monthly":
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "period must be one of daily, weekly, monthly"})
+		return
+	}
+
+	asOf := time.Now().UTC()
+	if v := r.URL.Query().Get("as_of"); v != "" {
+		t, err := time.Parse(time.DateOnly, v)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "as_of must use YYYY-MM-DD"})
+			return
+		}
+		asOf = t.UTC()
+	}
+
+	currentFrom, currentTo, previousFrom, previousTo := dashboardIncreaseWindows(period, asOf)
+	rows, err := h.analytics.CompareVarianceWindows(r.Context(), period, currentFrom, currentTo, previousFrom, previousTo)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	provider, hasProvider := dashboardProvider(r)
+	out := make([]domain.CostVariance, 0, len(rows))
+	for _, row := range rows {
+		if hasProvider && row.Provider != provider {
+			continue
+		}
+		if row.Direction != "increase" || row.Delta <= 0 {
+			continue
+		}
+		out = append(out, row)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Delta == out[j].Delta {
+			if out[i].CompartmentName == out[j].CompartmentName {
+				return out[i].Service < out[j].Service
+			}
+			return out[i].CompartmentName < out[j].CompartmentName
+		}
+		return out[i].Delta > out[j].Delta
+	})
+	limit := grafanaLimit(r, 15)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	if out == nil {
+		out = []domain.CostVariance{}
+	}
+
+	meta := h.dashboardMeta(currentFrom, currentTo, "")
+	writeJSON(w, http.StatusOK, dashboardCostIncreasesResponse{Meta: meta, Data: out})
+}
+
+func dashboardIncreaseWindows(period string, asOf time.Time) (currentFrom, currentTo, previousFrom, previousTo time.Time) {
+	currentTo = time.Date(asOf.UTC().Year(), asOf.UTC().Month(), asOf.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	switch period {
+	case "weekly":
+		currentFrom = currentTo.AddDate(0, 0, -7)
+		previousTo = currentFrom
+		previousFrom = previousTo.AddDate(0, 0, -7)
+	case "monthly":
+		currentFrom = currentTo.AddDate(0, -1, 0)
+		previousTo = currentFrom
+		previousFrom = previousTo.AddDate(0, -1, 0)
+	default:
+		currentFrom = currentTo.AddDate(0, 0, -1)
+		previousTo = currentFrom
+		previousFrom = previousTo.AddDate(0, 0, -1)
+	}
+	return currentFrom, currentTo, previousFrom, previousTo
 }
 
 func (h *Handler) dashboardBreakdown(w http.ResponseWriter, r *http.Request, dimension string) {

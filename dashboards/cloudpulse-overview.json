@@ -2,7 +2,7 @@
   "title": "CloudPulse OCI API FinOps Overview",
   "uid": "cloudpulse-rolling-finops-overview",
   "schemaVersion": 39,
-  "version": 9,
+  "version": 10,
   "refresh": "1m",
   "time": {
     "from": "now-30d",
@@ -497,6 +497,210 @@
       }
     },
     {
+      "id": 20,
+      "type": "table",
+      "title": "Daily Cost Increases",
+      "timeFrom": "30d",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "CloudPulseAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-increases?period=daily&provider=oci&limit=10",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "compartment_name",
+              "text": "compartment",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "current_cost",
+              "text": "current_cost",
+              "type": "number"
+            },
+            {
+              "selector": "previous_cost",
+              "text": "previous_cost",
+              "type": "number"
+            },
+            {
+              "selector": "delta",
+              "text": "delta",
+              "type": "number"
+            },
+            {
+              "selector": "percent_change",
+              "text": "percent_change",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 29
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "table",
+      "title": "Weekly Cost Increases",
+      "timeFrom": "30d",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "CloudPulseAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-increases?period=weekly&provider=oci&limit=10",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "compartment_name",
+              "text": "compartment",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "current_cost",
+              "text": "current_cost",
+              "type": "number"
+            },
+            {
+              "selector": "previous_cost",
+              "text": "previous_cost",
+              "type": "number"
+            },
+            {
+              "selector": "delta",
+              "text": "delta",
+              "type": "number"
+            },
+            {
+              "selector": "percent_change",
+              "text": "percent_change",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 29
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "table",
+      "title": "Monthly Cost Increases",
+      "timeFrom": "30d",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "CloudPulseAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-increases?period=monthly&provider=oci&limit=10",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "compartment_name",
+              "text": "compartment",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "current_cost",
+              "text": "current_cost",
+              "type": "number"
+            },
+            {
+              "selector": "previous_cost",
+              "text": "previous_cost",
+              "type": "number"
+            },
+            {
+              "selector": "delta",
+              "text": "delta",
+              "type": "number"
+            },
+            {
+              "selector": "percent_change",
+              "text": "percent_change",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 29
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
       "id": 10,
       "type": "table",
       "title": "Anomaly Table",
@@ -561,7 +765,7 @@
         "h": 8,
         "w": 16,
         "x": 0,
-        "y": 29
+        "y": 37
       },
       "fieldConfig": {
         "defaults": {
@@ -624,7 +828,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 29
+        "y": 37
       }
     },
     {
@@ -646,7 +850,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 37
+        "y": 45
       },
       "fieldConfig": {
         "defaults": {
@@ -673,7 +877,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 37
+        "y": 45
       }
     },
     {
@@ -695,7 +899,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 37
+        "y": 45
       }
     },
     {
@@ -717,7 +921,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 37
+        "y": 45
       }
     },
     {
@@ -739,7 +943,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 37
+        "y": 45
       }
     },
     {
@@ -761,7 +965,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 37
+        "y": 45
       }
     }
   ]

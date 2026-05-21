@@ -198,6 +198,89 @@ func TestDashboardBreakdownSupportsOCICompartmentAndRegion(t *testing.T) {
 	}
 }
 
+func TestDashboardCostIncreasesReturnsCompletedWindowIncreases(t *testing.T) {
+	repo := &costIncreaseRepo{}
+	handler := NewWithOptions(nil, analytics.New(repo), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cost-increases?period=daily&provider=oci&limit=2&as_of=2026-05-21", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d", rr.Code)
+	}
+	if !repo.currentFrom.Equal(time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC)) ||
+		!repo.currentTo.Equal(time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC)) ||
+		!repo.previousFrom.Equal(time.Date(2026, 5, 19, 0, 0, 0, 0, time.UTC)) ||
+		!repo.previousTo.Equal(time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("daily comparison must use day-1 and day-2 windows, got current %s-%s previous %s-%s", repo.currentFrom, repo.currentTo, repo.previousFrom, repo.previousTo)
+	}
+	var got dashboardCostIncreasesResponse
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode cost increases: %v", err)
+	}
+	if len(got.Data) != 2 {
+		t.Fatalf("expected top 2 OCI increases, got %d: %+v", len(got.Data), got.Data)
+	}
+	if !got.Meta.From.Equal(time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC)) ||
+		!got.Meta.To.Equal(time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected response metadata to describe the evaluated window, got %s-%s", got.Meta.From, got.Meta.To)
+	}
+	if got.Data[0].CompartmentName != "app-prod" || got.Data[0].Service != "Compute" || got.Data[0].Delta != 60 {
+		t.Fatalf("unexpected top increase: %+v", got.Data[0])
+	}
+	if got.Data[1].CompartmentName != "data-prod" || got.Data[1].Service != "Object Storage" || got.Data[1].Delta != 10 {
+		t.Fatalf("unexpected second increase: %+v", got.Data[1])
+	}
+	for _, row := range got.Data {
+		if row.Direction != "increase" || row.Provider != domain.ProviderOCI || row.Delta <= 0 {
+			t.Fatalf("unexpected non-increase or wrong provider row: %+v", row)
+		}
+	}
+}
+
+func TestDashboardCostIncreaseWindowsEndBeforeToday(t *testing.T) {
+	asOf := time.Date(2026, 5, 21, 15, 30, 0, 0, time.UTC)
+	tests := []struct {
+		period       string
+		currentFrom  time.Time
+		currentTo    time.Time
+		previousFrom time.Time
+		previousTo   time.Time
+	}{
+		{
+			period:       "daily",
+			currentFrom:  time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC),
+			currentTo:    time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC),
+			previousFrom: time.Date(2026, 5, 19, 0, 0, 0, 0, time.UTC),
+			previousTo:   time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			period:       "weekly",
+			currentFrom:  time.Date(2026, 5, 14, 0, 0, 0, 0, time.UTC),
+			currentTo:    time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC),
+			previousFrom: time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC),
+			previousTo:   time.Date(2026, 5, 14, 0, 0, 0, 0, time.UTC),
+		},
+		{
+			period:       "monthly",
+			currentFrom:  time.Date(2026, 4, 21, 0, 0, 0, 0, time.UTC),
+			currentTo:    time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC),
+			previousFrom: time.Date(2026, 3, 21, 0, 0, 0, 0, time.UTC),
+			previousTo:   time.Date(2026, 4, 21, 0, 0, 0, 0, time.UTC),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.period, func(t *testing.T) {
+			currentFrom, currentTo, previousFrom, previousTo := dashboardIncreaseWindows(tt.period, asOf)
+			if !currentFrom.Equal(tt.currentFrom) || !currentTo.Equal(tt.currentTo) ||
+				!previousFrom.Equal(tt.previousFrom) || !previousTo.Equal(tt.previousTo) {
+				t.Fatalf("windows mismatch: got current %s-%s previous %s-%s, want current %s-%s previous %s-%s", currentFrom, currentTo, previousFrom, previousTo, tt.currentFrom, tt.currentTo, tt.previousFrom, tt.previousTo)
+			}
+		})
+	}
+}
+
 func TestDashboardAnomaliesReturnsEmptyArrayShape(t *testing.T) {
 	handler := NewWithOptions(nil, analytics.New(&emptyDashboardRepo{}), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
 
@@ -308,4 +391,26 @@ func (g *grafanaRepo) RunDataLifecycleMaintenance(context.Context, int, int) (do
 func (g *grafanaRepo) RefreshAggregates(context.Context, time.Time, time.Time) error { return nil }
 func (g *grafanaRepo) RefreshDashboardAnalytics(context.Context, time.Time, time.Time, int) error {
 	return nil
+}
+
+type costIncreaseRepo struct {
+	grafanaRepo
+	currentFrom  time.Time
+	currentTo    time.Time
+	previousFrom time.Time
+	previousTo   time.Time
+}
+
+func (r *costIncreaseRepo) CompareCostVariance(_ context.Context, period string, currentFrom, currentTo, previousFrom, previousTo time.Time) ([]domain.CostVariance, error) {
+	r.currentFrom = currentFrom
+	r.currentTo = currentTo
+	r.previousFrom = previousFrom
+	r.previousTo = previousTo
+	return []domain.CostVariance{
+		{Period: period, Provider: domain.ProviderOCI, AccountID: "tenancy-a", CompartmentName: "app-prod", Service: "Compute", CurrentCost: 100, PreviousCost: 40, Delta: 60, PercentChange: 150, Direction: "increase"},
+		{Period: period, Provider: domain.ProviderOCI, AccountID: "tenancy-a", CompartmentName: "data-prod", Service: "Object Storage", CurrentCost: 25, PreviousCost: 15, Delta: 10, PercentChange: 66.67, Direction: "increase"},
+		{Period: period, Provider: domain.ProviderOCI, AccountID: "tenancy-a", CompartmentName: "flat-prod", Service: "Network", CurrentCost: 20, PreviousCost: 20, Delta: 0, Direction: "flat"},
+		{Period: period, Provider: domain.ProviderOCI, AccountID: "tenancy-a", CompartmentName: "down-prod", Service: "Database", CurrentCost: 5, PreviousCost: 15, Delta: -10, Direction: "decrease"},
+		{Period: period, Provider: domain.ProviderAWS, AccountID: "acct-b", CompartmentName: "aws-prod", Service: "EC2", CurrentCost: 500, PreviousCost: 100, Delta: 400, Direction: "increase"},
+	}, nil
 }

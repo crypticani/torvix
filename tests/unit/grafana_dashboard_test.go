@@ -48,6 +48,7 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 		"/api/v1/dashboard/cost-by-service",
 		"/api/v1/dashboard/cost-by-compartment",
 		"/api/v1/dashboard/cost-by-region",
+		"/api/v1/dashboard/cost-increases",
 		"/api/v1/dashboard/anomalies",
 		"/api/v1/dashboard/ingestion-status",
 		"cloudpulse_processed_files_total{status=\\\"skipped_old\\\"}",

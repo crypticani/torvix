@@ -30,6 +30,10 @@ func (s *Service) CompareVariance(ctx context.Context, period string, now time.T
 	return s.repo.CompareCostVariance(ctx, period, currentFrom, currentTo, previousFrom, previousTo)
 }
 
+func (s *Service) CompareVarianceWindows(ctx context.Context, period string, currentFrom, currentTo, previousFrom, previousTo time.Time) ([]domain.CostVariance, error) {
+	return s.repo.CompareCostVariance(ctx, period, currentFrom.UTC(), currentTo.UTC(), previousFrom.UTC(), previousTo.UTC())
+}
+
 func (s *Service) DetectAnomalies(ctx context.Context, from, to time.Time) ([]domain.Anomaly, error) {
 	return s.repo.DetectAnomalies(ctx, from, to)
 }
