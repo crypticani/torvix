@@ -157,6 +157,10 @@ type Anomaly struct {
 	Provider           Provider  `json:"provider"`
 	AccountID          string    `json:"account_id"`
 	Service            string    `json:"service"`
+	Category           string    `json:"category"`
+	CompartmentID      string    `json:"compartment_id"`
+	CompartmentName    string    `json:"compartment_name"`
+	Region             string    `json:"region"`
 	Baseline           float64   `json:"baseline"`
 	Actual             float64   `json:"actual"`
 	ZScore             float64   `json:"z_score"`

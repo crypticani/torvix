@@ -125,6 +125,34 @@ func TestSendReportTelegramBuildsAPIURL(t *testing.T) {
 	}
 }
 
+func TestFormatAnomaliesIncludesLocationDetails(t *testing.T) {
+	got := formatAnomalies("INR", []domain.Anomaly{
+		{
+			Provider:         domain.ProviderOCI,
+			Service:          "COMPUTE",
+			Category:         "compute",
+			CompartmentID:    "ocid1.compartment.oc1..app",
+			CompartmentName:  "app-prod",
+			Region:           "us-ashburn-1",
+			Actual:           90.12,
+			PercentDeviation: 42.5,
+			Severity:         "high",
+		},
+	})
+
+	for _, want := range []string{
+		"oci COMPUTE",
+		"category compute",
+		"compartment app-prod",
+		"region us-ashburn-1",
+		"INR 90.12",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("formatted anomaly %q missing %q", got, want)
+		}
+	}
+}
+
 func TestSendNotificationHTTPNotifiers(t *testing.T) {
 	tests := []struct {
 		name       string

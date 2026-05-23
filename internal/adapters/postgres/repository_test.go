@@ -135,6 +135,41 @@ func TestDashboardAnalyticsSQLUsesExplicitTimestampBoundaries(t *testing.T) {
 	}
 }
 
+func TestAnomalySQLRequiresMeaningfulAbsoluteDeltaAndPositiveBaselineForPercentDeviation(t *testing.T) {
+	b, err := os.ReadFile("repository.go")
+	if err != nil {
+		t.Fatalf("read repository.go: %v", err)
+	}
+	sql := string(b)
+	if !strings.Contains(sql, "ABS(total_cost - baseline) >= 1") {
+		t.Fatal("anomaly SQL must require at least INR 1 absolute delta before flagging a row")
+	}
+	if !strings.Contains(sql, "baseline > 0") {
+		t.Fatal("anomaly SQL must require a positive baseline before using percentage deviation")
+	}
+	if strings.Contains(sql, "ABS(total_cost - baseline) >= baseline * 0.25") {
+		t.Fatal("anomaly SQL must not compare absolute delta against raw baseline because zero or negative baselines create false anomalies")
+	}
+}
+
+func TestAnomalySQLIncludesCompartmentAndRegionDimensions(t *testing.T) {
+	b, err := os.ReadFile("repository.go")
+	if err != nil {
+		t.Fatalf("read repository.go: %v", err)
+	}
+	sql := string(b)
+	for _, want := range []string{
+		"COALESCE(tags->>'oci_compartment_id', '') AS compartment_id",
+		"COALESCE(NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', '') AS compartment_name",
+		"COALESCE(region, '') AS region",
+		"PARTITION BY cloud_provider, account_id, service, category, compartment_id, compartment_name, region",
+	} {
+		if !strings.Contains(sql, want) {
+			t.Fatalf("anomaly SQL must include locality dimension %q", want)
+		}
+	}
+}
+
 func TestDashboardCostTimeseriesReadsPrecomputedDailySummaries(t *testing.T) {
 	mock, err := pgxmock.NewPool()
 	if err != nil {

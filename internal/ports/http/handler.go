@@ -221,6 +221,7 @@ func (h *Handler) runIngestionJob(jobID string, since time.Time) {
 			err := fmt.Errorf("ingestion panic: %v", recovered)
 			job := h.ingestions.complete(jobID, ingestionStatusFailed, nil, err)
 			h.notifyIngestionComplete(job)
+			h.deliverIngestionReports(job)
 		}
 	}()
 	results, err := h.collector.Run(context.Background(), since)
@@ -234,6 +235,7 @@ func (h *Handler) runIngestionJob(jobID string, since time.Time) {
 	}
 	job := h.ingestions.complete(jobID, status, resp, err)
 	h.notifyIngestionComplete(job)
+	h.deliverIngestionReports(job)
 }
 
 func ingestionResponses(results []collect.ProviderResult) []IngestResponse {
@@ -263,6 +265,22 @@ func (h *Handler) notifyIngestionComplete(job IngestionJobResponse) {
 	defer cancel()
 	if err := h.alerting.SendNotification(ctx, ingestionNotification(job)); err != nil {
 		slog.Error("failed to deliver ingestion completion alert", "job_id", job.JobID, "error", err)
+	}
+}
+
+func (h *Handler) deliverIngestionReports(job IngestionJobResponse) {
+	if h.reporting == nil || h.alerting == nil {
+		return
+	}
+	if job.Status != ingestionStatusSuccess {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	for _, result := range h.reporting.DeliverDefaultReports(ctx, h.alerting, time.Now().UTC()) {
+		if result.Error != nil {
+			slog.Error("failed to deliver post-ingestion report", "period", result.Period, "from", result.From, "to", result.To, "error", result.Error)
+		}
 	}
 }
 
@@ -443,8 +461,7 @@ func (h *Handler) forecast(w http.ResponseWriter, r *http.Request) {
 //	@Failure		502		{object}	ErrorResponse	"Webhook delivery failed"
 //	@Router			/api/v1/reports/daily [get]
 func (h *Handler) dailyReport(w http.ResponseWriter, r *http.Request) {
-	from, to := h.parseReportRange(r, "daily")
-	report, err := h.reporting.Build(r.Context(), "daily", from, to)
+	report, err := h.buildReport(r, "daily")
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -470,8 +487,7 @@ func (h *Handler) dailyReport(w http.ResponseWriter, r *http.Request) {
 //	@Failure		502		{object}	ErrorResponse	"Webhook delivery failed"
 //	@Router			/api/v1/reports/weekly [get]
 func (h *Handler) weeklyReport(w http.ResponseWriter, r *http.Request) {
-	from, to := h.parseReportRange(r, "weekly")
-	report, err := h.reporting.Build(r.Context(), "weekly", from, to)
+	report, err := h.buildReport(r, "weekly")
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -497,8 +513,7 @@ func (h *Handler) weeklyReport(w http.ResponseWriter, r *http.Request) {
 //	@Failure		502		{object}	ErrorResponse	"Webhook delivery failed"
 //	@Router			/api/v1/reports/monthly [get]
 func (h *Handler) monthlyReport(w http.ResponseWriter, r *http.Request) {
-	from, to := h.parseReportRange(r, "monthly")
-	report, err := h.reporting.Build(r.Context(), "monthly", from, to)
+	report, err := h.buildReport(r, "monthly")
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -508,6 +523,14 @@ func (h *Handler) monthlyReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, report)
+}
+
+func (h *Handler) buildReport(r *http.Request, period string) (domain.Report, error) {
+	if r.URL.Query().Get("from") == "" && r.URL.Query().Get("to") == "" {
+		return h.reporting.BuildDefault(r.Context(), period, time.Now().UTC())
+	}
+	from, to := h.parseReportRange(r, period)
+	return h.reporting.Build(r.Context(), period, from, to)
 }
 
 func (h *Handler) maybeDeliver(r *http.Request, report domain.Report) error {
@@ -541,20 +564,7 @@ func (h *Handler) parseReportRange(r *http.Request, period string) (time.Time, t
 }
 
 func defaultReportRange(period string, now time.Time) (time.Time, time.Time) {
-	today := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
-	switch period {
-	case "daily":
-		return today.AddDate(0, 0, -1), today
-	case "weekly":
-		daysSinceMonday := (int(today.Weekday()) + 6) % 7
-		thisWeekStart := today.AddDate(0, 0, -daysSinceMonday)
-		return thisWeekStart.AddDate(0, 0, -7), thisWeekStart
-	case "monthly":
-		thisMonthStart := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC)
-		return thisMonthStart.AddDate(0, -1, 0), thisMonthStart
-	default:
-		return today.AddDate(0, 0, -30), today
-	}
+	return reporting.DefaultRange(period, now)
 }
 
 func writeJSON(w http.ResponseWriter, code int, data any) {

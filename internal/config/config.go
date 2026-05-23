@@ -143,6 +143,7 @@ func Load(path string) (Config, error) {
 		cfg.Metrics.Namespace = "cloudpulse"
 	}
 	cfg.Ingestion = cfg.Ingestion.WithDefaults()
+	cfg.Scheduler = cfg.Scheduler.WithDefaults()
 	return cfg, nil
 }
 
@@ -165,6 +166,13 @@ func normalizeHTTPPort(port string) string {
 		return port
 	}
 	return ":" + port
+}
+
+func (s Scheduler) WithDefaults() Scheduler {
+	if s.IngestInterval == "" {
+		s.IngestInterval = "24h"
+	}
+	return s
 }
 
 func (i Ingestion) WithDefaults() Ingestion {

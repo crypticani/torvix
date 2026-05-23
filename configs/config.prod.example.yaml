@@ -39,7 +39,7 @@ providers:
 
 scheduler:
   enabled: true
-  ingest_interval: "6h"
+  ingest_interval: "24h"
 
 reporting:
   webhooks:

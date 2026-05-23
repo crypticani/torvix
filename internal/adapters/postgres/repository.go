@@ -512,12 +512,16 @@ func (r *Repository) DetectAnomalies(ctx context.Context, from, to time.Time) ([
 				time_bucket(INTERVAL '1 day', "timestamp") AS bucket,
 				cloud_provider,
 				COALESCE(account_id, '') AS account_id,
-				service,
+				COALESCE(service, 'unknown') AS service,
+				COALESCE(category, 'uncategorized') AS category,
+				COALESCE(tags->>'oci_compartment_id', '') AS compartment_id,
+				COALESCE(NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', '') AS compartment_name,
+				COALESCE(region, '') AS region,
 				COALESCE(SUM(cost), 0)::double precision AS total_cost
 			FROM cost_records
 			WHERE "timestamp" >= $1::timestamptz - INTERVAL '7 days'
 			  AND "timestamp" < $2
-			GROUP BY 1, 2, 3, 4
+			GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
 		),
 		series AS (
 			SELECT
@@ -525,12 +529,16 @@ func (r *Repository) DetectAnomalies(ctx context.Context, from, to time.Time) ([
 				cloud_provider,
 				account_id,
 				service,
+				category,
+				compartment_id,
+				compartment_name,
+				region,
 				total_cost,
 				AVG(total_cost) OVER w AS baseline,
 				STDDEV_POP(total_cost) OVER w AS stddev
 			FROM daily
 			WINDOW w AS (
-				PARTITION BY cloud_provider, account_id, service
+				PARTITION BY cloud_provider, account_id, service, category, compartment_id, compartment_name, region
 				ORDER BY bucket
 				ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING
 			)
@@ -540,6 +548,10 @@ func (r *Repository) DetectAnomalies(ctx context.Context, from, to time.Time) ([
 			cloud_provider,
 			account_id,
 			service,
+			category,
+			compartment_id,
+			compartment_name,
+			region,
 			baseline,
 			total_cost,
 			CASE WHEN COALESCE(stddev, 0) > 0 THEN (total_cost - baseline) / stddev ELSE 0 END AS z_score,
@@ -549,10 +561,10 @@ func (r *Repository) DetectAnomalies(ctx context.Context, from, to time.Time) ([
 		WHERE bucket >= $1
 		  AND bucket < $2
 		  AND baseline IS NOT NULL
+		  AND ABS(total_cost - baseline) >= 1
 		  AND (
 			ABS(CASE WHEN COALESCE(stddev, 0) > 0 THEN (total_cost - baseline) / stddev ELSE 0 END) >= 2
-			OR ABS(CASE WHEN COALESCE(baseline, 0) > 0 THEN ((total_cost - baseline) / baseline) * 100 ELSE 0 END) >= 30
-			OR ABS(total_cost - baseline) >= baseline * 0.25
+			OR (baseline > 0 AND ABS(((total_cost - baseline) / baseline) * 100) >= 30)
 		  )
 		ORDER BY bucket DESC
 	`, from.UTC(), to.UTC())
@@ -564,7 +576,7 @@ func (r *Repository) DetectAnomalies(ctx context.Context, from, to time.Time) ([
 	out := make([]domain.Anomaly, 0)
 	for rows.Next() {
 		var a domain.Anomaly
-		if err := rows.Scan(&a.Date, &a.Provider, &a.AccountID, &a.Service, &a.Baseline, &a.Actual, &a.ZScore, &a.PercentDeviation, &a.MovingAverageDelta); err != nil {
+		if err := rows.Scan(&a.Date, &a.Provider, &a.AccountID, &a.Service, &a.Category, &a.CompartmentID, &a.CompartmentName, &a.Region, &a.Baseline, &a.Actual, &a.ZScore, &a.PercentDeviation, &a.MovingAverageDelta); err != nil {
 			return nil, err
 		}
 		a.Severity = anomalySeverity(a.ZScore, a.PercentDeviation)

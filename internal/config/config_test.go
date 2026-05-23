@@ -50,6 +50,14 @@ func TestIngestionDefaultsUseNinetyDayOperationalHorizon(t *testing.T) {
 	}
 }
 
+func TestSchedulerDefaultsToDailyIngestion(t *testing.T) {
+	cfg := loadTestConfig(t, "scheduler:\n  enabled: true\n")
+
+	if cfg.Scheduler.IngestInterval != "24h" {
+		t.Fatalf("expected default scheduler ingest_interval 24h, got %q", cfg.Scheduler.IngestInterval)
+	}
+}
+
 func TestProviderInheritsMaxZeroYieldFilesDefault(t *testing.T) {
 	cfg := loadTestConfig(t, "ingestion:\n  max_zero_yield_files: 17\n")
 	provider := cfg.Providers.OCI.WithIngestionDefaults(cfg.Ingestion)

@@ -123,7 +123,7 @@ curl "http://localhost:8080/api/v1/dashboard/ingestion-status"
 }
 ```
 
-When enabled alerting targets are configured, CloudPulse sends an ingestion completion notification with success, partial failure, or failure status plus files and record counts.
+When enabled alerting targets are configured, CloudPulse sends an ingestion completion notification with success, partial failure, or failure status plus files and record counts. Only successful ingestion runs deliver the daily, weekly, and monthly cost reports to the same enabled alerting targets, so reports are sent after the latest ingestion has completed cleanly.
 
 Ingestion status separates parsing from retained inserts. `records_parsed` is the number of billing rows read from downloaded reports, `records_within_lookback` is the number of rows whose usage timestamp is inside the configured lookback window, `records_skipped_old` is the number of historical rows skipped before storage, and `records_inserted` is the number of records actually handed to PostgreSQL. If an OCI report contains only historical data, a successful job can report:
 
@@ -180,7 +180,7 @@ This is intentionally debuggable operational statistics, not predictive ML. Tune
 
 Report endpoints use operational FinOps windows by default:
 
-- Daily: yesterday.
+- Daily: yesterday. If yesterday has no ingested rows yet, CloudPulse falls back to the latest prior day with data within the last 7 days so OCI billing export lag does not produce empty daily alerts.
 - Weekly: the last completed Monday-to-Monday week.
 - Monthly: the last completed calendar month.
 
@@ -230,9 +230,10 @@ In `configs/config.yaml`:
   ```yaml
   scheduler:
     enabled: true
-    ingest_interval: "6h"
+    ingest_interval: "24h"
   ```
-- **Alerting:** Set up Slack, Microsoft Teams, Telegram, Discord, or SMTP email targets to receive daily/weekly/monthly cost reports. Targets are disabled by default; keep credentials in local or deployment-specific config. Notifications include the top 5 anomalies and leave the full anomaly list in Grafana/API views.
+  If `ingest_interval` is omitted, CloudPulse defaults to `24h`.
+- **Alerting:** Set up Slack, Microsoft Teams, Telegram, Discord, or SMTP email targets to receive ingestion completion notifications and daily/weekly/monthly cost reports after successful ingestion runs. Partial or failed ingestion sends only the ingestion completion notification, not cost reports. Targets are disabled by default; keep credentials in local or deployment-specific config. Notifications include the top 5 anomalies and leave the full anomaly list in Grafana/API views.
   ```yaml
   reporting:
     webhooks:

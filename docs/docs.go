@@ -465,6 +465,15 @@ const docTemplate = `{
                 "baseline": {
                     "type": "number"
                 },
+                "category": {
+                    "type": "string"
+                },
+                "compartment_id": {
+                    "type": "string"
+                },
+                "compartment_name": {
+                    "type": "string"
+                },
                 "date": {
                     "type": "string"
                 },
@@ -476,6 +485,9 @@ const docTemplate = `{
                 },
                 "provider": {
                     "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.Provider"
+                },
+                "region": {
+                    "type": "string"
                 },
                 "service": {
                     "type": "string"

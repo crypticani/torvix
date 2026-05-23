@@ -27,6 +27,7 @@ type App struct {
 	server          *http.Server
 	repo            *postgres.Repository
 	alerting        *alerting.Service
+	reporting       *reporting.Service
 	collector       *collect.Service
 	schedulerCfg    config.Scheduler
 	logger          *slog.Logger
@@ -96,6 +97,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		},
 		repo:            repo,
 		alerting:        alertingSvc,
+		reporting:       reportingSvc,
 		collector:       collectorSvc,
 		schedulerCfg:    cfg.Scheduler,
 		logger:          logger,
@@ -125,12 +127,32 @@ func (a *App) runScheduler() {
 		select {
 		case <-ticker.C:
 			a.logger.Info("scheduler triggered ingestion")
-			_, err := a.collector.Run(a.schedulerCtx, time.Time{})
+			results, err := a.collector.Run(a.schedulerCtx, time.Time{})
 			if err != nil {
 				a.logger.Error("scheduled ingestion failed", "error", err)
 			}
+			if shouldDeliverScheduledReports(results, err) {
+				a.deliverScheduledReports(a.schedulerCtx)
+			}
 		case <-a.stop:
 			return
+		}
+	}
+}
+
+func shouldDeliverScheduledReports(results []collect.ProviderResult, err error) bool {
+	return err == nil && len(results) > 0
+}
+
+func (a *App) deliverScheduledReports(ctx context.Context) {
+	if a.reporting == nil || a.alerting == nil {
+		return
+	}
+	reportCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	for _, result := range a.reporting.DeliverDefaultReports(reportCtx, a.alerting, time.Now().UTC()) {
+		if result.Error != nil && a.logger != nil {
+			a.logger.Error("failed to deliver scheduled report", "period", result.Period, "from", result.From, "to", result.To, "error", result.Error)
 		}
 	}
 }

@@ -424,12 +424,35 @@ func formatAnomalies(currency string, anomalies []domain.Anomaly) string {
 	}
 	for i := 0; i < count; i++ {
 		a := anomalies[i]
-		b.WriteString(fmt.Sprintf("- [%s] %s %s: %s (%.1f%% deviation)\n", a.Severity, a.Provider, a.Service, formatCost(currency, a.Actual), a.PercentDeviation))
+		details := anomalyDetails(a)
+		if details != "" {
+			details = "; " + details
+		}
+		b.WriteString(fmt.Sprintf("- [%s] %s %s: %s (%.1f%% deviation%s)\n", a.Severity, a.Provider, a.Service, formatCost(currency, a.Actual), a.PercentDeviation, details))
 	}
 	if len(anomalies) > count {
 		b.WriteString(fmt.Sprintf("...and %d more\n", len(anomalies)-count))
 	}
 	return b.String()
+}
+
+func anomalyDetails(a domain.Anomaly) string {
+	parts := make([]string, 0, 4)
+	if a.Category != "" {
+		parts = append(parts, "category "+a.Category)
+	}
+	if a.CompartmentName != "" {
+		parts = append(parts, "compartment "+a.CompartmentName)
+	} else if a.CompartmentID != "" {
+		parts = append(parts, "compartment "+a.CompartmentID)
+	}
+	if a.Region != "" {
+		parts = append(parts, "region "+a.Region)
+	}
+	if a.AccountID != "" {
+		parts = append(parts, "account "+a.AccountID)
+	}
+	return strings.Join(parts, "; ")
 }
 
 func formatCost(currency string, amount float64) string {
