@@ -1,9 +1,11 @@
-FROM golang:1.24 AS build
+FROM --platform=$BUILDPLATFORM golang:1.24 AS build
+ARG TARGETOS=linux
+ARG TARGETARCH
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/cloudpulse ./cmd/cloudpulse
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=${TARGETARCH:-$(go env GOARCH)} go build -o /out/cloudpulse ./cmd/cloudpulse
 
 FROM alpine:3.22
 WORKDIR /app
