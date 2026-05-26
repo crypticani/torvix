@@ -152,21 +152,25 @@ func TestAnomalySQLRequiresMeaningfulAbsoluteDeltaAndPositiveBaselineForPercentD
 	}
 }
 
-func TestAnomalySQLIncludesCompartmentAndRegionDimensions(t *testing.T) {
+func TestAnomalySQLUsesPrecomputedSummariesWithCompartmentAndRegionDimensions(t *testing.T) {
 	b, err := os.ReadFile("repository.go")
 	if err != nil {
 		t.Fatalf("read repository.go: %v", err)
 	}
 	sql := string(b)
 	for _, want := range []string{
-		"COALESCE(tags->>'oci_compartment_id', '') AS compartment_id",
-		"COALESCE(NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', '') AS compartment_name",
+		"FROM daily_cost_summaries",
+		"compartment_id",
+		"compartment_name",
 		"COALESCE(region, '') AS region",
-		"PARTITION BY cloud_provider, account_id, service, category, compartment_id, compartment_name, region",
+		"PARTITION BY provider, account_id, service, category, compartment_id, compartment_name, region",
 	} {
 		if !strings.Contains(sql, want) {
 			t.Fatalf("anomaly SQL must include locality dimension %q", want)
 		}
+	}
+	if strings.Contains(sql, `WHERE "timestamp" >= $1::timestamptz - INTERVAL '7 days'`) {
+		t.Fatal("anomaly SQL must not scan raw cost_records for report-time anomaly detection")
 	}
 }
 

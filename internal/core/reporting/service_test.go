@@ -148,6 +148,38 @@ func TestBuildDefaultDailyFallsBackToLatestPriorDayWithData(t *testing.T) {
 	}
 }
 
+func TestBuildDefaultDailySkipsExpensiveAnalyticsForEmptyFallbackDays(t *testing.T) {
+	repo := &reportingRepo{
+		aggregateByDay: map[time.Time][]domain.AggregatedCost{
+			time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC): {
+				{
+					WindowStart: time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC),
+					WindowEnd:   time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC),
+					Provider:    domain.ProviderOCI,
+					Service:     "Compute",
+					TotalCost:   42,
+				},
+			},
+		},
+	}
+	svc := New(analytics.New(repo), forecasting.New(repo))
+
+	report, err := svc.BuildDefault(context.Background(), "daily", time.Date(2026, 5, 22, 4, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("BuildDefault() error = %v", err)
+	}
+
+	if len(report.Summary) != 1 {
+		t.Fatalf("expected fallback daily summary, got %d rows", len(report.Summary))
+	}
+	if repo.detectCalls != 1 {
+		t.Fatalf("DetectAnomalies calls = %d, want 1 for selected report day only", repo.detectCalls)
+	}
+	if repo.forecastCalls != 1 {
+		t.Fatalf("ForecastCosts calls = %d, want 1 for selected report day only", repo.forecastCalls)
+	}
+}
+
 type recordingReportSender struct {
 	reports    []domain.Report
 	failPeriod string
@@ -170,6 +202,8 @@ type aggregateCall struct {
 type reportingRepo struct {
 	aggregateCalls []aggregateCall
 	aggregateByDay map[time.Time][]domain.AggregatedCost
+	detectCalls    int
+	forecastCalls  int
 }
 
 func (r *reportingRepo) StoreIngestedBatch(context.Context, domain.ProcessedReportFile, []domain.CanonicalCostRecord) error {
@@ -204,9 +238,11 @@ func (r *reportingRepo) CompareCostVariance(context.Context, string, time.Time, 
 	return nil, nil
 }
 func (r *reportingRepo) DetectAnomalies(context.Context, time.Time, time.Time) ([]domain.Anomaly, error) {
+	r.detectCalls++
 	return nil, nil
 }
 func (r *reportingRepo) ForecastCosts(_ context.Context, from, _ time.Time, _ int) ([]domain.ForecastPoint, error) {
+	r.forecastCalls++
 	return []domain.ForecastPoint{{Date: from, Provider: domain.ProviderOCI, Service: "forecast", ForecastCost: 10}}, nil
 }
 func (r *reportingRepo) IsReportProcessed(context.Context, domain.Provider, string, string, string) (bool, error) {

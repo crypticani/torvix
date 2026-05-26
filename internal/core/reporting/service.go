@@ -37,6 +37,10 @@ func (s *Service) Build(ctx context.Context, period string, from, to time.Time) 
 	if err != nil {
 		return domain.Report{}, err
 	}
+	return s.buildWithSummary(ctx, period, from, to, summary)
+}
+
+func (s *Service) buildWithSummary(ctx context.Context, period string, from, to time.Time, summary []domain.AggregatedCost) (domain.Report, error) {
 	anomalies, err := s.analytics.DetectAnomalies(ctx, from, to)
 	if err != nil {
 		return domain.Report{}, err
@@ -56,23 +60,27 @@ func (s *Service) Build(ctx context.Context, period string, from, to time.Time) 
 
 func (s *Service) BuildDefault(ctx context.Context, period string, now time.Time) (domain.Report, error) {
 	from, to := DefaultRange(period, now)
-	report, err := s.Build(ctx, period, from, to)
+	summary, err := s.analytics.AggregateWindow(ctx, from, to, period)
 	if err != nil {
 		return domain.Report{}, err
 	}
-	if period != "daily" || len(report.Summary) > 0 {
-		return report, nil
+	if period != "daily" || len(summary) > 0 {
+		return s.buildWithSummary(ctx, period, from, to, summary)
 	}
-	emptyReport := report
+	emptyReport := domain.Report{
+		Period:    period,
+		Generated: time.Now().UTC(),
+		Summary:   summary,
+	}
 	for i := 0; i < 7; i++ {
 		to = from
 		from = from.AddDate(0, 0, -1)
-		report, err = s.Build(ctx, period, from, to)
+		summary, err = s.analytics.AggregateWindow(ctx, from, to, period)
 		if err != nil {
 			return domain.Report{}, err
 		}
-		if len(report.Summary) > 0 {
-			return report, nil
+		if len(summary) > 0 {
+			return s.buildWithSummary(ctx, period, from, to, summary)
 		}
 	}
 	return emptyReport, nil

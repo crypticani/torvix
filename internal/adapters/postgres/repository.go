@@ -509,24 +509,24 @@ func (r *Repository) DetectAnomalies(ctx context.Context, from, to time.Time) ([
 	rows, err := r.db.Query(ctx, `
 		WITH daily AS (
 			SELECT
-				time_bucket(INTERVAL '1 day', "timestamp") AS bucket,
-				cloud_provider,
+				period_start AS bucket,
+				provider,
 				COALESCE(account_id, '') AS account_id,
 				COALESCE(service, 'unknown') AS service,
 				COALESCE(category, 'uncategorized') AS category,
-				COALESCE(tags->>'oci_compartment_id', '') AS compartment_id,
-				COALESCE(NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', '') AS compartment_name,
+				COALESCE(compartment_id, '') AS compartment_id,
+				COALESCE(compartment_name, '') AS compartment_name,
 				COALESCE(region, '') AS region,
-				COALESCE(SUM(cost), 0)::double precision AS total_cost
-			FROM cost_records
-			WHERE "timestamp" >= $1::timestamptz - INTERVAL '7 days'
-			  AND "timestamp" < $2
+				COALESCE(SUM(total_cost), 0)::double precision AS total_cost
+			FROM daily_cost_summaries
+			WHERE period_start >= $1::timestamptz - INTERVAL '7 days'
+			  AND period_start < $2
 			GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
 		),
 		series AS (
 			SELECT
 				bucket,
-				cloud_provider,
+				provider,
 				account_id,
 				service,
 				category,
@@ -538,14 +538,14 @@ func (r *Repository) DetectAnomalies(ctx context.Context, from, to time.Time) ([
 				STDDEV_POP(total_cost) OVER w AS stddev
 			FROM daily
 			WINDOW w AS (
-				PARTITION BY cloud_provider, account_id, service, category, compartment_id, compartment_name, region
+				PARTITION BY provider, account_id, service, category, compartment_id, compartment_name, region
 				ORDER BY bucket
 				ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING
 			)
 		)
 		SELECT
 			bucket,
-			cloud_provider,
+			provider,
 			account_id,
 			service,
 			category,
