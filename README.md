@@ -216,6 +216,8 @@ The bundled Grafana dashboard reads from the CloudPulse API and Prometheus. The 
 
 CloudPulse listens on `http.address` from config by default. Override the actual app listener at runtime with `CLOUDPULSE_HTTP_ADDRESS` or `CLOUDPULSE_HTTP_PORT`, which is useful when using host networking.
 
+CloudPulse writes JSON logs to subsystem files instead of stdout. Compose mounts `./logs` to `/app/logs`; control logging with `CLOUDPULSE_LOG_LEVEL`, `CLOUDPULSE_LOG_DIR`, and `CLOUDPULSE_LOG_RETENTION_DAYS`.
+
 For production setup, Prometheus scraping, and Grafana dashboard import instructions, see `docs/deployment.md`. If you change the app port, update the Prometheus scrape target in `deploy/prometheus.yml` or your production Prometheus config to match.
 
 ## Configuration Highlights
@@ -230,6 +232,14 @@ In `configs/config.yaml`:
     compression_after_days: 7
   ```
   Object-level report selection and dedupe reduce unnecessary downloads. For OCI proprietary cost reports, CloudPulse uses `reports/cost-csv/` candidates, seeks near the recent metadata window, sorts the bounded candidate set newest-first, skips already processed reports, and stops after `max_zero_yield_files` consecutive processed reports contain zero rows inside the lookback window. Record-level lookback filtering is the correctness boundary for dashboard data: records older than `lookback_days` are skipped before insertion. Retention remains a storage lifecycle safety net, not the primary ingestion lookback filter.
+- **Logging:** CloudPulse writes file-only JSON logs split by subsystem.
+  ```yaml
+  logging:
+    level: info
+    dir: logs
+    retention_days: 14
+  ```
+  The files are `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `scheduler.log`, and `alerting.log`. Files older than `retention_days` are deleted from the configured log directory.
 - **Scheduler:** CloudPulse includes an in-process scheduler to run ingestion automatically.
   ```yaml
   scheduler:

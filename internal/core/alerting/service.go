@@ -24,6 +24,7 @@ type Service struct {
 	client   *http.Client
 	webhooks []config.Webhook
 	sendMail smtpSender
+	logger   *slog.Logger
 }
 
 type Notification struct {
@@ -39,10 +40,17 @@ type NotificationField struct {
 }
 
 func New(client *http.Client, webhooks []config.Webhook) *Service {
+	return NewWithLogger(client, webhooks, slog.Default())
+}
+
+func NewWithLogger(client *http.Client, webhooks []config.Webhook, logger *slog.Logger) *Service {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &Service{client: client, webhooks: webhooks, sendMail: smtp.SendMail}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Service{client: client, webhooks: webhooks, sendMail: smtp.SendMail, logger: logger}
 }
 
 func (s *Service) SendReport(ctx context.Context, report domain.Report) error {
@@ -135,7 +143,7 @@ func (s *Service) postJSON(ctx context.Context, target config.Webhook, endpoint 
 	if resp.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("%s notifier status: %s", target.Name, resp.Status)
 	}
-	slog.Info("alert webhook delivered", "target", target.Name, "type", target.Type)
+	s.logger.Info("alert webhook delivered", "target", target.Name, "type", target.Type)
 	return nil
 }
 
@@ -163,7 +171,7 @@ func (s *Service) sendNotificationEmail(target config.Webhook, notification Noti
 	if err := s.sendMail(addr, auth, target.From, target.To, msg); err != nil {
 		return fmt.Errorf("%s email send: %w", target.Name, err)
 	}
-	slog.Info("alert notification delivered", "target", target.Name, "type", target.Type, "recipients", len(target.To))
+	s.logger.Info("alert notification delivered", "target", target.Name, "type", target.Type, "recipients", len(target.To))
 	return nil
 }
 
@@ -191,7 +199,7 @@ func (s *Service) sendEmail(target config.Webhook, report domain.Report) error {
 	if err := s.sendMail(addr, auth, target.From, target.To, msg); err != nil {
 		return fmt.Errorf("%s email send: %w", target.Name, err)
 	}
-	slog.Info("alert report delivered", "target", target.Name, "type", target.Type, "recipients", len(target.To))
+	s.logger.Info("alert report delivered", "target", target.Name, "type", target.Type, "recipients", len(target.To))
 	return nil
 }
 

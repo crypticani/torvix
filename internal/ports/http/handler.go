@@ -34,6 +34,7 @@ type Handler struct {
 	retentionDays int
 	ingestions    *ingestionJobStore
 	grafana       grafanaOptions
+	logger        *slog.Logger
 }
 
 type HandlerOptions struct {
@@ -42,6 +43,7 @@ type HandlerOptions struct {
 	GrafanaAuthEnabled bool
 	GrafanaAuthToken   string
 	GrafanaMetrics     GrafanaMetricsRecorder
+	Logger             *slog.Logger
 }
 
 type GrafanaMetricsRecorder interface {
@@ -71,6 +73,10 @@ func NewWithOptions(collector *collect.Service, analytics *analytics.Service, fo
 	if retentionDays <= 0 {
 		retentionDays = 90
 	}
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
 	h := &Handler{
 		mux:           http.NewServeMux(),
 		collector:     collector,
@@ -82,6 +88,7 @@ func NewWithOptions(collector *collect.Service, analytics *analytics.Service, fo
 		lookbackDays:  lookbackDays,
 		retentionDays: retentionDays,
 		ingestions:    newIngestionJobStore(),
+		logger:        logger,
 		grafana: grafanaOptions{
 			authEnabled: opts.GrafanaAuthEnabled,
 			authToken:   strings.TrimSpace(opts.GrafanaAuthToken),
@@ -266,7 +273,7 @@ func (h *Handler) notifyIngestionComplete(job IngestionJobResponse) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := h.alerting.SendNotification(ctx, ingestionNotification(job)); err != nil {
-		slog.Error("failed to deliver ingestion completion alert", "job_id", job.JobID, "error", err)
+		h.logger.Error("failed to deliver ingestion completion alert", "job_id", job.JobID, "error", err)
 	}
 }
 
@@ -281,7 +288,7 @@ func (h *Handler) deliverIngestionReports(job IngestionJobResponse) {
 	defer cancel()
 	for _, result := range h.reporting.DeliverDefaultReports(ctx, h.alerting, time.Now().UTC()) {
 		if result.Error != nil {
-			slog.Error("failed to deliver post-ingestion report", "period", result.Period, "from", result.From, "to", result.To, "error", result.Error)
+			h.logger.Error("failed to deliver post-ingestion report", "period", result.Period, "from", result.From, "to", result.To, "error", result.Error)
 		}
 	}
 }

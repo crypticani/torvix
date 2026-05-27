@@ -1,5 +1,13 @@
 log_level: info
 
+logging:
+  # Can be overridden with CLOUDPULSE_LOG_LEVEL.
+  level: info
+  # Can be overridden with CLOUDPULSE_LOG_DIR.
+  dir: logs
+  # Can be overridden with CLOUDPULSE_LOG_RETENTION_DAYS.
+  retention_days: 14
+
 http:
   # Can be overridden at runtime with CLOUDPULSE_HTTP_ADDRESS or CLOUDPULSE_HTTP_PORT.
   address: ":8080"

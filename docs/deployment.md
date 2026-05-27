@@ -152,6 +152,18 @@ The production Compose healthcheck checks `http://127.0.0.1:${CLOUDPULSE_HTTP_PO
 
 If you change only `http.address` in `configs/config.prod.yaml`, also set `CLOUDPULSE_HTTP_PORT` to the same port or update the healthcheck command in `docker-compose.prod.yml`. Compose cannot read the mounted YAML value into its healthcheck automatically.
 
+CloudPulse writes file-only JSON logs and does not emit normal application logs to stdout. Logs are split by subsystem into `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `scheduler.log`, and `alerting.log`. The bundled Compose files mount `./logs` to `/app/logs`; set `CLOUDPULSE_LOG_DIR=/app/logs` or keep `logging.dir: logs` while the container runs from `/app`.
+
+Logging runtime controls:
+
+```bash
+CLOUDPULSE_LOG_LEVEL=debug
+CLOUDPULSE_LOG_RETENTION_DAYS=14
+CLOUDPULSE_LOG_DIR=/app/logs
+```
+
+CloudPulse deletes `.log` files in the configured log directory whose modification time is older than the retention window.
+
 Resource limits can be tuned with:
 
 ```bash

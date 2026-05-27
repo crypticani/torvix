@@ -14,6 +14,41 @@ func TestLoadHTTPAddressDefault(t *testing.T) {
 	}
 }
 
+func TestLoggingDefaults(t *testing.T) {
+	cfg := loadTestConfig(t, "{}\n")
+
+	if cfg.Logging.Level != "info" {
+		t.Fatalf("expected default logging level info, got %q", cfg.Logging.Level)
+	}
+	if cfg.Logging.Dir != "logs" {
+		t.Fatalf("expected default logging dir logs, got %q", cfg.Logging.Dir)
+	}
+	if cfg.Logging.RetentionDays != 14 {
+		t.Fatalf("expected default logging retention_days 14, got %d", cfg.Logging.RetentionDays)
+	}
+}
+
+func TestLoggingEnvOverrides(t *testing.T) {
+	t.Setenv(EnvLogLevel, "debug")
+	t.Setenv(EnvLogDir, "/var/log/cloudpulse")
+	t.Setenv(EnvLogRetentionDays, "3")
+
+	cfg := loadTestConfig(t, "log_level: error\nlogging:\n  level: warn\n  dir: /tmp/cloudpulse\n  retention_days: 30\n")
+
+	if cfg.Logging.Level != "debug" {
+		t.Fatalf("expected %s override debug, got %q", EnvLogLevel, cfg.Logging.Level)
+	}
+	if cfg.LogLevel != "debug" {
+		t.Fatalf("expected legacy log_level mirror debug, got %q", cfg.LogLevel)
+	}
+	if cfg.Logging.Dir != "/var/log/cloudpulse" {
+		t.Fatalf("expected %s override /var/log/cloudpulse, got %q", EnvLogDir, cfg.Logging.Dir)
+	}
+	if cfg.Logging.RetentionDays != 3 {
+		t.Fatalf("expected %s override 3, got %d", EnvLogRetentionDays, cfg.Logging.RetentionDays)
+	}
+}
+
 func TestLoadHTTPAddressFromConfig(t *testing.T) {
 	cfg := loadTestConfig(t, "http:\n  address: \":18080\"\n")
 

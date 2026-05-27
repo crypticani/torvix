@@ -20,8 +20,9 @@ import (
 var _ storage.Repository = (*Repository)(nil)
 
 type Repository struct {
-	db   DB
-	pool *pgxpool.Pool
+	db     DB
+	pool   *pgxpool.Pool
+	logger *slog.Logger
 }
 
 type DB interface {
@@ -32,6 +33,10 @@ type DB interface {
 }
 
 func New(ctx context.Context, dsn string, maxConns, minConns int32) (*Repository, error) {
+	return NewWithLogger(ctx, dsn, maxConns, minConns, slog.Default())
+}
+
+func NewWithLogger(ctx context.Context, dsn string, maxConns, minConns int32, logger *slog.Logger) (*Repository, error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return nil, fmt.Errorf("parse postgres config: %w", err)
@@ -50,11 +55,18 @@ func New(ctx context.Context, dsn string, maxConns, minConns int32) (*Repository
 		pool.Close()
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
-	return &Repository{db: pool, pool: pool}, nil
+	return &Repository{db: pool, pool: pool, logger: loggerOrDefault(logger)}, nil
 }
 
 func NewWithDB(db DB) *Repository {
-	return &Repository{db: db}
+	return &Repository{db: db, logger: slog.Default()}
+}
+
+func loggerOrDefault(logger *slog.Logger) *slog.Logger {
+	if logger != nil {
+		return logger
+	}
+	return slog.Default()
 }
 
 func (r *Repository) Close() {
@@ -92,7 +104,7 @@ func (r *Repository) StoreIngestedBatch(ctx context.Context, file domain.Process
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	slog.Info("ingested batch committed", "provider", file.Provider, "object", file.ObjectName, "records_inserted", len(records), "duration", time.Since(started).String())
+	r.logger.Info("ingested batch committed", "provider", file.Provider, "object", file.ObjectName, "records_inserted", len(records), "duration", time.Since(started).String())
 	return nil
 }
 
@@ -119,7 +131,7 @@ func (r *Repository) StoreCostRecords(ctx context.Context, records []domain.Cano
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	slog.Info("cost records batch committed", "records_inserted", len(records), "duration", time.Since(started).String())
+	r.logger.Info("cost records batch committed", "records_inserted", len(records), "duration", time.Since(started).String())
 	return nil
 }
 
@@ -200,7 +212,7 @@ func (r *Repository) ApplyDataLifecyclePolicies(ctx context.Context, retentionDa
 	if _, err := r.db.Exec(ctx, `SELECT add_compression_policy('cost_records', make_interval(days => $1), if_not_exists => TRUE)`, compressionAfterDays); err != nil {
 		return fmt.Errorf("add compression policy: %w", err)
 	}
-	slog.Info("data lifecycle policies applied", "retention_days", retentionDays, "compression_after_days", compressionAfterDays)
+	r.logger.Info("data lifecycle policies applied", "retention_days", retentionDays, "compression_after_days", compressionAfterDays)
 	return nil
 }
 
@@ -243,7 +255,7 @@ func (r *Repository) RunDataLifecycleMaintenance(ctx context.Context, retentionD
 	if err != nil {
 		return result, fmt.Errorf("compress old cost chunks: %w", err)
 	}
-	slog.Info("data lifecycle maintenance completed", "records_deleted", result.RecordsDeleted, "compressed_chunks", result.CompressedChunks, "retention_days", retentionDays, "compression_after_days", compressionAfterDays)
+	r.logger.Info("data lifecycle maintenance completed", "records_deleted", result.RecordsDeleted, "compressed_chunks", result.CompressedChunks, "retention_days", retentionDays, "compression_after_days", compressionAfterDays)
 	return result, nil
 }
 
@@ -312,7 +324,7 @@ func (r *Repository) ensureCostRecordChunksWritable(ctx context.Context, from, t
 		return fmt.Errorf("decompress cost record chunks: %w", err)
 	}
 	if chunks > 0 {
-		slog.Info("cost record chunks made writable", "from", from, "to", to, "chunks", chunks)
+		r.logger.Info("cost record chunks made writable", "from", from, "to", to, "chunks", chunks)
 	}
 	return nil
 }
@@ -409,7 +421,7 @@ func (r *Repository) AggregateCosts(ctx context.Context, from, to time.Time, win
 		out = append(out, rec)
 	}
 	err = rows.Err()
-	slog.Info("analytics summary query executed", "window", window, "from", from.UTC(), "to", to.UTC(), "rows", len(out), "duration", time.Since(started).String(), "error", err)
+	r.logger.Info("analytics summary query executed", "window", window, "from", from.UTC(), "to", to.UTC(), "rows", len(out), "duration", time.Since(started).String(), "error", err)
 	return out, err
 }
 
@@ -500,7 +512,7 @@ func (r *Repository) CompareCostVariance(ctx context.Context, period string, cur
 		out = append(out, rec)
 	}
 	err = rows.Err()
-	slog.Info("analytics cost variance query executed", "period", period, "current_from", currentFrom.UTC(), "current_to", currentTo.UTC(), "previous_from", previousFrom.UTC(), "previous_to", previousTo.UTC(), "rows", len(out), "duration", time.Since(started).String(), "error", err)
+	r.logger.Info("analytics cost variance query executed", "period", period, "current_from", currentFrom.UTC(), "current_to", currentTo.UTC(), "previous_from", previousFrom.UTC(), "previous_to", previousTo.UTC(), "rows", len(out), "duration", time.Since(started).String(), "error", err)
 	return out, err
 }
 
@@ -583,7 +595,7 @@ func (r *Repository) DetectAnomalies(ctx context.Context, from, to time.Time) ([
 		out = append(out, a)
 	}
 	err = rows.Err()
-	slog.Info("analytics anomalies query executed", "from", from.UTC(), "to", to.UTC(), "rows", len(out), "duration", time.Since(started).String(), "error", err)
+	r.logger.Info("analytics anomalies query executed", "from", from.UTC(), "to", to.UTC(), "rows", len(out), "duration", time.Since(started).String(), "error", err)
 	return out, err
 }
 
@@ -650,7 +662,7 @@ func (r *Repository) ForecastCosts(ctx context.Context, from, to time.Time, hori
 		out = append(out, point)
 	}
 	err = rows.Err()
-	slog.Info("analytics forecast query executed", "from", from.UTC(), "to", to.UTC(), "horizon", horizon, "rows", len(out), "duration", time.Since(started).String(), "error", err)
+	r.logger.Info("analytics forecast query executed", "from", from.UTC(), "to", to.UTC(), "horizon", horizon, "rows", len(out), "duration", time.Since(started).String(), "error", err)
 	return out, err
 }
 

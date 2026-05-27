@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
@@ -88,7 +90,7 @@ func TestRefreshCostAnomaliesExecutesAgainstPostgres(t *testing.T) {
 		}
 	}
 
-	err = refreshCostAnomalies(ctx, tx, base.AddDate(0, 0, 7), base.AddDate(0, 0, 8), base)
+	err = refreshCostAnomalies(ctx, tx, slog.New(slog.NewTextHandler(io.Discard, nil)), base.AddDate(0, 0, 7), base.AddDate(0, 0, 8), base)
 	if err != nil && strings.Contains(err.Error(), "timestamp with time zone >= interval") {
 		t.Fatalf("regression: anomaly SQL compared timestamp with interval: %v", err)
 	}
