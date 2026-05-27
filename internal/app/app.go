@@ -19,6 +19,7 @@ import (
 	"github.com/crypticani/cloudpulse/internal/core/forecasting"
 	"github.com/crypticani/cloudpulse/internal/core/normalize"
 	"github.com/crypticani/cloudpulse/internal/core/reporting"
+	"github.com/crypticani/cloudpulse/internal/logging"
 	httpapi "github.com/crypticani/cloudpulse/internal/ports/http"
 	"github.com/crypticani/cloudpulse/internal/ports/providers"
 )
@@ -31,6 +32,7 @@ type App struct {
 	collector       *collect.Service
 	schedulerCfg    config.Scheduler
 	logger          *slog.Logger
+	schedulerLogger *slog.Logger
 	stop            chan struct{}
 	stopOnce        sync.Once
 	schedulerCtx    context.Context
@@ -38,10 +40,23 @@ type App struct {
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*App, error) {
+	return NewWithLoggers(cfg, logging.Loggers{
+		App:       logger,
+		HTTP:      logger,
+		Ingestion: logger,
+		DB:        logger,
+		OCI:       logger,
+		Scheduler: logger,
+		Alerting:  logger,
+	})
+}
+
+func NewWithLoggers(cfg config.Config, loggers logging.Loggers) (*App, error) {
+	loggers = loggers.WithDefaults()
 	connectCtx, cancelConnect := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancelConnect()
 
-	repo, err := postgres.New(connectCtx, cfg.DB.DSN, cfg.DB.MaxConns, cfg.DB.MinConns)
+	repo, err := postgres.NewWithLogger(connectCtx, cfg.DB.DSN, cfg.DB.MaxConns, cfg.DB.MinConns, loggers.DB)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +75,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 
 	var collectors []providers.Collector
 	if cfg.Providers.OCI.Enabled {
-		ociCollector, err := ociadapter.New(cfg.Providers.OCI.WithIngestionDefaults(cfg.Ingestion), logger, repo)
+		ociCollector, err := ociadapter.New(cfg.Providers.OCI.WithIngestionDefaults(cfg.Ingestion), loggers.OCI, repo)
 		if err != nil {
 			return nil, err
 		}
@@ -71,7 +86,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	metrics := metricsadapter.New(cfg.Metrics.Namespace, reg, cfg.Metrics.CostStatsEnabled)
 
 	normalizer := normalize.New()
-	collectorSvc := collect.NewWithPolicy(logger, repo, normalizer, collectors, metrics, collect.Policy{
+	collectorSvc := collect.NewWithPolicy(loggers.Ingestion, repo, normalizer, collectors, metrics, collect.Policy{
 		LookbackDays:         cfg.Ingestion.LookbackDays,
 		RetentionDays:        cfg.Ingestion.RetentionDays,
 		CompressionAfterDays: cfg.Ingestion.CompressionAfterDays,
@@ -79,20 +94,21 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 	analyticsSvc := analytics.New(repo)
 	forecastingSvc := forecasting.New(repo)
 	reportingSvc := reporting.New(analyticsSvc, forecastingSvc)
-	alertingSvc := alerting.New(&http.Client{Timeout: 10 * time.Second}, cfg.Reporting.Webhooks)
+	alertingSvc := alerting.NewWithLogger(&http.Client{Timeout: 10 * time.Second}, cfg.Reporting.Webhooks, loggers.Alerting)
 	handler := httpapi.NewWithOptions(collectorSvc, analyticsSvc, forecastingSvc, reportingSvc, alertingSvc, reg, httpapi.HandlerOptions{
 		LookbackDays:       cfg.Ingestion.LookbackDays,
 		RetentionDays:      cfg.Ingestion.RetentionDays,
 		GrafanaAuthEnabled: cfg.Grafana.APIAuth.Enabled,
 		GrafanaAuthToken:   cfg.Grafana.APIAuth.BearerToken,
 		GrafanaMetrics:     metrics,
+		Logger:             loggers.HTTP,
 	})
 
 	schedulerCtx, cancelScheduler := context.WithCancel(context.Background())
 	return &App{
 		server: &http.Server{
 			Addr:              cfg.HTTP.Address,
-			Handler:           requestLogger(logger, handler),
+			Handler:           requestLogger(loggers.HTTP, handler),
 			ReadHeaderTimeout: 5 * time.Second,
 		},
 		repo:            repo,
@@ -100,7 +116,8 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		reporting:       reportingSvc,
 		collector:       collectorSvc,
 		schedulerCfg:    cfg.Scheduler,
-		logger:          logger,
+		logger:          loggers.App,
+		schedulerLogger: loggers.Scheduler,
 		stop:            make(chan struct{}),
 		schedulerCtx:    schedulerCtx,
 		cancelScheduler: cancelScheduler,
@@ -117,19 +134,19 @@ func (a *App) Start() error {
 func (a *App) runScheduler() {
 	d, err := time.ParseDuration(a.schedulerCfg.IngestInterval)
 	if err != nil || d <= 0 {
-		a.logger.Error("invalid ingest interval", "error", err)
+		a.schedulerLogger.Error("invalid ingest interval", "error", err)
 		return
 	}
-	a.logger.Info("starting ingestion scheduler", "interval", d.String())
+	a.schedulerLogger.Info("starting ingestion scheduler", "interval", d.String())
 	ticker := time.NewTicker(d)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			a.logger.Info("scheduler triggered ingestion")
+			a.schedulerLogger.Info("scheduler triggered ingestion")
 			results, err := a.collector.Run(a.schedulerCtx, time.Time{})
 			if err != nil {
-				a.logger.Error("scheduled ingestion failed", "error", err)
+				a.schedulerLogger.Error("scheduled ingestion failed", "error", err)
 			}
 			if shouldDeliverScheduledReports(results, err) {
 				a.deliverScheduledReports(a.schedulerCtx)

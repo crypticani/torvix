@@ -46,39 +46,39 @@ func (r *Repository) RefreshDashboardAnalytics(ctx context.Context, from, to tim
 		}
 	}()
 
-	if err = refreshCostSummary(ctx, tx, "daily_cost_summaries", "1 day", dailyFrom, dailyTo, dailyPreviousFrom, dailyPreviousTo); err != nil {
-		slog.Error("dashboard analytics refresh phase failed", "phase", "daily_summary", "from", dailyFrom, "to", dailyTo, "error", err)
+	if err = refreshCostSummary(ctx, tx, r.logger, "daily_cost_summaries", "1 day", dailyFrom, dailyTo, dailyPreviousFrom, dailyPreviousTo); err != nil {
+		r.logger.Error("dashboard analytics refresh phase failed", "phase", "daily_summary", "from", dailyFrom, "to", dailyTo, "error", err)
 		return err
 	}
-	if err = refreshCostSummary(ctx, tx, "weekly_cost_summaries", "1 week", weeklyFrom, weeklyTo, weeklyPreviousFrom, weeklyPreviousTo); err != nil {
-		slog.Error("dashboard analytics refresh phase failed", "phase", "weekly_summary", "from", weeklyFrom, "to", weeklyTo, "error", err)
+	if err = refreshCostSummary(ctx, tx, r.logger, "weekly_cost_summaries", "1 week", weeklyFrom, weeklyTo, weeklyPreviousFrom, weeklyPreviousTo); err != nil {
+		r.logger.Error("dashboard analytics refresh phase failed", "phase", "weekly_summary", "from", weeklyFrom, "to", weeklyTo, "error", err)
 		return err
 	}
-	if err = refreshCostSummary(ctx, tx, "monthly_cost_summaries", "1 month", monthlyFrom, monthlyTo, monthlyPreviousFrom, monthlyPreviousTo); err != nil {
-		slog.Error("dashboard analytics refresh phase failed", "phase", "monthly_summary", "from", monthlyFrom, "to", monthlyTo, "error", err)
+	if err = refreshCostSummary(ctx, tx, r.logger, "monthly_cost_summaries", "1 month", monthlyFrom, monthlyTo, monthlyPreviousFrom, monthlyPreviousTo); err != nil {
+		r.logger.Error("dashboard analytics refresh phase failed", "phase", "monthly_summary", "from", monthlyFrom, "to", monthlyTo, "error", err)
 		return err
 	}
-	if err = refreshCostAnomalies(ctx, tx, dailyFrom, dailyTo, anomalyBaselineFrom); err != nil {
-		slog.Error("dashboard analytics refresh phase failed", "phase", "anomalies", "from", dailyFrom, "to", dailyTo, "baseline_from", anomalyBaselineFrom, "error", err)
+	if err = refreshCostAnomalies(ctx, tx, r.logger, dailyFrom, dailyTo, anomalyBaselineFrom); err != nil {
+		r.logger.Error("dashboard analytics refresh phase failed", "phase", "anomalies", "from", dailyFrom, "to", dailyTo, "baseline_from", anomalyBaselineFrom, "error", err)
 		return err
 	}
-	if err = refreshCostForecasts(ctx, tx, forecastFrom, forecastTo); err != nil {
-		slog.Error("dashboard analytics refresh phase failed", "phase", "forecasts", "from", forecastFrom, "to", forecastTo, "error", err)
+	if err = refreshCostForecasts(ctx, tx, r.logger, forecastFrom, forecastTo); err != nil {
+		r.logger.Error("dashboard analytics refresh phase failed", "phase", "forecasts", "from", forecastFrom, "to", forecastTo, "error", err)
 		return err
 	}
 	if err = pruneDashboardAnalytics(ctx, tx, pruneCutoff); err != nil {
-		slog.Error("dashboard analytics refresh phase failed", "phase", "prune", "cutoff", pruneCutoff, "error", err)
+		r.logger.Error("dashboard analytics refresh phase failed", "phase", "prune", "cutoff", pruneCutoff, "error", err)
 		return err
 	}
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
 
-	slog.Info("dashboard analytics refresh completed", "from", dailyFrom, "to", dailyTo, "retention_days", retentionDays, "duration", time.Since(started).String())
+	r.logger.Info("dashboard analytics refresh completed", "from", dailyFrom, "to", dailyTo, "retention_days", retentionDays, "duration", time.Since(started).String())
 	return nil
 }
 
-func refreshCostSummary(ctx context.Context, tx pgx.Tx, table, interval string, from, to, previousFrom, previousTo time.Time) error {
+func refreshCostSummary(ctx context.Context, tx pgx.Tx, logger *slog.Logger, table, interval string, from, to, previousFrom, previousTo time.Time) error {
 	if !to.After(from) {
 		return nil
 	}
@@ -157,11 +157,11 @@ func refreshCostSummary(ctx context.Context, tx pgx.Tx, table, interval string, 
 	if _, err := tx.Exec(ctx, insertSQL, from, to, previousFrom, previousTo); err != nil {
 		return fmt.Errorf("insert %s window: %w", table, err)
 	}
-	slog.Info("dashboard summary recomputed", "table", table, "from", from, "to", to)
+	logger.Info("dashboard summary recomputed", "table", table, "from", from, "to", to)
 	return nil
 }
 
-func refreshCostAnomalies(ctx context.Context, tx pgx.Tx, from, to, baselineFrom time.Time) error {
+func refreshCostAnomalies(ctx context.Context, tx pgx.Tx, logger *slog.Logger, from, to, baselineFrom time.Time) error {
 	if !to.After(from) {
 		return nil
 	}
@@ -237,11 +237,11 @@ func refreshCostAnomalies(ctx context.Context, tx pgx.Tx, from, to, baselineFrom
 	if err != nil {
 		return fmt.Errorf("insert cost anomalies window: %w", err)
 	}
-	slog.Info("dashboard anomalies recomputed", "from", from, "to", to)
+	logger.Info("dashboard anomalies recomputed", "from", from, "to", to)
 	return nil
 }
 
-func refreshCostForecasts(ctx context.Context, tx pgx.Tx, from, to time.Time) error {
+func refreshCostForecasts(ctx context.Context, tx pgx.Tx, logger *slog.Logger, from, to time.Time) error {
 	if !to.After(from) {
 		return nil
 	}
@@ -299,7 +299,7 @@ func refreshCostForecasts(ctx context.Context, tx pgx.Tx, from, to time.Time) er
 	if err != nil {
 		return fmt.Errorf("insert cost forecasts: %w", err)
 	}
-	slog.Info("dashboard forecasts recomputed", "method", "trailing_7_day_average", "horizon_days", 7)
+	logger.Info("dashboard forecasts recomputed", "method", "trailing_7_day_average", "horizon_days", 7)
 	return nil
 }
 

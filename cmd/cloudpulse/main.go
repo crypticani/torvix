@@ -17,7 +17,7 @@ import (
 )
 
 //	@title			CloudPulse API
-//	@version		0.4.0
+//	@version		0.5.0
 //	@description	Multi-cloud FinOps cost analytics platform. Collects billing data from AWS, Azure, GCP, and OCI, normalises it into a canonical schema, and provides real-time cost summaries, anomaly detection, forecasting, and automated reporting.
 
 //	@contact.name	CloudPulse Team
@@ -35,18 +35,30 @@ func main() {
 		panic(err)
 	}
 
-	logger := logging.New(cfg.LogLevel)
+	logManager, err := logging.NewManager(logging.Config{
+		Level:         cfg.Logging.Level,
+		Dir:           cfg.Logging.Dir,
+		RetentionDays: cfg.Logging.RetentionDays,
+	})
+	if err != nil {
+		panic(err)
+	}
+	defer logManager.Close()
+	loggers := logManager.Loggers()
+	logger := loggers.App
 	slog.SetDefault(logger)
 
-	svc, err := app.New(cfg, logger)
+	svc, err := app.NewWithLoggers(cfg, loggers)
 	if err != nil {
 		logger.Error("bootstrap failed", "error", err)
+		_ = logManager.Close()
 		os.Exit(1)
 	}
 	defer svc.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	go logManager.RunRetentionCleanup(ctx, 24*time.Hour)
 
 	go func() {
 		logger.Info("http server starting", "addr", cfg.HTTP.Address)

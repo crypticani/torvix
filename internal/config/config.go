@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,12 +14,16 @@ const (
 	EnvHTTPAddress           = "CLOUDPULSE_HTTP_ADDRESS"
 	EnvHTTPPort              = "CLOUDPULSE_HTTP_PORT"
 	EnvGrafanaAPIBearerToken = "CLOUDPULSE_GRAFANA_API_BEARER_TOKEN"
+	EnvLogLevel              = "CLOUDPULSE_LOG_LEVEL"
+	EnvLogDir                = "CLOUDPULSE_LOG_DIR"
+	EnvLogRetentionDays      = "CLOUDPULSE_LOG_RETENTION_DAYS"
 )
 
 type Config struct {
-	LogLevel  string `yaml:"log_level"`
-	HTTP      HTTP   `yaml:"http"`
-	DB        DB     `yaml:"db"`
+	LogLevel  string  `yaml:"log_level"`
+	Logging   Logging `yaml:"logging"`
+	HTTP      HTTP    `yaml:"http"`
+	DB        DB      `yaml:"db"`
 	Providers struct {
 		OCI Provider `yaml:"oci"`
 	} `yaml:"providers"`
@@ -27,6 +32,12 @@ type Config struct {
 	Reporting Reporting `yaml:"reporting"`
 	Metrics   Metrics   `yaml:"metrics"`
 	Grafana   Grafana   `yaml:"grafana"`
+}
+
+type Logging struct {
+	Level         string `yaml:"level"`
+	Dir           string `yaml:"dir"`
+	RetentionDays int    `yaml:"retention_days"`
 }
 
 type Scheduler struct {
@@ -136,9 +147,8 @@ func Load(path string) (Config, error) {
 	if cfg.HTTP.Address == "" {
 		cfg.HTTP.Address = ":8080"
 	}
-	if cfg.LogLevel == "" {
-		cfg.LogLevel = "info"
-	}
+	cfg.Logging = cfg.Logging.WithDefaults(cfg.LogLevel)
+	cfg.LogLevel = cfg.Logging.Level
 	if cfg.Metrics.Namespace == "" {
 		cfg.Metrics.Namespace = "cloudpulse"
 	}
@@ -159,6 +169,17 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Grafana.APIAuth.Enabled = true
 		cfg.Grafana.APIAuth.BearerToken = token
 	}
+	if level := strings.TrimSpace(os.Getenv(EnvLogLevel)); level != "" {
+		cfg.Logging.Level = level
+	}
+	if dir := strings.TrimSpace(os.Getenv(EnvLogDir)); dir != "" {
+		cfg.Logging.Dir = dir
+	}
+	if retention := strings.TrimSpace(os.Getenv(EnvLogRetentionDays)); retention != "" {
+		if days, err := strconv.Atoi(retention); err == nil {
+			cfg.Logging.RetentionDays = days
+		}
+	}
 }
 
 func normalizeHTTPPort(port string) string {
@@ -173,6 +194,22 @@ func (s Scheduler) WithDefaults() Scheduler {
 		s.IngestInterval = "24h"
 	}
 	return s
+}
+
+func (l Logging) WithDefaults(legacyLevel string) Logging {
+	if l.Level == "" {
+		l.Level = legacyLevel
+	}
+	if l.Level == "" {
+		l.Level = "info"
+	}
+	if l.Dir == "" {
+		l.Dir = "logs"
+	}
+	if l.RetentionDays <= 0 {
+		l.RetentionDays = 14
+	}
+	return l
 }
 
 func (i Ingestion) WithDefaults() Ingestion {
