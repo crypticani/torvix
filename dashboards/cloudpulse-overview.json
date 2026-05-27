@@ -2,7 +2,7 @@
   "title": "CloudPulse OCI API FinOps Overview",
   "uid": "cloudpulse-rolling-finops-overview",
   "schemaVersion": 39,
-  "version": 10,
+  "version": 11,
   "refresh": "1m",
   "time": {
     "from": "now-30d",
@@ -12,8 +12,7 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Current 30-Day Spend",
-      "timeFrom": "30d",
+      "title": "Total OCI Cost",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "CloudPulseAPI"
@@ -25,20 +24,20 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/overview?provider=oci",
+          "url": "/api/v1/dashboard/oci-cost-summary?from=${__from:date:iso}&to=${__to:date:iso}&region=${region}&compartment=${compartment}&service=${service}",
           "url_options": {
             "data": "",
             "method": "GET"
           },
           "root_selector": "data",
-          "root_is_not_array": true,
           "columns": [
             {
-              "selector": "current_30_day_spend",
-              "text": "current_30_day_spend",
+              "selector": "total_cost",
+              "text": "total_cost",
               "type": "number"
             }
-          ]
+          ],
+          "root_is_not_array": true
         }
       ],
       "gridPos": {
@@ -68,7 +67,6 @@
       "id": 2,
       "type": "stat",
       "title": "Previous 30-Day Spend",
-      "timeFrom": "30d",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "CloudPulseAPI"
@@ -80,7 +78,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/overview?provider=oci",
+          "url": "/api/v1/dashboard/overview?provider=oci&from=${__from:date:iso}&to=${__to:date:iso}&region=${region}&compartment=${compartment}&service=${service}",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -112,7 +110,6 @@
       "id": 3,
       "type": "stat",
       "title": "Anomalies",
-      "timeFrom": "30d",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "CloudPulseAPI"
@@ -124,7 +121,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/overview?provider=oci",
+          "url": "/api/v1/dashboard/overview?provider=oci&from=${__from:date:iso}&to=${__to:date:iso}&region=${region}&compartment=${compartment}&service=${service}",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -172,8 +169,7 @@
     {
       "id": 5,
       "type": "timeseries",
-      "title": "Daily Cost Trend",
-      "timeFrom": "30d",
+      "title": "Daily OCI Cost Trend",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "CloudPulseAPI"
@@ -185,7 +181,7 @@
           "source": "url",
           "parser": "backend",
           "format": "time_series",
-          "url": "/api/v1/dashboard/cost-timeseries?window=daily&provider=oci",
+          "url": "/api/v1/dashboard/cost-timeseries?window=daily&provider=oci&from=${__from:date:iso}&to=${__to:date:iso}&region=${region}&compartment=${compartment}&service=${service}",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -247,8 +243,7 @@
     {
       "id": 7,
       "type": "barchart",
-      "title": "Top Services By Cost",
-      "timeFrom": "30d",
+      "title": "OCI Cost by Service",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "CloudPulseAPI"
@@ -260,7 +255,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/cost-by-service?limit=15&provider=oci",
+          "url": "/api/v1/dashboard/cost-by-service?limit=15&provider=oci&from=${__from:date:iso}&to=${__to:date:iso}&region=${region}&compartment=${compartment}&service=${service}",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -283,8 +278,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 13
+        "x": 12,
+        "y": 21
       },
       "fieldConfig": {
         "defaults": {
@@ -309,9 +304,8 @@
     },
     {
       "id": 8,
-      "type": "barchart",
-      "title": "Cost By Category",
-      "timeFrom": "30d",
+      "type": "table",
+      "title": "Top OCI Cost Drivers",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "CloudPulseAPI"
@@ -323,7 +317,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/cost-by-category?provider=oci",
+          "url": "/api/v1/dashboard/oci-cost-drivers?limit=15&from=${__from:date:iso}&to=${__to:date:iso}&region=${region}&compartment=${compartment}&service=${service}",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -331,13 +325,28 @@
           "root_selector": "data",
           "columns": [
             {
-              "selector": "name",
-              "text": "category",
+              "selector": "region",
+              "text": "region",
+              "type": "string"
+            },
+            {
+              "selector": "compartment",
+              "text": "compartment",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
               "type": "string"
             },
             {
               "selector": "total_cost",
               "text": "total_cost",
+              "type": "number"
+            },
+            {
+              "selector": "percentage",
+              "text": "percentage",
               "type": "number"
             }
           ]
@@ -355,26 +364,13 @@
         }
       },
       "options": {
-        "orientation": "horizontal",
-        "xField": "category",
-        "showValue": "never",
-        "stacking": "none",
-        "groupWidth": 0.7,
-        "barWidth": 0.9,
-        "tooltip": {
-          "mode": "single",
-          "sort": "desc"
-        },
-        "legend": {
-          "showLegend": false
-        }
+        "showHeader": true
       }
     },
     {
       "id": 18,
       "type": "barchart",
-      "title": "Top Compartments By Cost",
-      "timeFrom": "30d",
+      "title": "OCI Cost by Compartment",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "CloudPulseAPI"
@@ -386,7 +382,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/cost-by-compartment?limit=15&provider=oci",
+          "url": "/api/v1/dashboard/cost-by-compartment?limit=15&provider=oci&from=${__from:date:iso}&to=${__to:date:iso}&region=${region}&compartment=${compartment}&service=${service}",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -436,8 +432,7 @@
     {
       "id": 19,
       "type": "barchart",
-      "title": "Regional Spend",
-      "timeFrom": "30d",
+      "title": "OCI Cost by Region",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "CloudPulseAPI"
@@ -449,7 +444,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/cost-by-region?provider=oci",
+          "url": "/api/v1/dashboard/cost-by-region?provider=oci&from=${__from:date:iso}&to=${__to:date:iso}&region=${region}&compartment=${compartment}&service=${service}",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -472,8 +467,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 21
+        "x": 0,
+        "y": 13
       },
       "fieldConfig": {
         "defaults": {
@@ -500,7 +495,6 @@
       "id": 20,
       "type": "table",
       "title": "Daily Cost Increases",
-      "timeFrom": "30d",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "CloudPulseAPI"
@@ -568,7 +562,6 @@
       "id": 21,
       "type": "table",
       "title": "Weekly Cost Increases",
-      "timeFrom": "30d",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "CloudPulseAPI"
@@ -636,7 +629,6 @@
       "id": 22,
       "type": "table",
       "title": "Monthly Cost Increases",
-      "timeFrom": "30d",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "CloudPulseAPI"
@@ -704,7 +696,6 @@
       "id": 10,
       "type": "table",
       "title": "Anomaly Table",
-      "timeFrom": "30d",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "CloudPulseAPI"
@@ -716,7 +707,7 @@
           "source": "url",
           "parser": "backend",
           "format": "table",
-          "url": "/api/v1/dashboard/anomalies?provider=oci",
+          "url": "/api/v1/dashboard/anomalies?provider=oci&from=${__from:date:iso}&to=${__to:date:iso}&region=${region}&compartment=${compartment}&service=${service}",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -777,7 +768,6 @@
       "id": 11,
       "type": "table",
       "title": "Latest Billing Period Status",
-      "timeFrom": "30d",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "CloudPulseAPI"
@@ -968,5 +958,219 @@
         "y": 45
       }
     }
-  ]
+  ],
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "region",
+        "label": "Region",
+        "hide": 0,
+        "skipUrlSync": false,
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": true,
+        "allValue": "All",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "All"
+        },
+        "datasource": {
+          "type": "yesoreyeram-infinity-datasource",
+          "uid": "CloudPulseAPI"
+        },
+        "definition": "/api/v1/dashboard/cost-by-region?provider=oci&from=${__from:date:iso}&to=${__to:date:iso}",
+        "query": {
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "url": "/api/v1/dashboard/cost-by-region?provider=oci&from=${__from:date:iso}&to=${__to:date:iso}",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "name",
+              "text": "__text",
+              "type": "string"
+            },
+            {
+              "selector": "name",
+              "text": "__value",
+              "type": "string"
+            }
+          ]
+        },
+        "options": [],
+        "queryType": "infinity",
+        "infinityQuery": {
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "url": "/api/v1/dashboard/cost-by-region?provider=oci&from=${__from:date:iso}&to=${__to:date:iso}",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "name",
+              "text": "__text",
+              "type": "string"
+            },
+            {
+              "selector": "name",
+              "text": "__value",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      {
+        "type": "query",
+        "name": "compartment",
+        "label": "Compartment",
+        "hide": 0,
+        "skipUrlSync": false,
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": true,
+        "allValue": "All",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "All"
+        },
+        "datasource": {
+          "type": "yesoreyeram-infinity-datasource",
+          "uid": "CloudPulseAPI"
+        },
+        "definition": "/api/v1/dashboard/cost-by-compartment?provider=oci&region=${region}&from=${__from:date:iso}&to=${__to:date:iso}",
+        "query": {
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "url": "/api/v1/dashboard/cost-by-compartment?provider=oci&region=${region}&from=${__from:date:iso}&to=${__to:date:iso}",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "name",
+              "text": "__text",
+              "type": "string"
+            },
+            {
+              "selector": "name",
+              "text": "__value",
+              "type": "string"
+            }
+          ]
+        },
+        "options": [],
+        "queryType": "infinity",
+        "infinityQuery": {
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "url": "/api/v1/dashboard/cost-by-compartment?provider=oci&region=${region}&from=${__from:date:iso}&to=${__to:date:iso}",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "name",
+              "text": "__text",
+              "type": "string"
+            },
+            {
+              "selector": "name",
+              "text": "__value",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      {
+        "type": "query",
+        "name": "service",
+        "label": "Service",
+        "hide": 0,
+        "skipUrlSync": false,
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": true,
+        "allValue": "All",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "All"
+        },
+        "datasource": {
+          "type": "yesoreyeram-infinity-datasource",
+          "uid": "CloudPulseAPI"
+        },
+        "definition": "/api/v1/dashboard/cost-by-service?provider=oci&region=${region}&compartment=${compartment}&from=${__from:date:iso}&to=${__to:date:iso}",
+        "query": {
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "url": "/api/v1/dashboard/cost-by-service?provider=oci&region=${region}&compartment=${compartment}&from=${__from:date:iso}&to=${__to:date:iso}",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "name",
+              "text": "__text",
+              "type": "string"
+            },
+            {
+              "selector": "name",
+              "text": "__value",
+              "type": "string"
+            }
+          ]
+        },
+        "options": [],
+        "queryType": "infinity",
+        "infinityQuery": {
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "url": "/api/v1/dashboard/cost-by-service?provider=oci&region=${region}&compartment=${compartment}&from=${__from:date:iso}&to=${__to:date:iso}",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "name",
+              "text": "__text",
+              "type": "string"
+            },
+            {
+              "selector": "name",
+              "text": "__value",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    ]
+  }
 }

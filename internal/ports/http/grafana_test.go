@@ -31,6 +31,9 @@ func (g *grafanaRepo) DashboardCostSummaries(context.Context, string, time.Time,
 	return []domain.DashboardCostSummary{
 		{PeriodStart: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderOCI, AccountID: "tenancy-a", CompartmentID: "ocid1.compartment.oc1..app", CompartmentName: "app-prod", Service: "Compute", Category: "compute", Region: "us-ashburn-1", TotalCost: 12.5},
 		{PeriodStart: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderOCI, AccountID: "tenancy-a", CompartmentID: "ocid1.compartment.oc1..data", CompartmentName: "data-prod", Service: "Object Storage", Category: "storage", Region: "ap-mumbai-1", TotalCost: 7.5},
+		{PeriodStart: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderOCI, AccountID: "tenancy-a", CompartmentID: "ocid1.compartment.oc1..app", CompartmentName: "app-prod", Service: "Database", Category: "database", Region: "us-ashburn-1", TotalCost: 5},
+		{PeriodStart: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderOCI, AccountID: "tenancy-a", Region: "us-ashburn-1", TotalCost: 2},
+		{PeriodStart: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderAWS, AccountID: "acct-b", Service: "EC2", Category: "compute", Region: "us-east-1", TotalCost: 100},
 	}, nil
 }
 
@@ -109,7 +112,7 @@ func TestGrafanaEndpointsRequireBearerWhenConfigured(t *testing.T) {
 func TestDashboardCostTimeseriesShape(t *testing.T) {
 	handler := NewWithOptions(nil, analytics.New(&grafanaRepo{}), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cost-timeseries?from=2026-05-01&to=2026-05-03", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cost-timeseries?provider=oci&from=2026-05-01&to=2026-05-03", nil)
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
@@ -137,8 +140,8 @@ func TestDashboardOverviewCanBeProviderScoped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("provider overview: %v", err)
 	}
-	if got.Current30DaySpend != 20 {
-		t.Fatalf("expected provider current spend 20, got %f", got.Current30DaySpend)
+	if got.Current30DaySpend != 27 {
+		t.Fatalf("expected provider current spend 27, got %f", got.Current30DaySpend)
 	}
 	if got.AnomalyCount != 1 {
 		t.Fatalf("expected provider anomaly count 1, got %d", got.AnomalyCount)
@@ -148,7 +151,7 @@ func TestDashboardOverviewCanBeProviderScoped(t *testing.T) {
 func TestDashboardCostTimeseriesAcceptsRFC3339DateRange(t *testing.T) {
 	handler := NewWithOptions(nil, analytics.New(&grafanaRepo{}), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cost-timeseries?from=2026-05-01T00:00:00Z&to=2026-05-03T00:00:00Z", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cost-timeseries?provider=oci&from=2026-05-01T00:00:00Z&to=2026-05-03T00:00:00Z", nil)
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 	if rr.Code != http.StatusOK {
@@ -174,8 +177,8 @@ func TestDashboardBreakdownSupportsOCICompartmentAndRegion(t *testing.T) {
 		want    string
 		wantSum float64
 	}{
-		{path: "/api/v1/dashboard/cost-by-compartment?from=2026-05-01&to=2026-05-03", want: "app-prod", wantSum: 12.5},
-		{path: "/api/v1/dashboard/cost-by-region?from=2026-05-01&to=2026-05-03", want: "us-ashburn-1", wantSum: 12.5},
+		{path: "/api/v1/dashboard/cost-by-compartment?provider=oci&from=2026-05-01&to=2026-05-03", want: "app-prod", wantSum: 17.5},
+		{path: "/api/v1/dashboard/cost-by-region?provider=oci&from=2026-05-01&to=2026-05-03", want: "us-ashburn-1", wantSum: 19.5},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
@@ -195,6 +198,84 @@ func TestDashboardBreakdownSupportsOCICompartmentAndRegion(t *testing.T) {
 				t.Fatalf("unexpected top breakdown row: %+v", got.Data[0])
 			}
 		})
+	}
+}
+
+func TestDashboardBreakdownSupportsOCIRegionCompartmentServiceDrilldown(t *testing.T) {
+	handler := NewWithOptions(nil, analytics.New(&grafanaRepo{}), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
+
+	for _, tc := range []struct {
+		name       string
+		path       string
+		wantRows   []string
+		wantTotals []float64
+	}{
+		{
+			name:       "compartments can be filtered by region",
+			path:       "/api/v1/dashboard/cost-by-compartment?provider=oci&region=us-ashburn-1&from=2026-05-01&to=2026-05-03",
+			wantRows:   []string{"app-prod", "Unknown"},
+			wantTotals: []float64{17.5, 2},
+		},
+		{
+			name:       "services can be filtered by region and compartment",
+			path:       "/api/v1/dashboard/cost-by-service?provider=oci&region=us-ashburn-1&compartment=app-prod&from=2026-05-01&to=2026-05-03",
+			wantRows:   []string{"Compute", "Database"},
+			wantTotals: []float64{12.5, 5},
+		},
+		{
+			name:       "all variable values do not filter",
+			path:       "/api/v1/dashboard/cost-by-service?provider=oci&region=All&compartment=All&service=All&from=2026-05-01&to=2026-05-03",
+			wantRows:   []string{"Compute", "Object Storage", "Database", "Unknown"},
+			wantTotals: []float64{12.5, 7.5, 5, 2},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("expected ok, got %d", rr.Code)
+			}
+			var got dashboardBreakdownResponse
+			if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+				t.Fatalf("decode breakdown: %v", err)
+			}
+			if len(got.Data) != len(tc.wantRows) {
+				t.Fatalf("expected %d rows, got %d: %+v", len(tc.wantRows), len(got.Data), got.Data)
+			}
+			for i, want := range tc.wantRows {
+				if got.Data[i].Name != want || got.Data[i].TotalCost != tc.wantTotals[i] {
+					t.Fatalf("row %d mismatch: got %+v, want %s %.2f", i, got.Data[i], want, tc.wantTotals[i])
+				}
+			}
+		})
+	}
+}
+
+func TestDashboardOCICostDriversReturnsPercentOfFilteredTotal(t *testing.T) {
+	handler := NewWithOptions(nil, analytics.New(&grafanaRepo{}), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/oci-cost-drivers?region=us-ashburn-1&compartment=app-prod&from=2026-05-01&to=2026-05-03", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d", rr.Code)
+	}
+	var got dashboardCostDriversResponse
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode cost drivers: %v", err)
+	}
+	if len(got.Data) != 2 {
+		t.Fatalf("expected two cost drivers, got %d: %+v", len(got.Data), got.Data)
+	}
+	if got.Data[0].Region != "us-ashburn-1" || got.Data[0].Compartment != "app-prod" || got.Data[0].Service != "Compute" {
+		t.Fatalf("unexpected top cost driver: %+v", got.Data[0])
+	}
+	if got.Data[0].TotalCost != 12.5 || got.Data[0].Percentage != 71.42857142857143 {
+		t.Fatalf("unexpected top cost driver totals: %+v", got.Data[0])
+	}
+	if got.Data[1].Service != "Database" || got.Data[1].TotalCost != 5 || got.Data[1].Percentage != 28.57142857142857 {
+		t.Fatalf("unexpected second cost driver: %+v", got.Data[1])
 	}
 }
 
@@ -235,6 +316,37 @@ func TestDashboardCostIncreasesReturnsCompletedWindowIncreases(t *testing.T) {
 		if row.Direction != "increase" || row.Provider != domain.ProviderOCI || row.Delta <= 0 {
 			t.Fatalf("unexpected non-increase or wrong provider row: %+v", row)
 		}
+	}
+}
+
+func TestDashboardDailyCostIncreasesFallsBackWhenLatestDayIsPartial(t *testing.T) {
+	repo := &partialDailyCostIncreaseRepo{}
+	handler := NewWithOptions(nil, analytics.New(repo), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cost-increases?period=daily&provider=oci&limit=2&as_of=2026-05-27", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d", rr.Code)
+	}
+
+	if !repo.comparedCurrentFrom.Equal(time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)) ||
+		!repo.comparedCurrentTo.Equal(time.Date(2026, 5, 26, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected fallback to latest usable prior day, got current %s-%s", repo.comparedCurrentFrom, repo.comparedCurrentTo)
+	}
+	var got dashboardCostIncreasesResponse
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode cost increases: %v", err)
+	}
+	if len(got.Data) != 1 {
+		t.Fatalf("expected one fallback increase, got %d: %+v", len(got.Data), got.Data)
+	}
+	if got.Data[0].Service != "Compute" || got.Data[0].Delta != 60 {
+		t.Fatalf("unexpected fallback increase: %+v", got.Data[0])
+	}
+	if !got.Meta.From.Equal(time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)) ||
+		!got.Meta.To.Equal(time.Date(2026, 5, 26, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("expected response metadata to describe fallback window, got %s-%s", got.Meta.From, got.Meta.To)
 	}
 }
 
@@ -413,4 +525,29 @@ func (r *costIncreaseRepo) CompareCostVariance(_ context.Context, period string,
 		{Period: period, Provider: domain.ProviderOCI, AccountID: "tenancy-a", CompartmentName: "down-prod", Service: "Database", CurrentCost: 5, PreviousCost: 15, Delta: -10, Direction: "decrease"},
 		{Period: period, Provider: domain.ProviderAWS, AccountID: "acct-b", CompartmentName: "aws-prod", Service: "EC2", CurrentCost: 500, PreviousCost: 100, Delta: 400, Direction: "increase"},
 	}, nil
+}
+
+type partialDailyCostIncreaseRepo struct {
+	grafanaRepo
+	comparedCurrentFrom time.Time
+	comparedCurrentTo   time.Time
+}
+
+func (r *partialDailyCostIncreaseRepo) DashboardCostSummaries(context.Context, string, time.Time, time.Time) ([]domain.DashboardCostSummary, error) {
+	return []domain.DashboardCostSummary{
+		{PeriodStart: time.Date(2026, 5, 24, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderOCI, TotalCost: 50},
+		{PeriodStart: time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 26, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderOCI, TotalCost: 100},
+		{PeriodStart: time.Date(2026, 5, 26, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderOCI, TotalCost: 2},
+	}, nil
+}
+
+func (r *partialDailyCostIncreaseRepo) CompareCostVariance(_ context.Context, period string, currentFrom, currentTo, previousFrom, previousTo time.Time) ([]domain.CostVariance, error) {
+	r.comparedCurrentFrom = currentFrom
+	r.comparedCurrentTo = currentTo
+	if currentFrom.Equal(time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC)) {
+		return []domain.CostVariance{
+			{Period: period, Provider: domain.ProviderOCI, AccountID: "tenancy-a", CompartmentName: "app-prod", Service: "Compute", CurrentCost: 100, PreviousCost: 40, Delta: 60, PercentChange: 150, Direction: "increase"},
+		}, nil
+	}
+	return []domain.CostVariance{}, nil
 }

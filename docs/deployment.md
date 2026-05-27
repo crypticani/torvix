@@ -235,11 +235,13 @@ GET /api/v1/dashboard/cost-by-service?provider=oci
 GET /api/v1/dashboard/cost-by-provider?provider=oci
 GET /api/v1/dashboard/cost-by-compartment?provider=oci
 GET /api/v1/dashboard/cost-by-region?provider=oci
+GET /api/v1/dashboard/oci-cost-summary
+GET /api/v1/dashboard/oci-cost-drivers
 GET /api/v1/dashboard/anomalies?provider=oci
 GET /api/v1/dashboard/ingestion-status
 ```
 
-The range endpoints accept `from=YYYY-MM-DD` and `to=YYYY-MM-DD`. Cost time series accepts `window=daily|weekly|monthly`. Service and compartment breakdowns accept `limit=15`. The OCI dashboard uses compartment and region endpoints because OCI service ownership is usually organized around compartments. Anomalies accepts `severity=low|medium|high`.
+The range endpoints accept `from=YYYY-MM-DD` or RFC3339 timestamps and `to=YYYY-MM-DD` or RFC3339 timestamps. Cost time series accepts `window=daily|weekly|monthly`. Service and compartment breakdowns accept `limit=15`. The OCI dashboard uses Region -> Compartment -> Service drill-down variables; `All` means the matching filter is not applied. `Top OCI Cost Drivers` returns Region, Compartment, Service, Total Cost, and percent of the filtered total. Anomalies accepts `severity=low|medium|high`.
 
 Dashboard APIs read precomputed tables and return metadata with `retention_days`, `source: "precomputed"`, and an empty `data` array plus a clear message when the requested range is outside the retained 90-day window.
 
@@ -324,11 +326,10 @@ psql "$DATABASE_URL" -c "SELECT count(*) FROM cost_anomalies;"
 ```bash
 curl "http://localhost:8080/api/v1/dashboard/overview?provider=oci"
 curl "http://localhost:8080/api/v1/dashboard/cost-timeseries?window=daily&provider=oci&from=2026-05-01&to=2026-05-31"
-curl "http://localhost:8080/api/v1/dashboard/cost-by-category?provider=oci&from=2026-05-01&to=2026-05-31"
-curl "http://localhost:8080/api/v1/dashboard/cost-by-service?provider=oci&from=2026-05-01&to=2026-05-31&limit=15"
-curl "http://localhost:8080/api/v1/dashboard/cost-by-provider?provider=oci&from=2026-05-01&to=2026-05-31"
-curl "http://localhost:8080/api/v1/dashboard/cost-by-compartment?provider=oci&from=2026-05-01&to=2026-05-31&limit=15"
 curl "http://localhost:8080/api/v1/dashboard/cost-by-region?provider=oci&from=2026-05-01&to=2026-05-31"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-compartment?provider=oci&region=ap-mumbai-1&from=2026-05-01&to=2026-05-31&limit=15"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-service?provider=oci&region=ap-mumbai-1&compartment=production&from=2026-05-01&to=2026-05-31&limit=15"
+curl "http://localhost:8080/api/v1/dashboard/oci-cost-drivers?region=ap-mumbai-1&compartment=production&from=2026-05-01&to=2026-05-31&limit=15"
 curl "http://localhost:8080/api/v1/dashboard/anomalies?provider=oci&from=2026-05-01&to=2026-05-31"
 curl "http://localhost:8080/api/v1/dashboard/ingestion-status"
 ```

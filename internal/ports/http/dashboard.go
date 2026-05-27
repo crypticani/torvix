@@ -29,6 +29,15 @@ type dashboardTimeseriesResponse struct {
 	Data []grafanaCostPoint `json:"data"`
 }
 
+type dashboardCostSummary struct {
+	TotalCost float64 `json:"total_cost"`
+}
+
+type dashboardCostSummaryResponse struct {
+	Meta dashboardMeta        `json:"meta"`
+	Data dashboardCostSummary `json:"data"`
+}
+
 type dashboardBreakdownRow struct {
 	Name      string          `json:"name"`
 	Provider  domain.Provider `json:"provider,omitempty"`
@@ -49,6 +58,21 @@ type dashboardAnomaliesResponse struct {
 type dashboardCostIncreasesResponse struct {
 	Meta dashboardMeta         `json:"meta"`
 	Data []domain.CostVariance `json:"data"`
+}
+
+const dashboardIncompleteDailySpendRatio = 0.25
+
+type dashboardCostDriverRow struct {
+	Region      string  `json:"region"`
+	Compartment string  `json:"compartment"`
+	Service     string  `json:"service"`
+	TotalCost   float64 `json:"total_cost"`
+	Percentage  float64 `json:"percentage"`
+}
+
+type dashboardCostDriversResponse struct {
+	Meta dashboardMeta            `json:"meta"`
+	Data []dashboardCostDriverRow `json:"data"`
 }
 
 type dashboardIngestionStatusResponse struct {
@@ -98,8 +122,12 @@ func (h *Handler) dashboardCostTimeseries(w http.ResponseWriter, r *http.Request
 		accountID string
 	}
 	totals := map[timeseriesKey]float64{}
+	filters := dashboardFiltersFromRequest(r)
 	for _, row := range rows {
 		if hasProvider && row.Provider != provider {
+			continue
+		}
+		if !dashboardRowMatchesFilters(row, filters) {
 			continue
 		}
 		k := timeseriesKey{at: row.PeriodStart, provider: row.Provider, accountID: row.AccountID}
@@ -148,6 +176,28 @@ func (h *Handler) dashboardCostByRegion(w http.ResponseWriter, r *http.Request) 
 	h.dashboardBreakdown(w, r, "region")
 }
 
+func (h *Handler) dashboardOCICostSummary(w http.ResponseWriter, r *http.Request) {
+	from, to, meta, ok := h.dashboardRange(r)
+	if !ok {
+		writeJSON(w, http.StatusOK, dashboardCostSummaryResponse{Meta: meta, Data: dashboardCostSummary{}})
+		return
+	}
+	rows, err := h.analytics.DashboardCostSummaries(r.Context(), "daily", from, to)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	filters := dashboardFiltersFromRequest(r)
+	var total float64
+	for _, row := range rows {
+		if row.Provider != domain.ProviderOCI || !dashboardRowMatchesFilters(row, filters) {
+			continue
+		}
+		total += row.TotalCost
+	}
+	writeJSON(w, http.StatusOK, dashboardCostSummaryResponse{Meta: meta, Data: dashboardCostSummary{TotalCost: total}})
+}
+
 func (h *Handler) dashboardCostIncreases(w http.ResponseWriter, r *http.Request) {
 	period := r.URL.Query().Get("period")
 	if period == "" {
@@ -171,6 +221,14 @@ func (h *Handler) dashboardCostIncreases(w http.ResponseWriter, r *http.Request)
 	}
 
 	currentFrom, currentTo, previousFrom, previousTo := dashboardIncreaseWindows(period, asOf)
+	if period == "daily" {
+		var err error
+		currentFrom, currentTo, previousFrom, previousTo, err = h.dashboardUsableDailyIncreaseWindow(r.Context(), r, currentFrom, currentTo, previousFrom, previousTo)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+	}
 	rows, err := h.analytics.CompareVarianceWindows(r.Context(), period, currentFrom, currentTo, previousFrom, previousTo)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -209,6 +267,52 @@ func (h *Handler) dashboardCostIncreases(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, dashboardCostIncreasesResponse{Meta: meta, Data: out})
 }
 
+func (h *Handler) dashboardUsableDailyIncreaseWindow(ctx context.Context, r *http.Request, currentFrom, currentTo, previousFrom, previousTo time.Time) (time.Time, time.Time, time.Time, time.Time, error) {
+	originalCurrentFrom, originalCurrentTo := currentFrom, currentTo
+	originalPreviousFrom, originalPreviousTo := previousFrom, previousTo
+	for i := 0; i < 7; i++ {
+		usable, err := h.dashboardDailyWindowHasUsableSpend(ctx, r, currentFrom, currentTo, previousFrom, previousTo)
+		if err != nil {
+			return time.Time{}, time.Time{}, time.Time{}, time.Time{}, err
+		}
+		if usable {
+			return currentFrom, currentTo, previousFrom, previousTo, nil
+		}
+		currentTo = currentFrom
+		currentFrom = currentFrom.AddDate(0, 0, -1)
+		previousTo = currentFrom
+		previousFrom = previousTo.AddDate(0, 0, -1)
+	}
+	return originalCurrentFrom, originalCurrentTo, originalPreviousFrom, originalPreviousTo, nil
+}
+
+func (h *Handler) dashboardDailyWindowHasUsableSpend(ctx context.Context, r *http.Request, currentFrom, currentTo, previousFrom, previousTo time.Time) (bool, error) {
+	rows, err := h.analytics.DashboardCostSummaries(ctx, "daily", previousFrom, currentTo)
+	if err != nil {
+		return false, err
+	}
+	provider, hasProvider := dashboardProvider(r)
+	var currentTotal, previousTotal float64
+	for _, row := range rows {
+		if hasProvider && row.Provider != provider {
+			continue
+		}
+		switch {
+		case !row.PeriodStart.Before(currentFrom) && row.PeriodStart.Before(currentTo):
+			currentTotal += row.TotalCost
+		case !row.PeriodStart.Before(previousFrom) && row.PeriodStart.Before(previousTo):
+			previousTotal += row.TotalCost
+		}
+	}
+	if currentTotal <= 0 {
+		return false, nil
+	}
+	if previousTotal > 0 && currentTotal/previousTotal < dashboardIncompleteDailySpendRatio {
+		return false, nil
+	}
+	return true, nil
+}
+
 func dashboardIncreaseWindows(period string, asOf time.Time) (currentFrom, currentTo, previousFrom, previousTo time.Time) {
 	currentTo = time.Date(asOf.UTC().Year(), asOf.UTC().Month(), asOf.UTC().Day(), 0, 0, 0, 0, time.UTC)
 	switch period {
@@ -245,8 +349,12 @@ func (h *Handler) dashboardBreakdown(w http.ResponseWriter, r *http.Request, dim
 	}
 	totals := map[key]float64{}
 	provider, hasProvider := dashboardProvider(r)
+	filters := dashboardFiltersFromRequest(r)
 	for _, row := range rows {
 		if hasProvider && row.Provider != provider {
+			continue
+		}
+		if !dashboardRowMatchesFilters(row, filters) {
 			continue
 		}
 		k := key{name: row.Category}
@@ -255,23 +363,14 @@ func (h *Handler) dashboardBreakdown(w http.ResponseWriter, r *http.Request, dim
 			k.name = string(row.Provider)
 			k.provider = row.Provider
 		case "service":
-			k.name = row.Service
+			k.name = dashboardDimensionValue(row, "service")
 			k.provider = row.Provider
 		case "compartment":
-			k.name = row.CompartmentName
-			if k.name == "" {
-				k.name = row.CompartmentID
-			}
-			if k.name == "" {
-				k.name = row.AccountID
-			}
+			k.name = dashboardDimensionValue(row, "compartment")
 			k.provider = row.Provider
 		case "region":
-			k.name = row.Region
+			k.name = dashboardDimensionValue(row, "region")
 			k.provider = row.Provider
-		}
-		if k.name == "" {
-			k.name = "unknown"
 		}
 		totals[k] += row.TotalCost
 	}
@@ -296,6 +395,70 @@ func (h *Handler) dashboardBreakdown(w http.ResponseWriter, r *http.Request, dim
 		out[i].Rank = i + 1
 	}
 	writeJSON(w, http.StatusOK, dashboardBreakdownResponse{Meta: meta, Data: out})
+}
+
+func (h *Handler) dashboardOCICostDrivers(w http.ResponseWriter, r *http.Request) {
+	from, to, meta, ok := h.dashboardRange(r)
+	if !ok {
+		writeJSON(w, http.StatusOK, dashboardCostDriversResponse{Meta: meta, Data: []dashboardCostDriverRow{}})
+		return
+	}
+	rows, err := h.analytics.DashboardCostSummaries(r.Context(), "daily", from, to)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	type key struct {
+		region      string
+		compartment string
+		service     string
+	}
+	filters := dashboardFiltersFromRequest(r)
+	totals := map[key]float64{}
+	var grandTotal float64
+	for _, row := range rows {
+		if row.Provider != domain.ProviderOCI || !dashboardRowMatchesFilters(row, filters) {
+			continue
+		}
+		k := key{
+			region:      dashboardDimensionValue(row, "region"),
+			compartment: dashboardDimensionValue(row, "compartment"),
+			service:     dashboardDimensionValue(row, "service"),
+		}
+		totals[k] += row.TotalCost
+		grandTotal += row.TotalCost
+	}
+	out := make([]dashboardCostDriverRow, 0, len(totals))
+	for k, total := range totals {
+		percentage := 0.0
+		if grandTotal > 0 {
+			percentage = (total / grandTotal) * 100
+		}
+		out = append(out, dashboardCostDriverRow{
+			Region:      k.region,
+			Compartment: k.compartment,
+			Service:     k.service,
+			TotalCost:   total,
+			Percentage:  percentage,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TotalCost == out[j].TotalCost {
+			if out[i].Region == out[j].Region {
+				if out[i].Compartment == out[j].Compartment {
+					return out[i].Service < out[j].Service
+				}
+				return out[i].Compartment < out[j].Compartment
+			}
+			return out[i].Region < out[j].Region
+		}
+		return out[i].TotalCost > out[j].TotalCost
+	})
+	limit := grafanaLimit(r, 15)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	writeJSON(w, http.StatusOK, dashboardCostDriversResponse{Meta: meta, Data: out})
 }
 
 func (h *Handler) dashboardAnomalies(w http.ResponseWriter, r *http.Request) {
@@ -466,6 +629,65 @@ func dashboardProvider(r *http.Request) (domain.Provider, bool) {
 		return "", false
 	}
 	return domain.Provider(value), true
+}
+
+type dashboardFilters struct {
+	Region      string
+	Compartment string
+	Service     string
+}
+
+func dashboardFiltersFromRequest(r *http.Request) dashboardFilters {
+	return dashboardFilters{
+		Region:      dashboardNormalizeFilter(r.URL.Query().Get("region")),
+		Compartment: dashboardNormalizeFilter(r.URL.Query().Get("compartment")),
+		Service:     dashboardNormalizeFilter(r.URL.Query().Get("service")),
+	}
+}
+
+func dashboardNormalizeFilter(value string) string {
+	value = strings.TrimSpace(value)
+	switch strings.ToLower(value) {
+	case "", "all", "$__all", "__all", "*":
+		return ""
+	default:
+		return value
+	}
+}
+
+func dashboardRowMatchesFilters(row domain.DashboardCostSummary, filters dashboardFilters) bool {
+	if filters.Region != "" && dashboardDimensionValue(row, "region") != filters.Region {
+		return false
+	}
+	if filters.Compartment != "" && dashboardDimensionValue(row, "compartment") != filters.Compartment {
+		return false
+	}
+	if filters.Service != "" && dashboardDimensionValue(row, "service") != filters.Service {
+		return false
+	}
+	return true
+}
+
+func dashboardDimensionValue(row domain.DashboardCostSummary, dimension string) string {
+	var value string
+	switch dimension {
+	case "region":
+		value = row.Region
+	case "compartment":
+		value = row.CompartmentName
+		if strings.TrimSpace(value) == "" {
+			value = row.CompartmentID
+		}
+	case "service":
+		value = row.Service
+	default:
+		value = row.Category
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "Unknown"
+	}
+	return value
 }
 
 func (h *Handler) dashboardMeta(from, to time.Time, message string) dashboardMeta {

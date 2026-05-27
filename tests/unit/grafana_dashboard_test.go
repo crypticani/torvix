@@ -17,12 +17,25 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 		Time    struct {
 			From string `json:"from"`
 		} `json:"time"`
+		Templating struct {
+			List []struct {
+				Name          string `json:"name"`
+				QueryType     string `json:"queryType"`
+				InfinityQuery struct {
+					URL          string `json:"url"`
+					Parser       string `json:"parser"`
+					RootSelector string `json:"root_selector"`
+					Columns      []struct {
+						Text string `json:"text"`
+					} `json:"columns"`
+				} `json:"infinityQuery"`
+			} `json:"list"`
+		} `json:"templating"`
 		Panels []struct {
 			Datasource struct {
 				UID string `json:"uid"`
 			} `json:"datasource"`
-			TimeFrom string `json:"timeFrom"`
-			Targets  []struct {
+			Targets []struct {
 				URL            string `json:"url"`
 				Expr           string `json:"expr"`
 				Parser         string `json:"parser"`
@@ -44,13 +57,17 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	for _, required := range []string{
 		"/api/v1/dashboard/overview",
 		"/api/v1/dashboard/cost-timeseries",
-		"/api/v1/dashboard/cost-by-category",
 		"/api/v1/dashboard/cost-by-service",
 		"/api/v1/dashboard/cost-by-compartment",
 		"/api/v1/dashboard/cost-by-region",
+		"/api/v1/dashboard/oci-cost-drivers",
 		"/api/v1/dashboard/cost-increases",
 		"/api/v1/dashboard/anomalies",
 		"/api/v1/dashboard/ingestion-status",
+		"\"name\": \"region\"",
+		"\"name\": \"compartment\"",
+		"\"name\": \"service\"",
+		"Top OCI Cost Drivers",
 		"cloudpulse_processed_files_total{status=\\\"skipped_old\\\"}",
 		"cloudpulse_records_deleted_total",
 		"cloudpulse_compressed_chunks_total",
@@ -62,18 +79,41 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	if strings.Contains(joined, "\"uid\": \"PostgreSQL\"") || strings.Contains(joined, "/api/v1/grafana/") {
 		t.Fatalf("dashboard must not depend on PostgreSQL datasource or legacy grafana raw endpoints")
 	}
-	if strings.Contains(joined, "__from") || strings.Contains(joined, "__to") {
-		t.Fatalf("dashboard API panels must not depend on Grafana date macros; CloudPulse APIs provide a default 30-day window")
+	if !strings.Contains(joined, "from=${__from:date:iso}") || !strings.Contains(joined, "to=${__to:date:iso}") {
+		t.Fatalf("dashboard API panels must pass the selected Grafana time range to CloudPulse APIs")
 	}
 	if strings.Contains(joined, "currencyUSD") {
 		t.Fatalf("dashboard must not hardcode USD currency units for OCI cost panels")
 	}
+	for _, forbidden := range []string{"Account", "Project", "Subscription", "Resource Group"} {
+		if strings.Contains(joined, forbidden) {
+			t.Fatalf("OCI dashboard must not mention non-OCI terminology %q", forbidden)
+		}
+	}
+	if !strings.Contains(joined, "region=${region}") ||
+		!strings.Contains(joined, "compartment=${compartment}") ||
+		!strings.Contains(joined, "service=${service}") {
+		t.Fatalf("dashboard drill-down panels must pass region, compartment, and service variables to CloudPulse APIs")
+	}
+	if len(dashboard.Templating.List) != 3 {
+		t.Fatalf("expected region, compartment, and service variables, got %d", len(dashboard.Templating.List))
+	}
+	for _, variable := range dashboard.Templating.List {
+		if variable.QueryType != "infinity" {
+			t.Fatalf("variable %q must use Infinity standard variable mode, got queryType %q", variable.Name, variable.QueryType)
+		}
+		if variable.InfinityQuery.Parser != "backend" || variable.InfinityQuery.RootSelector != "data" || variable.InfinityQuery.URL == "" {
+			t.Fatalf("variable %q has incomplete Infinity query configuration: %+v", variable.Name, variable.InfinityQuery)
+		}
+		if len(variable.InfinityQuery.Columns) != 2 ||
+			variable.InfinityQuery.Columns[0].Text != "__text" ||
+			variable.InfinityQuery.Columns[1].Text != "__value" {
+			t.Fatalf("variable %q must map datasource rows to __text and __value, got %+v", variable.Name, variable.InfinityQuery.Columns)
+		}
+	}
 	for _, panel := range dashboard.Panels {
 		if panel.Datasource.UID != "CloudPulseAPI" {
 			continue
-		}
-		if panel.TimeFrom != "30d" {
-			t.Fatalf("CloudPulse API panel must use a 30-day panel time override for daily billing data, got %q", panel.TimeFrom)
 		}
 		for _, target := range panel.Targets {
 			if target.Parser != "backend" {
