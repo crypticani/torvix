@@ -8,7 +8,7 @@ import (
 )
 
 func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
-	b, err := os.ReadFile("../../dashboards/cloudpulse-overview.json")
+	b, err := os.ReadFile("../../dashboards/cloudpulse-oci-finops-dashboard.json")
 	if err != nil {
 		t.Fatalf("read dashboard: %v", err)
 	}

@@ -28,7 +28,7 @@ internal/ports               collector and repository contracts
 migrations                   PostgreSQL + Timescale SQL migrations
 configs                      YAML configuration
 deploy                       Prometheus and cron examples
-dashboards                   sample Grafana dashboard JSON
+dashboards                   OCI Grafana dashboard JSON
 ```
 
 ## Storage Design

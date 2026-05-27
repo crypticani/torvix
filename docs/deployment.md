@@ -213,17 +213,18 @@ These metrics only use a low-cardinality `window` label. Do not add service, acc
 
 ## Import Dashboard Into Production Grafana
 
-CloudPulse supports two Grafana access modes:
+CloudPulse ships one OCI-specific Grafana dashboard JSON:
 
-- Local development: `dashboards/cloudpulse-overview.json` uses the local CloudPulse API datasource and Prometheus. The local PostgreSQL datasource is provisioned only for direct developer inspection.
-- Production: `dashboards/cloudpulse-overview.json` or `dashboards/cloudpulse-api-overview.prod.json.example` uses CloudPulse HTTP API endpoints through a Grafana HTTP JSON datasource.
+- `dashboards/cloudpulse-oci-finops-dashboard.json`
+
+The file can be pasted directly into a separate production Grafana import flow after the required datasources are configured. Local development and production both use this same dashboard JSON. The local PostgreSQL datasource is provisioned only for direct developer inspection.
 
 PostgreSQL must remain private in production. Do not expose the TimescaleDB port to Grafana users or public networks, and do not provision a production PostgreSQL datasource for dashboards. Production Grafana should read only from CloudPulse API endpoints and Prometheus.
 
-The production dashboard expects these Grafana datasource UIDs:
+The OCI dashboard expects these Grafana datasource UIDs:
 
 - `Prometheus`: your production Prometheus datasource.
-- `CloudPulseAPI`: an HTTP JSON datasource that points at the CloudPulse API.
+- `CloudPulseAPI`: an Infinity datasource that points at the CloudPulse API.
 
 The production API endpoints are:
 
@@ -245,11 +246,42 @@ The range endpoints accept `from=YYYY-MM-DD` or RFC3339 timestamps and `to=YYYY-
 
 Dashboard APIs read precomputed tables and return metadata with `retention_days`, `source: "precomputed"`, and an empty `data` array plus a clear message when the requested range is outside the retained 90-day window.
 
+### Configure The Infinity Plugin
+
+Install the Grafana Infinity datasource plugin before importing or provisioning the dashboard:
+
+```bash
+grafana cli plugins install yesoreyeram-infinity-datasource
+```
+
+For Grafana Docker, install it at container startup:
+
+```yaml
+environment:
+  GF_PLUGINS_PREINSTALL_SYNC: "yesoreyeram-infinity-datasource"
+```
+
+Create an Infinity datasource with:
+
+- Name: `CloudPulse API`
+- UID: `CloudPulseAPI`
+- Type: `yesoreyeram-infinity-datasource`
+- URL: your CloudPulse API base URL, for example `https://cloudpulse.example.internal`
+- Access: `Server` or `Proxy`
+
+If CloudPulse dashboard API auth is enabled, configure the Infinity datasource to send:
+
+```text
+Authorization: Bearer <cloudpulse_grafana_api_bearer_token>
+```
+
+The bundled dashboard variables use Infinity backend JSON queries. If the datasource UID is not exactly `CloudPulseAPI`, map it during import or edit the JSON before import.
+
 ### Option 1: Grafana UI Import
 
 1. In Grafana, go to **Dashboards -> New -> Import**.
-2. Install and configure an HTTP JSON datasource such as the Infinity datasource plugin. For Grafana Docker, use `GF_PLUGINS_PREINSTALL_SYNC=yesoreyeram-infinity-datasource` so provisioning does not create the datasource before the plugin is available.
-3. Upload or paste `dashboards/cloudpulse-overview.json`.
+2. Confirm the Infinity datasource plugin is installed and that a datasource with UID `CloudPulseAPI` exists.
+3. Upload or paste `dashboards/cloudpulse-oci-finops-dashboard.json`.
 4. If Grafana asks for datasources, map:
    - `Prometheus` to your production Prometheus datasource.
    - `CloudPulseAPI` to your CloudPulse API datasource.
@@ -258,7 +290,7 @@ If your existing datasource UIDs are different and Grafana does not prompt for m
 
 ### Option 2: Grafana Provisioning
 
-Copy `dashboards/cloudpulse-overview.json` to your Grafana dashboard provisioning path and configure a provider similar to:
+Copy `dashboards/cloudpulse-oci-finops-dashboard.json` to your Grafana dashboard provisioning path and configure a provider similar to:
 
 ```yaml
 apiVersion: 1

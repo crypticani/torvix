@@ -1,8 +1,8 @@
 {
-  "title": "CloudPulse OCI API FinOps Overview",
-  "uid": "cloudpulse-rolling-finops-overview",
+  "title": "CloudPulse OCI FinOps Dashboard",
+  "uid": "cloudpulse-oci-finops-dashboard",
   "schemaVersion": 39,
-  "version": 11,
+  "version": 12,
   "refresh": "1m",
   "time": {
     "from": "now-30d",
