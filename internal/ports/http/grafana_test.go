@@ -319,6 +319,33 @@ func TestDashboardCostIncreasesReturnsCompletedWindowIncreases(t *testing.T) {
 	}
 }
 
+func TestDashboardCostDecreasesReturnsCompletedWindowDecreases(t *testing.T) {
+	repo := &costIncreaseRepo{}
+	handler := NewWithOptions(nil, analytics.New(repo), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cost-decreases?period=daily&provider=oci&limit=2&as_of=2026-05-21", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d", rr.Code)
+	}
+	var got dashboardCostIncreasesResponse
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode cost decreases: %v", err)
+	}
+	if len(got.Data) != 1 {
+		t.Fatalf("expected one OCI decrease, got %d: %+v", len(got.Data), got.Data)
+	}
+	if got.Data[0].CompartmentName != "down-prod" || got.Data[0].Service != "Database" || got.Data[0].Delta != -10 {
+		t.Fatalf("unexpected top decrease: %+v", got.Data[0])
+	}
+	for _, row := range got.Data {
+		if row.Direction != "decrease" || row.Provider != domain.ProviderOCI || row.Delta >= 0 {
+			t.Fatalf("unexpected non-decrease or wrong provider row: %+v", row)
+		}
+	}
+}
+
 func TestDashboardDailyCostIncreasesFallsBackWhenLatestDayIsPartial(t *testing.T) {
 	repo := &partialDailyCostIncreaseRepo{}
 	handler := NewWithOptions(nil, analytics.New(repo), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})

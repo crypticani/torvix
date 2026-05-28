@@ -117,6 +117,7 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/v1/dashboard/oci-cost-summary", h.withGrafanaAuth(h.dashboardOCICostSummary))
 	h.mux.HandleFunc("/api/v1/dashboard/oci-cost-drivers", h.withGrafanaAuth(h.dashboardOCICostDrivers))
 	h.mux.HandleFunc("/api/v1/dashboard/cost-increases", h.withGrafanaAuth(h.dashboardCostIncreases))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-decreases", h.withGrafanaAuth(h.dashboardCostDecreases))
 	h.mux.HandleFunc("/api/v1/dashboard/anomalies", h.withGrafanaAuth(h.dashboardAnomalies))
 	h.mux.HandleFunc("/api/v1/dashboard/ingestion-status", h.withGrafanaAuth(h.dashboardIngestionStatus))
 	h.mux.HandleFunc("/api/v1/grafana/timeseries/cost", h.withGrafanaAuth(h.grafanaCostTimeseries))

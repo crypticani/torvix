@@ -50,6 +50,7 @@ func TestHandlerRoutes(t *testing.T) {
 		{"GET", "/api/v1/dashboard/oci-cost-summary", http.StatusOK},
 		{"GET", "/api/v1/dashboard/oci-cost-drivers", http.StatusOK},
 		{"GET", "/api/v1/dashboard/cost-increases", http.StatusOK},
+		{"GET", "/api/v1/dashboard/cost-decreases", http.StatusOK},
 		{"GET", "/api/v1/dashboard/anomalies", http.StatusOK},
 		{"GET", "/api/v1/dashboard/ingestion-status", http.StatusOK},
 		{"GET", "/api/v1/grafana/timeseries/cost", http.StatusOK},

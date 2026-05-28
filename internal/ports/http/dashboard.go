@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -199,6 +200,14 @@ func (h *Handler) dashboardOCICostSummary(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handler) dashboardCostIncreases(w http.ResponseWriter, r *http.Request) {
+	h.dashboardCostMovements(w, r, "increase")
+}
+
+func (h *Handler) dashboardCostDecreases(w http.ResponseWriter, r *http.Request) {
+	h.dashboardCostMovements(w, r, "decrease")
+}
+
+func (h *Handler) dashboardCostMovements(w http.ResponseWriter, r *http.Request, direction string) {
 	period := r.URL.Query().Get("period")
 	if period == "" {
 		period = "daily"
@@ -241,19 +250,21 @@ func (h *Handler) dashboardCostIncreases(w http.ResponseWriter, r *http.Request)
 		if hasProvider && row.Provider != provider {
 			continue
 		}
-		if row.Direction != "increase" || row.Delta <= 0 {
+		if !dashboardCostMovementMatches(row, direction) {
 			continue
 		}
 		out = append(out, row)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].Delta == out[j].Delta {
+		left := math.Abs(out[i].Delta)
+		right := math.Abs(out[j].Delta)
+		if left == right {
 			if out[i].CompartmentName == out[j].CompartmentName {
 				return out[i].Service < out[j].Service
 			}
 			return out[i].CompartmentName < out[j].CompartmentName
 		}
-		return out[i].Delta > out[j].Delta
+		return left > right
 	})
 	limit := grafanaLimit(r, 15)
 	if len(out) > limit {
@@ -265,6 +276,15 @@ func (h *Handler) dashboardCostIncreases(w http.ResponseWriter, r *http.Request)
 
 	meta := h.dashboardMeta(currentFrom, currentTo, "")
 	writeJSON(w, http.StatusOK, dashboardCostIncreasesResponse{Meta: meta, Data: out})
+}
+
+func dashboardCostMovementMatches(row domain.CostVariance, direction string) bool {
+	switch direction {
+	case "decrease":
+		return row.Direction == "decrease" && row.Delta < 0
+	default:
+		return row.Direction == "increase" && row.Delta > 0
+	}
 }
 
 func (h *Handler) dashboardUsableDailyIncreaseWindow(ctx context.Context, r *http.Request, currentFrom, currentTo, previousFrom, previousTo time.Time) (time.Time, time.Time, time.Time, time.Time, error) {

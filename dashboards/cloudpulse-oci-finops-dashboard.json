@@ -693,6 +693,207 @@
       }
     },
     {
+      "id": 23,
+      "type": "table",
+      "title": "Daily Cost Decreases",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "CloudPulseAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-decreases?period=daily&provider=oci&limit=10",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "compartment_name",
+              "text": "compartment",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "current_cost",
+              "text": "current_cost",
+              "type": "number"
+            },
+            {
+              "selector": "previous_cost",
+              "text": "previous_cost",
+              "type": "number"
+            },
+            {
+              "selector": "delta",
+              "text": "delta",
+              "type": "number"
+            },
+            {
+              "selector": "percent_change",
+              "text": "percent_change",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 37
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 24,
+      "type": "table",
+      "title": "Weekly Cost Decreases",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "CloudPulseAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-decreases?period=weekly&provider=oci&limit=10",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "compartment_name",
+              "text": "compartment",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "current_cost",
+              "text": "current_cost",
+              "type": "number"
+            },
+            {
+              "selector": "previous_cost",
+              "text": "previous_cost",
+              "type": "number"
+            },
+            {
+              "selector": "delta",
+              "text": "delta",
+              "type": "number"
+            },
+            {
+              "selector": "percent_change",
+              "text": "percent_change",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 37
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 25,
+      "type": "table",
+      "title": "Monthly Cost Decreases",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "CloudPulseAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-decreases?period=monthly&provider=oci&limit=10",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "compartment_name",
+              "text": "compartment",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "current_cost",
+              "text": "current_cost",
+              "type": "number"
+            },
+            {
+              "selector": "previous_cost",
+              "text": "previous_cost",
+              "type": "number"
+            },
+            {
+              "selector": "delta",
+              "text": "delta",
+              "type": "number"
+            },
+            {
+              "selector": "percent_change",
+              "text": "percent_change",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 37
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
       "id": 10,
       "type": "table",
       "title": "Anomaly Table",
@@ -756,7 +957,7 @@
         "h": 8,
         "w": 16,
         "x": 0,
-        "y": 37
+        "y": 45
       },
       "fieldConfig": {
         "defaults": {
@@ -818,7 +1019,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 37
+        "y": 45
       }
     },
     {
@@ -840,7 +1041,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 45
+        "y": 53
       },
       "fieldConfig": {
         "defaults": {
@@ -867,7 +1068,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 45
+        "y": 53
       }
     },
     {
@@ -889,7 +1090,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 45
+        "y": 53
       }
     },
     {
@@ -911,7 +1112,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 45
+        "y": 53
       }
     },
     {
@@ -933,7 +1134,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 45
+        "y": 53
       }
     },
     {
@@ -955,7 +1156,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 45
+        "y": 53
       }
     }
   ],
