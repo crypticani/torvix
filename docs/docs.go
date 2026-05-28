@@ -550,6 +550,18 @@ const docTemplate = `{
                         "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.Anomaly"
                     }
                 },
+                "cost_decreases": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.CostVariance"
+                    }
+                },
+                "cost_increases": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.CostVariance"
+                    }
+                },
                 "forecast": {
                     "type": "array",
                     "items": {

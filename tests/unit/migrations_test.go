@@ -16,6 +16,7 @@ func TestTimescaleMigrationsContainRequiredPrimitives(t *testing.T) {
 		"../../migrations/006_dashboard_analytics.sql",
 		"../../migrations/007_dashboard_compartment_summaries.sql",
 		"../../migrations/008_rebuild_dashboard_compartment_summaries.sql",
+		"../../migrations/009_report_deliveries.sql",
 	}
 
 	combined := ""
@@ -48,6 +49,7 @@ func TestTimescaleMigrationsContainRequiredPrimitives(t *testing.T) {
 		"idx_cost_anomalies_range_severity",
 		"idx_cost_forecasts_date_provider",
 		"oci_compartment_name",
+		"report_deliveries",
 	}
 	for _, needle := range required {
 		if !strings.Contains(combined, needle) {

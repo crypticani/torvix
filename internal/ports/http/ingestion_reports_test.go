@@ -132,6 +132,12 @@ func (r *ingestionReportRepo) ForecastCosts(_ context.Context, from, _ time.Time
 func (r *ingestionReportRepo) IsReportProcessed(context.Context, domain.Provider, string, string, string) (bool, error) {
 	return false, nil
 }
+func (r *ingestionReportRepo) IsReportDelivered(context.Context, string, time.Time, time.Time) (bool, error) {
+	return false, nil
+}
+func (r *ingestionReportRepo) RecordReportDelivery(context.Context, string, time.Time, time.Time) error {
+	return nil
+}
 func (r *ingestionReportRepo) ApplyDataLifecyclePolicies(context.Context, int, int) error {
 	return nil
 }

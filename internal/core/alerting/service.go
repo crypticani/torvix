@@ -300,6 +300,18 @@ func formatSlack(target config.Webhook, report domain.Report) any {
 			},
 		},
 	}
+	if summary.CostIncreaseText != "" {
+		blocks = append(blocks, map[string]any{
+			"type": "section",
+			"text": map[string]string{"type": "mrkdwn", "text": "*Top Cost Increases:*\n" + summary.CostIncreaseText},
+		})
+	}
+	if summary.CostDecreaseText != "" {
+		blocks = append(blocks, map[string]any{
+			"type": "section",
+			"text": map[string]string{"type": "mrkdwn", "text": "*Top Cost Decreases:*\n" + summary.CostDecreaseText},
+		})
+	}
 	if summary.AnomalyText != "" {
 		blocks = append(blocks, map[string]any{
 			"type": "section",
@@ -315,6 +327,12 @@ func formatDiscord(target config.Webhook, report domain.Report) any {
 		{"name": "Period", "value": summary.PeriodRange, "inline": false},
 		{"name": "Total Cost", "value": summary.TotalCost, "inline": true},
 		{"name": "Anomalies Detected", "value": fmt.Sprintf("%d", summary.AnomalyCount), "inline": true},
+	}
+	if summary.CostIncreaseText != "" {
+		fields = append(fields, map[string]any{"name": "Top Cost Increases", "value": summary.CostIncreaseText})
+	}
+	if summary.CostDecreaseText != "" {
+		fields = append(fields, map[string]any{"name": "Top Cost Decreases", "value": summary.CostDecreaseText})
 	}
 	if summary.AnomalyText != "" {
 		fields = append(fields, map[string]any{"name": "Top Anomalies", "value": summary.AnomalyText})
@@ -341,8 +359,18 @@ func formatTeams(target config.Webhook, report domain.Report) any {
 			{"name": "Anomalies Detected", "value": fmt.Sprintf("%d", summary.AnomalyCount)},
 		},
 	}
+	var bodySections []string
+	if summary.CostIncreaseText != "" {
+		bodySections = append(bodySections, "Top cost increases:\n\n"+summary.CostIncreaseText)
+	}
+	if summary.CostDecreaseText != "" {
+		bodySections = append(bodySections, "Top cost decreases:\n\n"+summary.CostDecreaseText)
+	}
 	if summary.AnomalyText != "" {
-		section["text"] = "Top anomalies:\n\n" + summary.AnomalyText
+		bodySections = append(bodySections, "Top anomalies:\n\n"+summary.AnomalyText)
+	}
+	if len(bodySections) > 0 {
+		section["text"] = strings.Join(bodySections, "\n\n")
 	}
 	return map[string]any{
 		"@type":      "MessageCard",
@@ -370,6 +398,12 @@ func formatTelegram(target config.Webhook, report domain.Report) (string, any, e
 		"Period: " + summary.PeriodRange + "\n" +
 		"Total Cost: " + summary.TotalCost + "\n" +
 		fmt.Sprintf("Anomalies Detected: %d", summary.AnomalyCount)
+	if summary.CostIncreaseText != "" {
+		text += "\n\nTop Cost Increases:\n" + summary.CostIncreaseText
+	}
+	if summary.CostDecreaseText != "" {
+		text += "\n\nTop Cost Decreases:\n" + summary.CostDecreaseText
+	}
 	if summary.AnomalyText != "" {
 		text += "\n\nTop Anomalies:\n" + summary.AnomalyText
 	}
@@ -393,6 +427,12 @@ func formatEmail(target config.Webhook, report domain.Report) []byte {
 		"Period: " + summary.PeriodRange + "\n" +
 		"Total Cost: " + summary.TotalCost + "\n" +
 		fmt.Sprintf("Anomalies Detected: %d\n", summary.AnomalyCount)
+	if summary.CostIncreaseText != "" {
+		body += "\nTop Cost Increases:\n" + summary.CostIncreaseText
+	}
+	if summary.CostDecreaseText != "" {
+		body += "\nTop Cost Decreases:\n" + summary.CostDecreaseText
+	}
 	if summary.AnomalyText != "" {
 		body += "\nTop Anomalies:\n" + summary.AnomalyText
 	}
@@ -407,11 +447,13 @@ func formatEmail(target config.Webhook, report domain.Report) []byte {
 }
 
 type reportSummary struct {
-	Title        string
-	PeriodRange  string
-	TotalCost    string
-	AnomalyCount int
-	AnomalyText  string
+	Title            string
+	PeriodRange      string
+	TotalCost        string
+	AnomalyCount     int
+	CostIncreaseText string
+	CostDecreaseText string
+	AnomalyText      string
 }
 
 func summarize(target config.Webhook, report domain.Report) reportSummary {
@@ -420,11 +462,13 @@ func summarize(target config.Webhook, report domain.Report) reportSummary {
 		total += s.TotalCost
 	}
 	return reportSummary{
-		Title:        fmt.Sprintf("CloudPulse %s Report", title(report.Period)),
-		PeriodRange:  reportPeriodRange(report),
-		TotalCost:    formatCost(target.Currency, total),
-		AnomalyCount: len(report.Anomalies),
-		AnomalyText:  formatAnomalies(target.Currency, report.Anomalies),
+		Title:            fmt.Sprintf("CloudPulse %s Report", title(report.Period)),
+		PeriodRange:      reportPeriodRange(report),
+		TotalCost:        formatCost(target.Currency, total),
+		AnomalyCount:     len(report.Anomalies),
+		CostIncreaseText: formatCostVariances(target.Currency, report.CostIncreases),
+		CostDecreaseText: formatCostVariances(target.Currency, report.CostDecreases),
+		AnomalyText:      formatAnomalies(target.Currency, report.Anomalies),
 	}
 }
 
@@ -450,6 +494,49 @@ func isMidnightUTC(t time.Time) bool {
 
 func sameUTCDate(a, b time.Time) bool {
 	return a.Year() == b.Year() && a.Month() == b.Month() && a.Day() == b.Day()
+}
+
+func formatCostVariances(currency string, variances []domain.CostVariance) string {
+	if len(variances) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	count := len(variances)
+	if count > maxNotifiedAnomalies {
+		count = maxNotifiedAnomalies
+	}
+	for i := 0; i < count; i++ {
+		v := variances[i]
+		details := varianceDetails(v)
+		if details != "" {
+			details = "; " + details
+		}
+		b.WriteString(fmt.Sprintf("- %s %s: %s (%.1f%%; current %s vs previous %s%s)\n", v.Provider, v.Service, formatSignedCost(currency, v.Delta), v.PercentChange, formatCost(currency, v.CurrentCost), formatCost(currency, v.PreviousCost), details))
+	}
+	if len(variances) > count {
+		b.WriteString(fmt.Sprintf("...and %d more\n", len(variances)-count))
+	}
+	return b.String()
+}
+
+func formatSignedCost(currency string, value float64) string {
+	if value >= 0 {
+		return "+" + formatCost(currency, value)
+	}
+	return "-" + formatCost(currency, -value)
+}
+
+func varianceDetails(v domain.CostVariance) string {
+	parts := make([]string, 0, 2)
+	if v.CompartmentName != "" {
+		parts = append(parts, "compartment "+v.CompartmentName)
+	} else if v.CompartmentID != "" {
+		parts = append(parts, "compartment "+v.CompartmentID)
+	}
+	if v.AccountID != "" {
+		parts = append(parts, "account "+v.AccountID)
+	}
+	return strings.Join(parts, "; ")
 }
 
 func formatAnomalies(currency string, anomalies []domain.Anomaly) string {

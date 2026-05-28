@@ -678,6 +678,29 @@ func (r *Repository) IsReportProcessed(ctx context.Context, provider domain.Prov
 	return exists, err
 }
 
+func (r *Repository) IsReportDelivered(ctx context.Context, period string, from, to time.Time) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1
+			FROM report_deliveries
+			WHERE period = $1
+			  AND period_start = $2
+			  AND period_end = $3
+		)
+	`, period, from.UTC(), to.UTC()).Scan(&exists)
+	return exists, err
+}
+
+func (r *Repository) RecordReportDelivery(ctx context.Context, period string, from, to time.Time) error {
+	_, err := r.db.Exec(ctx, `
+		INSERT INTO report_deliveries (period, period_start, period_end, delivered_at)
+		VALUES ($1, $2, $3, now())
+		ON CONFLICT (period, period_start, period_end) DO NOTHING
+	`, period, from.UTC(), to.UTC())
+	return err
+}
+
 func (r *Repository) RefreshAggregates(ctx context.Context, from, to time.Time) error {
 	views := []struct {
 		name  string

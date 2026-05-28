@@ -81,6 +81,14 @@ definitions:
         items:
           $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Anomaly'
         type: array
+      cost_decreases:
+        items:
+          $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.CostVariance'
+        type: array
+      cost_increases:
+        items:
+          $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.CostVariance'
+        type: array
       forecast:
         items:
           $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.ForecastPoint'

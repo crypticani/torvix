@@ -152,6 +152,45 @@ func TestFormatDiscordReportIncludesPeriodRange(t *testing.T) {
 	t.Fatalf("expected discord period field with actual report range, got %#v", fields)
 }
 
+func TestFormatDiscordReportHighlightsCostIncreasesAndDecreases(t *testing.T) {
+	body := formatDiscord(config.Webhook{Currency: "INR"}, domain.Report{
+		Period: "daily",
+		From:   time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC),
+		To:     time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC),
+		Summary: []domain.AggregatedCost{
+			{Provider: domain.ProviderOCI, Service: "COMPUTE", TotalCost: 100},
+		},
+		CostIncreases: []domain.CostVariance{
+			{Provider: domain.ProviderOCI, Service: "COMPUTE", CompartmentName: "app", CurrentCost: 300, PreviousCost: 100, Delta: 200, PercentChange: 200, Direction: "increase"},
+		},
+		CostDecreases: []domain.CostVariance{
+			{Provider: domain.ProviderOCI, Service: "OBJECTSTORE", CompartmentName: "data", CurrentCost: 40, PreviousCost: 140, Delta: -100, PercentChange: -71.4, Direction: "decrease"},
+		},
+	}).(map[string]any)
+
+	embeds := body["embeds"].([]map[string]any)
+	fields := embeds[0]["fields"].([]map[string]any)
+	var increases, decreases string
+	for _, field := range fields {
+		switch field["name"] {
+		case "Top Cost Increases":
+			increases = field["value"].(string)
+		case "Top Cost Decreases":
+			decreases = field["value"].(string)
+		}
+	}
+	for _, want := range []string{"oci COMPUTE", "compartment app", "+INR 200.00", "200.0%"} {
+		if !strings.Contains(increases, want) {
+			t.Fatalf("cost increases %q missing %q", increases, want)
+		}
+	}
+	for _, want := range []string{"oci OBJECTSTORE", "compartment data", "-INR 100.00", "-71.4%"} {
+		if !strings.Contains(decreases, want) {
+			t.Fatalf("cost decreases %q missing %q", decreases, want)
+		}
+	}
+}
+
 func TestFormatAnomaliesIncludesLocationDetails(t *testing.T) {
 	got := formatAnomalies("INR", []domain.Anomaly{
 		{

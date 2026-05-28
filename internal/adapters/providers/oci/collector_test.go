@@ -556,6 +556,14 @@ func (f *fakeRepository) IsReportProcessed(_ context.Context, _ domain.Provider,
 	return f.processed[objectName+"|"+etag], nil
 }
 
+func (f *fakeRepository) IsReportDelivered(context.Context, string, time.Time, time.Time) (bool, error) {
+	return false, nil
+}
+
+func (f *fakeRepository) RecordReportDelivery(context.Context, string, time.Time, time.Time) error {
+	return nil
+}
+
 func (f *fakeRepository) ApplyDataLifecyclePolicies(context.Context, int, int) error {
 	return nil
 }

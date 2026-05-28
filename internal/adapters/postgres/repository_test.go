@@ -288,6 +288,38 @@ func TestIsReportProcessed(t *testing.T) {
 	}
 }
 
+func TestReportDeliveryLedger(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	defer mock.Close()
+
+	from := time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 5, 11, 0, 0, 0, 0, time.UTC)
+	mock.ExpectQuery("FROM report_deliveries").
+		WithArgs("weekly", from, to).
+		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectExec("INSERT INTO report_deliveries").
+		WithArgs("weekly", from, to).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+
+	repo := NewWithDB(mock)
+	ok, err := repo.IsReportDelivered(context.Background(), "weekly", from, to)
+	if err != nil {
+		t.Fatalf("IsReportDelivered() error = %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected weekly report delivery to exist")
+	}
+	if err := repo.RecordReportDelivery(context.Background(), "weekly", from, to); err != nil {
+		t.Fatalf("RecordReportDelivery() error = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
 func TestDeleteCostRecordsForSourceDecompressesExistingSourceChunks(t *testing.T) {
 	mock, err := pgxmock.NewPool()
 	if err != nil {

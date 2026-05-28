@@ -3,6 +3,8 @@ package reporting
 import (
 	"context"
 	"fmt"
+	"math"
+	"sort"
 	"time"
 
 	"github.com/crypticani/cloudpulse/internal/core/analytics"
@@ -11,6 +13,8 @@ import (
 )
 
 var DefaultReportPeriods = []string{"daily", "weekly", "monthly"}
+
+const maxCostMovements = 5
 
 type ReportSender interface {
 	SendReport(ctx context.Context, report domain.Report) error
@@ -49,14 +53,22 @@ func (s *Service) buildWithSummary(ctx context.Context, period string, from, to 
 	if err != nil {
 		return domain.Report{}, err
 	}
+	previousFrom, previousTo := previousReportRange(period, from, to)
+	variances, err := s.analytics.CompareVarianceWindows(ctx, period, from, to, previousFrom, previousTo)
+	if err != nil {
+		return domain.Report{}, err
+	}
+	increases, decreases := topCostMovements(variances, maxCostMovements)
 	return domain.Report{
-		Period:    period,
-		From:      from,
-		To:        to,
-		Generated: time.Now().UTC(),
-		Summary:   summary,
-		Anomalies: anomalies,
-		Forecast:  forecast,
+		Period:        period,
+		From:          from,
+		To:            to,
+		Generated:     time.Now().UTC(),
+		Summary:       summary,
+		Anomalies:     anomalies,
+		Forecast:      forecast,
+		CostIncreases: increases,
+		CostDecreases: decreases,
 	}, nil
 }
 
@@ -102,22 +114,53 @@ func (s *Service) DeliverDefaultReports(ctx context.Context, sender ReportSender
 	for _, period := range DefaultReportPeriods {
 		from, to := DefaultRange(period, now)
 		result := DeliveryResult{Period: period, From: from, To: to}
+		deliver, err := s.shouldDeliverDefaultReport(ctx, period, from, to)
+		if err != nil {
+			result.Error = err
+			results = append(results, result)
+			continue
+		}
+		if !deliver {
+			results = append(results, result)
+			continue
+		}
 		report, err := s.BuildDefault(ctx, period, now)
 		if err != nil {
 			result.Error = err
 			results = append(results, result)
 			continue
 		}
-		if len(report.Summary) > 0 {
-			result.From = report.Summary[0].WindowStart
-			result.To = report.Summary[0].WindowEnd
-		}
+		result.From = report.From
+		result.To = report.To
 		if err := sender.SendReport(ctx, report); err != nil {
+			result.Error = err
+			results = append(results, result)
+			continue
+		}
+		if err := s.recordDefaultReportDelivery(ctx, period, report.From, report.To); err != nil {
 			result.Error = err
 		}
 		results = append(results, result)
 	}
 	return results
+}
+
+func (s *Service) shouldDeliverDefaultReport(ctx context.Context, period string, from, to time.Time) (bool, error) {
+	if period == "daily" {
+		return true, nil
+	}
+	delivered, err := s.analytics.IsReportDelivered(ctx, period, from, to)
+	if err != nil {
+		return false, err
+	}
+	return !delivered, nil
+}
+
+func (s *Service) recordDefaultReportDelivery(ctx context.Context, period string, from, to time.Time) error {
+	if period == "daily" {
+		return nil
+	}
+	return s.analytics.RecordReportDelivery(ctx, period, from, to)
 }
 
 func DefaultRange(period string, now time.Time) (time.Time, time.Time) {
@@ -135,4 +178,43 @@ func DefaultRange(period string, now time.Time) (time.Time, time.Time) {
 	default:
 		return today.AddDate(0, 0, -30), today
 	}
+}
+
+func previousReportRange(period string, from, to time.Time) (time.Time, time.Time) {
+	switch period {
+	case "daily":
+		return from.AddDate(0, 0, -1), from
+	case "weekly":
+		return from.AddDate(0, 0, -7), from
+	case "monthly":
+		return from.AddDate(0, -1, 0), from
+	default:
+		return from.Add(-to.Sub(from)), from
+	}
+}
+
+func topCostMovements(variances []domain.CostVariance, limit int) ([]domain.CostVariance, []domain.CostVariance) {
+	increases := make([]domain.CostVariance, 0, limit)
+	decreases := make([]domain.CostVariance, 0, limit)
+	for _, variance := range variances {
+		switch {
+		case variance.Direction == "increase" && variance.Delta > 0:
+			increases = append(increases, variance)
+		case variance.Direction == "decrease" && variance.Delta < 0:
+			decreases = append(decreases, variance)
+		}
+	}
+	sort.SliceStable(increases, func(i, j int) bool {
+		return math.Abs(increases[i].Delta) > math.Abs(increases[j].Delta)
+	})
+	sort.SliceStable(decreases, func(i, j int) bool {
+		return math.Abs(decreases[i].Delta) > math.Abs(decreases[j].Delta)
+	})
+	if len(increases) > limit {
+		increases = increases[:limit]
+	}
+	if len(decreases) > limit {
+		decreases = decreases[:limit]
+	}
+	return increases, decreases
 }

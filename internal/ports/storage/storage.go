@@ -19,6 +19,8 @@ type Repository interface {
 	DetectAnomalies(ctx context.Context, from, to time.Time) ([]domain.Anomaly, error)
 	ForecastCosts(ctx context.Context, from, to time.Time, horizon int) ([]domain.ForecastPoint, error)
 	IsReportProcessed(ctx context.Context, provider domain.Provider, bucket, objectName, etag string) (bool, error)
+	IsReportDelivered(ctx context.Context, period string, from, to time.Time) (bool, error)
+	RecordReportDelivery(ctx context.Context, period string, from, to time.Time) error
 	ApplyDataLifecyclePolicies(ctx context.Context, retentionDays, compressionAfterDays int) error
 	RunDataLifecycleMaintenance(ctx context.Context, retentionDays, compressionAfterDays int) (domain.DataLifecycleMaintenance, error)
 	RefreshAggregates(ctx context.Context, from, to time.Time) error

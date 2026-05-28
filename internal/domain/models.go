@@ -180,11 +180,13 @@ type ForecastPoint struct {
 }
 
 type Report struct {
-	Period    string           `json:"period"`
-	From      time.Time        `json:"from"`
-	To        time.Time        `json:"to"`
-	Generated time.Time        `json:"generated"`
-	Summary   []AggregatedCost `json:"summary"`
-	Anomalies []Anomaly        `json:"anomalies"`
-	Forecast  []ForecastPoint  `json:"forecast"`
+	Period        string           `json:"period"`
+	From          time.Time        `json:"from"`
+	To            time.Time        `json:"to"`
+	Generated     time.Time        `json:"generated"`
+	Summary       []AggregatedCost `json:"summary"`
+	Anomalies     []Anomaly        `json:"anomalies"`
+	Forecast      []ForecastPoint  `json:"forecast"`
+	CostIncreases []CostVariance   `json:"cost_increases"`
+	CostDecreases []CostVariance   `json:"cost_decreases"`
 }

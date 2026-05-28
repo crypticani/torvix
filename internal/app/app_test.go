@@ -100,6 +100,12 @@ func (r *scheduledReportRepo) ForecastCosts(_ context.Context, from, _ time.Time
 func (r *scheduledReportRepo) IsReportProcessed(context.Context, domain.Provider, string, string, string) (bool, error) {
 	return false, nil
 }
+func (r *scheduledReportRepo) IsReportDelivered(context.Context, string, time.Time, time.Time) (bool, error) {
+	return false, nil
+}
+func (r *scheduledReportRepo) RecordReportDelivery(context.Context, string, time.Time, time.Time) error {
+	return nil
+}
 func (r *scheduledReportRepo) ApplyDataLifecyclePolicies(context.Context, int, int) error {
 	return nil
 }
