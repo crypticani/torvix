@@ -556,6 +556,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.ForecastPoint"
                     }
                 },
+                "from": {
+                    "type": "string"
+                },
                 "generated": {
                     "type": "string"
                 },
@@ -567,6 +570,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.AggregatedCost"
                     }
+                },
+                "to": {
+                    "type": "string"
                 }
             }
         },

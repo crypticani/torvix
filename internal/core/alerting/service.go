@@ -11,6 +11,7 @@ import (
 	"net/smtp"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/crypticani/cloudpulse/internal/config"
 	"github.com/crypticani/cloudpulse/internal/domain"
@@ -295,7 +296,7 @@ func formatSlack(target config.Webhook, report domain.Report) any {
 			"type": "section",
 			"text": map[string]string{
 				"type": "mrkdwn",
-				"text": fmt.Sprintf("*Total Cost:* %s\n*Anomalies Detected:* %d", summary.TotalCost, summary.AnomalyCount),
+				"text": fmt.Sprintf("*Period:* %s\n*Total Cost:* %s\n*Anomalies Detected:* %d", summary.PeriodRange, summary.TotalCost, summary.AnomalyCount),
 			},
 		},
 	}
@@ -311,6 +312,7 @@ func formatSlack(target config.Webhook, report domain.Report) any {
 func formatDiscord(target config.Webhook, report domain.Report) any {
 	summary := summarize(target, report)
 	fields := []map[string]any{
+		{"name": "Period", "value": summary.PeriodRange, "inline": false},
 		{"name": "Total Cost", "value": summary.TotalCost, "inline": true},
 		{"name": "Anomalies Detected", "value": fmt.Sprintf("%d", summary.AnomalyCount), "inline": true},
 	}
@@ -334,6 +336,7 @@ func formatTeams(target config.Webhook, report domain.Report) any {
 	summary := summarize(target, report)
 	section := map[string]any{
 		"facts": []map[string]string{
+			{"name": "Period", "value": summary.PeriodRange},
 			{"name": "Total Cost", "value": summary.TotalCost},
 			{"name": "Anomalies Detected", "value": fmt.Sprintf("%d", summary.AnomalyCount)},
 		},
@@ -364,6 +367,7 @@ func formatTelegram(target config.Webhook, report domain.Report) (string, any, e
 	}
 	summary := summarize(target, report)
 	text := summary.Title + "\n" +
+		"Period: " + summary.PeriodRange + "\n" +
 		"Total Cost: " + summary.TotalCost + "\n" +
 		fmt.Sprintf("Anomalies Detected: %d", summary.AnomalyCount)
 	if summary.AnomalyText != "" {
@@ -386,6 +390,7 @@ func formatEmail(target config.Webhook, report domain.Report) []byte {
 		subject = strings.TrimSpace(target.SubjectPrefix) + " " + subject
 	}
 	body := summary.Title + "\n\n" +
+		"Period: " + summary.PeriodRange + "\n" +
 		"Total Cost: " + summary.TotalCost + "\n" +
 		fmt.Sprintf("Anomalies Detected: %d\n", summary.AnomalyCount)
 	if summary.AnomalyText != "" {
@@ -403,6 +408,7 @@ func formatEmail(target config.Webhook, report domain.Report) []byte {
 
 type reportSummary struct {
 	Title        string
+	PeriodRange  string
 	TotalCost    string
 	AnomalyCount int
 	AnomalyText  string
@@ -415,10 +421,35 @@ func summarize(target config.Webhook, report domain.Report) reportSummary {
 	}
 	return reportSummary{
 		Title:        fmt.Sprintf("CloudPulse %s Report", title(report.Period)),
+		PeriodRange:  reportPeriodRange(report),
 		TotalCost:    formatCost(target.Currency, total),
 		AnomalyCount: len(report.Anomalies),
 		AnomalyText:  formatAnomalies(target.Currency, report.Anomalies),
 	}
+}
+
+func reportPeriodRange(report domain.Report) string {
+	from := report.From.UTC()
+	to := report.To.UTC()
+	if from.IsZero() || to.IsZero() || !to.After(from) {
+		return title(report.Period)
+	}
+	if isMidnightUTC(from) && isMidnightUTC(to) {
+		end := to.AddDate(0, 0, -1)
+		if sameUTCDate(from, end) {
+			return from.Format("2006-01-02") + " UTC"
+		}
+		return from.Format("2006-01-02") + " to " + end.Format("2006-01-02") + " UTC"
+	}
+	return from.Format(time.RFC3339) + " to " + to.Format(time.RFC3339)
+}
+
+func isMidnightUTC(t time.Time) bool {
+	return t.Location() == time.UTC && t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 && t.Nanosecond() == 0
+}
+
+func sameUTCDate(a, b time.Time) bool {
+	return a.Year() == b.Year() && a.Month() == b.Month() && a.Day() == b.Day()
 }
 
 func formatAnomalies(currency string, anomalies []domain.Anomaly) string {

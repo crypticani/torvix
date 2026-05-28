@@ -181,6 +181,8 @@ type ForecastPoint struct {
 
 type Report struct {
 	Period    string           `json:"period"`
+	From      time.Time        `json:"from"`
+	To        time.Time        `json:"to"`
 	Generated time.Time        `json:"generated"`
 	Summary   []AggregatedCost `json:"summary"`
 	Anomalies []Anomaly        `json:"anomalies"`

@@ -125,6 +125,33 @@ func TestSendReportTelegramBuildsAPIURL(t *testing.T) {
 	}
 }
 
+func TestFormatDiscordReportIncludesPeriodRange(t *testing.T) {
+	body := formatDiscord(config.Webhook{Currency: "INR"}, domain.Report{
+		Period:    "weekly",
+		From:      time.Date(2026, 5, 18, 0, 0, 0, 0, time.UTC),
+		To:        time.Date(2026, 5, 25, 0, 0, 0, 0, time.UTC),
+		Generated: time.Date(2026, 5, 28, 0, 0, 0, 0, time.UTC),
+		Summary: []domain.AggregatedCost{
+			{
+				WindowStart: time.Date(2026, 5, 18, 0, 0, 0, 0, time.UTC),
+				WindowEnd:   time.Date(2026, 5, 24, 0, 0, 0, 0, time.UTC),
+				Provider:    domain.ProviderOCI,
+				Service:     "COMPUTE",
+				TotalCost:   306735.40,
+			},
+		},
+	}).(map[string]any)
+
+	embeds := body["embeds"].([]map[string]any)
+	fields := embeds[0]["fields"].([]map[string]any)
+	for _, field := range fields {
+		if field["name"] == "Period" && field["value"] == "2026-05-18 to 2026-05-24 UTC" {
+			return
+		}
+	}
+	t.Fatalf("expected discord period field with actual report range, got %#v", fields)
+}
+
 func TestFormatAnomaliesIncludesLocationDetails(t *testing.T) {
 	got := formatAnomalies("INR", []domain.Anomaly{
 		{

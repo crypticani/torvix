@@ -51,6 +51,8 @@ func (s *Service) buildWithSummary(ctx context.Context, period string, from, to 
 	}
 	return domain.Report{
 		Period:    period,
+		From:      from,
+		To:        to,
 		Generated: time.Now().UTC(),
 		Summary:   summary,
 		Anomalies: anomalies,
@@ -69,6 +71,8 @@ func (s *Service) BuildDefault(ctx context.Context, period string, now time.Time
 	}
 	emptyReport := domain.Report{
 		Period:    period,
+		From:      from,
+		To:        to,
 		Generated: time.Now().UTC(),
 		Summary:   summary,
 	}
