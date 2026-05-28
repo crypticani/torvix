@@ -1182,12 +1182,12 @@
           "type": "yesoreyeram-infinity-datasource",
           "uid": "CloudPulseAPI"
         },
-        "definition": "/api/v1/dashboard/cost-by-region?provider=oci&from=${__from:date:iso}&to=${__to:date:iso}",
+        "definition": "/api/v1/dashboard/filter-options?dimension=region&provider=oci",
         "query": {
           "type": "json",
           "source": "url",
           "parser": "backend",
-          "url": "/api/v1/dashboard/cost-by-region?provider=oci&from=${__from:date:iso}&to=${__to:date:iso}",
+          "url": "/api/v1/dashboard/filter-options?dimension=region&provider=oci",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -1195,12 +1195,12 @@
           "root_selector": "data",
           "columns": [
             {
-              "selector": "name",
+              "selector": "__text",
               "text": "__text",
               "type": "string"
             },
             {
-              "selector": "name",
+              "selector": "__value",
               "text": "__value",
               "type": "string"
             }
@@ -1212,7 +1212,7 @@
           "type": "json",
           "source": "url",
           "parser": "backend",
-          "url": "/api/v1/dashboard/cost-by-region?provider=oci&from=${__from:date:iso}&to=${__to:date:iso}",
+          "url": "/api/v1/dashboard/filter-options?dimension=region&provider=oci",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -1220,12 +1220,12 @@
           "root_selector": "data",
           "columns": [
             {
-              "selector": "name",
+              "selector": "__text",
               "text": "__text",
               "type": "string"
             },
             {
-              "selector": "name",
+              "selector": "__value",
               "text": "__value",
               "type": "string"
             }
@@ -1252,12 +1252,12 @@
           "type": "yesoreyeram-infinity-datasource",
           "uid": "CloudPulseAPI"
         },
-        "definition": "/api/v1/dashboard/cost-by-compartment?provider=oci&region=${region}&from=${__from:date:iso}&to=${__to:date:iso}",
+        "definition": "/api/v1/dashboard/filter-options?dimension=compartment&provider=oci&region=${region}",
         "query": {
           "type": "json",
           "source": "url",
           "parser": "backend",
-          "url": "/api/v1/dashboard/cost-by-compartment?provider=oci&region=${region}&from=${__from:date:iso}&to=${__to:date:iso}",
+          "url": "/api/v1/dashboard/filter-options?dimension=compartment&provider=oci&region=${region}",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -1265,12 +1265,12 @@
           "root_selector": "data",
           "columns": [
             {
-              "selector": "name",
+              "selector": "__text",
               "text": "__text",
               "type": "string"
             },
             {
-              "selector": "name",
+              "selector": "__value",
               "text": "__value",
               "type": "string"
             }
@@ -1282,7 +1282,7 @@
           "type": "json",
           "source": "url",
           "parser": "backend",
-          "url": "/api/v1/dashboard/cost-by-compartment?provider=oci&region=${region}&from=${__from:date:iso}&to=${__to:date:iso}",
+          "url": "/api/v1/dashboard/filter-options?dimension=compartment&provider=oci&region=${region}",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -1290,12 +1290,12 @@
           "root_selector": "data",
           "columns": [
             {
-              "selector": "name",
+              "selector": "__text",
               "text": "__text",
               "type": "string"
             },
             {
-              "selector": "name",
+              "selector": "__value",
               "text": "__value",
               "type": "string"
             }
@@ -1322,12 +1322,12 @@
           "type": "yesoreyeram-infinity-datasource",
           "uid": "CloudPulseAPI"
         },
-        "definition": "/api/v1/dashboard/cost-by-service?provider=oci&region=${region}&compartment=${compartment}&from=${__from:date:iso}&to=${__to:date:iso}",
+        "definition": "/api/v1/dashboard/filter-options?dimension=service&provider=oci&region=${region}&compartment=${compartment}",
         "query": {
           "type": "json",
           "source": "url",
           "parser": "backend",
-          "url": "/api/v1/dashboard/cost-by-service?provider=oci&region=${region}&compartment=${compartment}&from=${__from:date:iso}&to=${__to:date:iso}",
+          "url": "/api/v1/dashboard/filter-options?dimension=service&provider=oci&region=${region}&compartment=${compartment}",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -1335,12 +1335,12 @@
           "root_selector": "data",
           "columns": [
             {
-              "selector": "name",
+              "selector": "__text",
               "text": "__text",
               "type": "string"
             },
             {
-              "selector": "name",
+              "selector": "__value",
               "text": "__value",
               "type": "string"
             }
@@ -1352,7 +1352,7 @@
           "type": "json",
           "source": "url",
           "parser": "backend",
-          "url": "/api/v1/dashboard/cost-by-service?provider=oci&region=${region}&compartment=${compartment}&from=${__from:date:iso}&to=${__to:date:iso}",
+          "url": "/api/v1/dashboard/filter-options?dimension=service&provider=oci&region=${region}&compartment=${compartment}",
           "url_options": {
             "data": "",
             "method": "GET"
@@ -1360,12 +1360,12 @@
           "root_selector": "data",
           "columns": [
             {
-              "selector": "name",
+              "selector": "__text",
               "text": "__text",
               "type": "string"
             },
             {
-              "selector": "name",
+              "selector": "__value",
               "text": "__value",
               "type": "string"
             }

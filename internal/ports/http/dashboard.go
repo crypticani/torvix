@@ -51,6 +51,16 @@ type dashboardBreakdownResponse struct {
 	Data []dashboardBreakdownRow `json:"data"`
 }
 
+type dashboardFilterOption struct {
+	Text  string `json:"__text"`
+	Value string `json:"__value"`
+}
+
+type dashboardFilterOptionsResponse struct {
+	Meta dashboardMeta           `json:"meta"`
+	Data []dashboardFilterOption `json:"data"`
+}
+
 type dashboardAnomaliesResponse struct {
 	Meta dashboardMeta             `json:"meta"`
 	Data []domain.DashboardAnomaly `json:"data"`
@@ -175,6 +185,59 @@ func (h *Handler) dashboardCostByCompartment(w http.ResponseWriter, r *http.Requ
 
 func (h *Handler) dashboardCostByRegion(w http.ResponseWriter, r *http.Request) {
 	h.dashboardBreakdown(w, r, "region")
+}
+
+func (h *Handler) dashboardFilterOptions(w http.ResponseWriter, r *http.Request) {
+	dimension := strings.TrimSpace(r.URL.Query().Get("dimension"))
+	switch dimension {
+	case "region", "compartment", "service":
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dimension must be one of region, compartment, service"})
+		return
+	}
+	from, to, meta, ok := h.dashboardRange(r)
+	if !ok {
+		writeJSON(w, http.StatusOK, dashboardFilterOptionsResponse{Meta: meta, Data: []dashboardFilterOption{}})
+		return
+	}
+	rows, err := h.analytics.DashboardCostSummaries(r.Context(), "daily", from, to)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	provider, hasProvider := dashboardProvider(r)
+	filters := dashboardFiltersFromRequest(r)
+	switch dimension {
+	case "region":
+		filters.Region = ""
+	case "compartment":
+		filters.Compartment = ""
+	case "service":
+		filters.Service = ""
+	}
+	values := map[string]struct{}{}
+	for _, row := range rows {
+		if hasProvider && row.Provider != provider {
+			continue
+		}
+		if !dashboardRowMatchesFilters(row, filters) {
+			continue
+		}
+		values[dashboardDimensionValue(row, dimension)] = struct{}{}
+	}
+	out := make([]dashboardFilterOption, 0, len(values))
+	for value := range values {
+		out = append(out, dashboardFilterOption{Text: value, Value: value})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		left := strings.ToLower(out[i].Text)
+		right := strings.ToLower(out[j].Text)
+		if left == right {
+			return out[i].Text < out[j].Text
+		}
+		return left < right
+	})
+	writeJSON(w, http.StatusOK, dashboardFilterOptionsResponse{Meta: meta, Data: out})
 }
 
 func (h *Handler) dashboardOCICostSummary(w http.ResponseWriter, r *http.Request) {

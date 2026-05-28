@@ -109,6 +109,9 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 		if variable.InfinityQuery.Parser != "backend" || variable.InfinityQuery.RootSelector != "data" || variable.InfinityQuery.URL == "" {
 			t.Fatalf("variable %q has incomplete Infinity query configuration: %+v", variable.Name, variable.InfinityQuery)
 		}
+		if !strings.Contains(variable.InfinityQuery.URL, "/api/v1/dashboard/filter-options") {
+			t.Fatalf("variable %q must use the unbounded filter-options API, got %q", variable.Name, variable.InfinityQuery.URL)
+		}
 		if len(variable.InfinityQuery.Columns) != 2 ||
 			variable.InfinityQuery.Columns[0].Text != "__text" ||
 			variable.InfinityQuery.Columns[1].Text != "__value" {
