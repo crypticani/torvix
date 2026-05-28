@@ -212,7 +212,7 @@ info:
     precomputed cost summaries, deterministic anomaly detection, forecasting, and
     automated reporting.
   title: CloudPulse API
-  version: 0.5.0
+  version: 0.6.0
 paths:
   /api/v1/analytics/anomalies:
     get:
