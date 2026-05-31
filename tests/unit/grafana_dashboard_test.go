@@ -23,6 +23,18 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 				Name          string `json:"name"`
 				QueryType     string `json:"queryType"`
 				Refresh       int    `json:"refresh"`
+				Query         struct {
+					RefID         string `json:"refId"`
+					QueryType     string `json:"queryType"`
+					InfinityQuery struct {
+						URL          string `json:"url"`
+						Parser       string `json:"parser"`
+						RootSelector string `json:"root_selector"`
+						Columns      []struct {
+							Text string `json:"text"`
+						} `json:"columns"`
+					} `json:"infinityQuery"`
+				} `json:"query"`
 				InfinityQuery struct {
 					URL          string `json:"url"`
 					Parser       string `json:"parser"`
@@ -67,7 +79,7 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	if dashboard.Refresh != "1m" {
 		t.Fatalf("expected dashboard to retry transient initial empty results every minute, got refresh %q", dashboard.Refresh)
 	}
-	if dashboard.Version < 15 {
+	if dashboard.Version < 16 {
 		t.Fatalf("expected dashboard version to be bumped for Grafana provisioning reloads, got %d", dashboard.Version)
 	}
 	joined := string(b)
@@ -137,6 +149,15 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 		}
 		if len(variable.InfinityQuery.Columns) != 0 {
 			t.Fatalf("variable %q must use Grafana single-column variable mode, got %+v", variable.Name, variable.InfinityQuery.Columns)
+		}
+		if variable.Query.RefID != "variable" || variable.Query.QueryType != "infinity" {
+			t.Fatalf("variable %q must wrap query as an Infinity variable target, got %+v", variable.Name, variable.Query)
+		}
+		if variable.Query.InfinityQuery.URL != variable.InfinityQuery.URL ||
+			variable.Query.InfinityQuery.Parser != variable.InfinityQuery.Parser ||
+			variable.Query.InfinityQuery.RootSelector != variable.InfinityQuery.RootSelector ||
+			len(variable.Query.InfinityQuery.Columns) != 0 {
+			t.Fatalf("variable %q query wrapper must match the Infinity query, got %+v", variable.Name, variable.Query.InfinityQuery)
 		}
 		if len(variable.Targets) != 1 || variable.Targets[0].RefID != "variable" || variable.Targets[0].QueryType != "infinity" {
 			t.Fatalf("variable %q must define a Grafana 13 Infinity variable target, got %+v", variable.Name, variable.Targets)
