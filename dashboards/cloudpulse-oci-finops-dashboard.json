@@ -2,7 +2,7 @@
   "title": "CloudPulse OCI FinOps Dashboard",
   "uid": "cloudpulse-oci-finops-dashboard",
   "schemaVersion": 39,
-  "version": 14,
+  "version": 15,
   "refresh": "1m",
   "time": {
     "from": "now-30d",
@@ -1208,7 +1208,25 @@
           },
           "root_selector": "",
           "columns": []
-        }
+        },
+        "targets": [
+          {
+            "refId": "variable",
+            "queryType": "infinity",
+            "infinityQuery": {
+              "type": "json",
+              "source": "url",
+              "parser": "backend",
+              "url": "/api/v1/dashboard/filter-options?dimension=region&provider=oci&format=values",
+              "url_options": {
+                "data": "",
+                "method": "GET"
+              },
+              "root_selector": "",
+              "columns": []
+            }
+          }
+        ]
       },
       {
         "type": "query",
@@ -1256,7 +1274,25 @@
           },
           "root_selector": "",
           "columns": []
-        }
+        },
+        "targets": [
+          {
+            "refId": "variable",
+            "queryType": "infinity",
+            "infinityQuery": {
+              "type": "json",
+              "source": "url",
+              "parser": "backend",
+              "url": "/api/v1/dashboard/filter-options?dimension=compartment&provider=oci&region=${region}&format=values",
+              "url_options": {
+                "data": "",
+                "method": "GET"
+              },
+              "root_selector": "",
+              "columns": []
+            }
+          }
+        ]
       },
       {
         "type": "query",
@@ -1304,7 +1340,25 @@
           },
           "root_selector": "",
           "columns": []
-        }
+        },
+        "targets": [
+          {
+            "refId": "variable",
+            "queryType": "infinity",
+            "infinityQuery": {
+              "type": "json",
+              "source": "url",
+              "parser": "backend",
+              "url": "/api/v1/dashboard/filter-options?dimension=service&provider=oci&region=${region}&compartment=${compartment}&format=values",
+              "url_options": {
+                "data": "",
+                "method": "GET"
+              },
+              "root_selector": "",
+              "columns": []
+            }
+          }
+        ]
       }
     ]
   }
