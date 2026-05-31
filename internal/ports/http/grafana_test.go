@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -276,6 +277,61 @@ func TestDashboardOCICostDriversReturnsPercentOfFilteredTotal(t *testing.T) {
 	}
 	if got.Data[1].Service != "Database" || got.Data[1].TotalCost != 5 || got.Data[1].Percentage != 28.57142857142857 {
 		t.Fatalf("unexpected second cost driver: %+v", got.Data[1])
+	}
+}
+
+func TestDashboardFilterOptionsReturnsCompleteUnboundedList(t *testing.T) {
+	repo := &variableOptionsRepo{}
+	handler := NewWithOptions(nil, analytics.New(repo), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30, RetentionDays: 90})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/filter-options?dimension=service&provider=oci", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d", rr.Code)
+	}
+	var got struct {
+		Data []struct {
+			Text  string `json:"__text"`
+			Value string `json:"__value"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode filter options: %v", err)
+	}
+	if len(got.Data) != 20 {
+		t.Fatalf("expected all 20 service options, got %d: %+v", len(got.Data), got.Data)
+	}
+	if got.Data[0].Text != "Service 01" || got.Data[0].Value != "Service 01" {
+		t.Fatalf("unexpected first option: %+v", got.Data[0])
+	}
+	if got.Data[19].Text != "Service 20" || got.Data[19].Value != "Service 20" {
+		t.Fatalf("unexpected last option: %+v", got.Data[19])
+	}
+	if repo.to.Sub(repo.from) < 85*24*time.Hour {
+		t.Fatalf("filter options must query the retention window by default, got %s to %s", repo.from, repo.to)
+	}
+}
+
+func TestDashboardFilterOptionsCanReturnGrafanaValueArray(t *testing.T) {
+	repo := &variableOptionsRepo{}
+	handler := NewWithOptions(nil, analytics.New(repo), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30, RetentionDays: 90})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/filter-options?dimension=service&provider=oci&format=values", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d", rr.Code)
+	}
+	var got []string
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode filter options: %v", err)
+	}
+	if len(got) != 20 {
+		t.Fatalf("expected all 20 service options, got %d: %+v", len(got), got)
+	}
+	if got[0] != "Service 01" || got[19] != "Service 20" {
+		t.Fatalf("unexpected service options: %+v", got)
 	}
 }
 
@@ -558,6 +614,27 @@ func (r *costIncreaseRepo) CompareCostVariance(_ context.Context, period string,
 		{Period: period, Provider: domain.ProviderOCI, AccountID: "tenancy-a", CompartmentName: "down-prod", Service: "Database", CurrentCost: 5, PreviousCost: 15, Delta: -10, Direction: "decrease"},
 		{Period: period, Provider: domain.ProviderAWS, AccountID: "acct-b", CompartmentName: "aws-prod", Service: "EC2", CurrentCost: 500, PreviousCost: 100, Delta: 400, Direction: "increase"},
 	}, nil
+}
+
+type variableOptionsRepo struct {
+	grafanaRepo
+	from time.Time
+	to   time.Time
+}
+
+func (r *variableOptionsRepo) DashboardCostSummaries(_ context.Context, _ string, from time.Time, to time.Time) ([]domain.DashboardCostSummary, error) {
+	r.from = from
+	r.to = to
+	out := make([]domain.DashboardCostSummary, 0, 20)
+	for i := 1; i <= 20; i++ {
+		out = append(out, domain.DashboardCostSummary{
+			Provider:    domain.ProviderOCI,
+			Service:     fmt.Sprintf("Service %02d", i),
+			TotalCost:   float64(i),
+			PeriodStart: time.Date(2026, 5, i, 0, 0, 0, 0, time.UTC),
+		})
+	}
+	return out, nil
 }
 
 type partialDailyCostIncreaseRepo struct {

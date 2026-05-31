@@ -14,6 +14,7 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	}
 	var dashboard struct {
 		Refresh string `json:"refresh"`
+		Version int    `json:"version"`
 		Time    struct {
 			From string `json:"from"`
 		} `json:"time"`
@@ -21,6 +22,19 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 			List []struct {
 				Name          string `json:"name"`
 				QueryType     string `json:"queryType"`
+				Refresh       int    `json:"refresh"`
+				Query         struct {
+					RefID         string `json:"refId"`
+					QueryType     string `json:"queryType"`
+					InfinityQuery struct {
+						URL          string `json:"url"`
+						Parser       string `json:"parser"`
+						RootSelector string `json:"root_selector"`
+						Columns      []struct {
+							Text string `json:"text"`
+						} `json:"columns"`
+					} `json:"infinityQuery"`
+				} `json:"query"`
 				InfinityQuery struct {
 					URL          string `json:"url"`
 					Parser       string `json:"parser"`
@@ -29,6 +43,18 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 						Text string `json:"text"`
 					} `json:"columns"`
 				} `json:"infinityQuery"`
+				Targets []struct {
+					RefID         string `json:"refId"`
+					QueryType     string `json:"queryType"`
+					InfinityQuery struct {
+						URL          string `json:"url"`
+						Parser       string `json:"parser"`
+						RootSelector string `json:"root_selector"`
+						Columns      []struct {
+							Text string `json:"text"`
+						} `json:"columns"`
+					} `json:"infinityQuery"`
+				} `json:"targets"`
 			} `json:"list"`
 		} `json:"templating"`
 		Panels []struct {
@@ -52,6 +78,9 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	}
 	if dashboard.Refresh != "1m" {
 		t.Fatalf("expected dashboard to retry transient initial empty results every minute, got refresh %q", dashboard.Refresh)
+	}
+	if dashboard.Version < 16 {
+		t.Fatalf("expected dashboard version to be bumped for Grafana provisioning reloads, got %d", dashboard.Version)
 	}
 	joined := string(b)
 	for _, required := range []string{
@@ -106,13 +135,39 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 		if variable.QueryType != "infinity" {
 			t.Fatalf("variable %q must use Infinity standard variable mode, got queryType %q", variable.Name, variable.QueryType)
 		}
-		if variable.InfinityQuery.Parser != "backend" || variable.InfinityQuery.RootSelector != "data" || variable.InfinityQuery.URL == "" {
+		if variable.Refresh != 1 {
+			t.Fatalf("variable %q must refresh on dashboard load, got refresh mode %d", variable.Name, variable.Refresh)
+		}
+		if variable.InfinityQuery.Parser != "backend" || variable.InfinityQuery.RootSelector != "" || variable.InfinityQuery.URL == "" {
 			t.Fatalf("variable %q has incomplete Infinity query configuration: %+v", variable.Name, variable.InfinityQuery)
 		}
-		if len(variable.InfinityQuery.Columns) != 2 ||
-			variable.InfinityQuery.Columns[0].Text != "__text" ||
-			variable.InfinityQuery.Columns[1].Text != "__value" {
-			t.Fatalf("variable %q must map datasource rows to __text and __value, got %+v", variable.Name, variable.InfinityQuery.Columns)
+		if !strings.Contains(variable.InfinityQuery.URL, "/api/v1/dashboard/filter-options") {
+			t.Fatalf("variable %q must use the unbounded filter-options API, got %q", variable.Name, variable.InfinityQuery.URL)
+		}
+		if !strings.Contains(variable.InfinityQuery.URL, "format=values") {
+			t.Fatalf("variable %q must request single-column values for Grafana, got %q", variable.Name, variable.InfinityQuery.URL)
+		}
+		if len(variable.InfinityQuery.Columns) != 0 {
+			t.Fatalf("variable %q must use Grafana single-column variable mode, got %+v", variable.Name, variable.InfinityQuery.Columns)
+		}
+		if variable.Query.RefID != "variable" || variable.Query.QueryType != "infinity" {
+			t.Fatalf("variable %q must wrap query as an Infinity variable target, got %+v", variable.Name, variable.Query)
+		}
+		if variable.Query.InfinityQuery.URL != variable.InfinityQuery.URL ||
+			variable.Query.InfinityQuery.Parser != variable.InfinityQuery.Parser ||
+			variable.Query.InfinityQuery.RootSelector != variable.InfinityQuery.RootSelector ||
+			len(variable.Query.InfinityQuery.Columns) != 0 {
+			t.Fatalf("variable %q query wrapper must match the Infinity query, got %+v", variable.Name, variable.Query.InfinityQuery)
+		}
+		if len(variable.Targets) != 1 || variable.Targets[0].RefID != "variable" || variable.Targets[0].QueryType != "infinity" {
+			t.Fatalf("variable %q must define a Grafana 13 Infinity variable target, got %+v", variable.Name, variable.Targets)
+		}
+		targetQuery := variable.Targets[0].InfinityQuery
+		if targetQuery.URL != variable.InfinityQuery.URL ||
+			targetQuery.Parser != variable.InfinityQuery.Parser ||
+			targetQuery.RootSelector != variable.InfinityQuery.RootSelector ||
+			len(targetQuery.Columns) != 0 {
+			t.Fatalf("variable %q target query must match the Infinity query, got %+v", variable.Name, targetQuery)
 		}
 	}
 	for _, panel := range dashboard.Panels {
