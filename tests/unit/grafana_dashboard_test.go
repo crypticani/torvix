@@ -14,6 +14,7 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	}
 	var dashboard struct {
 		Refresh string `json:"refresh"`
+		Version int    `json:"version"`
 		Time    struct {
 			From string `json:"from"`
 		} `json:"time"`
@@ -52,6 +53,9 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	}
 	if dashboard.Refresh != "1m" {
 		t.Fatalf("expected dashboard to retry transient initial empty results every minute, got refresh %q", dashboard.Refresh)
+	}
+	if dashboard.Version < 13 {
+		t.Fatalf("expected dashboard version to be bumped for Grafana provisioning reloads, got %d", dashboard.Version)
 	}
 	joined := string(b)
 	for _, required := range []string{
@@ -106,16 +110,17 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 		if variable.QueryType != "infinity" {
 			t.Fatalf("variable %q must use Infinity standard variable mode, got queryType %q", variable.Name, variable.QueryType)
 		}
-		if variable.InfinityQuery.Parser != "backend" || variable.InfinityQuery.RootSelector != "data" || variable.InfinityQuery.URL == "" {
+		if variable.InfinityQuery.Parser != "backend" || variable.InfinityQuery.RootSelector != "" || variable.InfinityQuery.URL == "" {
 			t.Fatalf("variable %q has incomplete Infinity query configuration: %+v", variable.Name, variable.InfinityQuery)
 		}
 		if !strings.Contains(variable.InfinityQuery.URL, "/api/v1/dashboard/filter-options") {
 			t.Fatalf("variable %q must use the unbounded filter-options API, got %q", variable.Name, variable.InfinityQuery.URL)
 		}
-		if len(variable.InfinityQuery.Columns) != 2 ||
-			variable.InfinityQuery.Columns[0].Text != "__text" ||
-			variable.InfinityQuery.Columns[1].Text != "__value" {
-			t.Fatalf("variable %q must map datasource rows to __text and __value, got %+v", variable.Name, variable.InfinityQuery.Columns)
+		if !strings.Contains(variable.InfinityQuery.URL, "format=values") {
+			t.Fatalf("variable %q must request single-column values for Grafana, got %q", variable.Name, variable.InfinityQuery.URL)
+		}
+		if len(variable.InfinityQuery.Columns) != 0 {
+			t.Fatalf("variable %q must use Grafana single-column variable mode, got %+v", variable.Name, variable.InfinityQuery.Columns)
 		}
 	}
 	for _, panel := range dashboard.Panels {

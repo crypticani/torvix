@@ -282,7 +282,7 @@ func TestDashboardOCICostDriversReturnsPercentOfFilteredTotal(t *testing.T) {
 
 func TestDashboardFilterOptionsReturnsCompleteUnboundedList(t *testing.T) {
 	repo := &variableOptionsRepo{}
-	handler := NewWithOptions(nil, analytics.New(repo), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
+	handler := NewWithOptions(nil, analytics.New(repo), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30, RetentionDays: 90})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/filter-options?dimension=service&provider=oci", nil)
 	rr := httptest.NewRecorder()
@@ -307,6 +307,31 @@ func TestDashboardFilterOptionsReturnsCompleteUnboundedList(t *testing.T) {
 	}
 	if got.Data[19].Text != "Service 20" || got.Data[19].Value != "Service 20" {
 		t.Fatalf("unexpected last option: %+v", got.Data[19])
+	}
+	if repo.to.Sub(repo.from) < 85*24*time.Hour {
+		t.Fatalf("filter options must query the retention window by default, got %s to %s", repo.from, repo.to)
+	}
+}
+
+func TestDashboardFilterOptionsCanReturnGrafanaValueArray(t *testing.T) {
+	repo := &variableOptionsRepo{}
+	handler := NewWithOptions(nil, analytics.New(repo), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30, RetentionDays: 90})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/filter-options?dimension=service&provider=oci&format=values", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d", rr.Code)
+	}
+	var got []string
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode filter options: %v", err)
+	}
+	if len(got) != 20 {
+		t.Fatalf("expected all 20 service options, got %d: %+v", len(got), got)
+	}
+	if got[0] != "Service 01" || got[19] != "Service 20" {
+		t.Fatalf("unexpected service options: %+v", got)
 	}
 }
 
@@ -593,9 +618,13 @@ func (r *costIncreaseRepo) CompareCostVariance(_ context.Context, period string,
 
 type variableOptionsRepo struct {
 	grafanaRepo
+	from time.Time
+	to   time.Time
 }
 
-func (r *variableOptionsRepo) DashboardCostSummaries(context.Context, string, time.Time, time.Time) ([]domain.DashboardCostSummary, error) {
+func (r *variableOptionsRepo) DashboardCostSummaries(_ context.Context, _ string, from time.Time, to time.Time) ([]domain.DashboardCostSummary, error) {
+	r.from = from
+	r.to = to
 	out := make([]domain.DashboardCostSummary, 0, 20)
 	for i := 1; i <= 20; i++ {
 		out = append(out, domain.DashboardCostSummary{

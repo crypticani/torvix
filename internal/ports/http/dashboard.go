@@ -195,7 +195,7 @@ func (h *Handler) dashboardFilterOptions(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dimension must be one of region, compartment, service"})
 		return
 	}
-	from, to, meta, ok := h.dashboardRange(r)
+	from, to, meta, ok := h.dashboardFilterOptionsRange(r)
 	if !ok {
 		writeJSON(w, http.StatusOK, dashboardFilterOptionsResponse{Meta: meta, Data: []dashboardFilterOption{}})
 		return
@@ -237,6 +237,14 @@ func (h *Handler) dashboardFilterOptions(w http.ResponseWriter, r *http.Request)
 		}
 		return left < right
 	})
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("format")), "values") {
+		flat := make([]string, 0, len(out))
+		for _, option := range out {
+			flat = append(flat, option.Value)
+		}
+		writeJSON(w, http.StatusOK, flat)
+		return
+	}
 	writeJSON(w, http.StatusOK, dashboardFilterOptionsResponse{Meta: meta, Data: out})
 }
 
@@ -626,6 +634,15 @@ func (h *Handler) dashboardRange(r *http.Request) (time.Time, time.Time, dashboa
 		from = maxFrom
 	}
 	return from, to, h.dashboardMeta(from, to, ""), true
+}
+
+func (h *Handler) dashboardFilterOptionsRange(r *http.Request) (time.Time, time.Time, dashboardMeta, bool) {
+	if r.URL.Query().Get("from") != "" || r.URL.Query().Get("to") != "" {
+		return h.dashboardRange(r)
+	}
+	now := time.Now().UTC()
+	from := now.AddDate(0, 0, -h.retentionDays)
+	return from, now, h.dashboardMeta(from, now, ""), true
 }
 
 func parseDashboardTime(value string) (time.Time, bool, error) {
