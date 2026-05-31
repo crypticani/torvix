@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/crypticani/cloudpulse/internal/domain"
+	"github.com/crypticani/torvix/internal/domain"
 )
 
 type dashboardMeta struct {

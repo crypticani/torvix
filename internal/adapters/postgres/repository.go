@@ -13,8 +13,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/crypticani/cloudpulse/internal/domain"
-	"github.com/crypticani/cloudpulse/internal/ports/storage"
+	"github.com/crypticani/torvix/internal/domain"
+	"github.com/crypticani/torvix/internal/ports/storage"
 )
 
 var _ storage.Repository = (*Repository)(nil)

@@ -1,9 +1,9 @@
 scrape_configs:
-  - job_name: cloudpulse
+  - job_name: torvix
     metrics_path: /metrics
     scrape_interval: 60s
     static_configs:
       - targets:
-          # Change the port if CloudPulse is started with CLOUDPULSE_HTTP_PORT
+          # Change the port if Torvix is started with TORVIX_HTTP_PORT
           # or a non-default http.address.
-          - cloudpulse.example.internal:8080
+          - torvix.example.internal:8080

@@ -1,6 +1,6 @@
 apiVersion: 1
 
-# Local development only. Production Grafana should use the CloudPulse API
+# Local development only. Production Grafana should use the Torvix API
 # datasource example and keep PostgreSQL private.
 datasources:
   - name: Prometheus
@@ -9,8 +9,8 @@ datasources:
     access: proxy
     url: http://127.0.0.1:9090
     isDefault: true
-  - name: CloudPulse API
-    uid: CloudPulseAPI
+  - name: Torvix API
+    uid: TorvixAPI
     type: yesoreyeram-infinity-datasource
     access: proxy
     url: http://127.0.0.1:8080
@@ -21,10 +21,10 @@ datasources:
     type: postgres
     access: proxy
     url: 127.0.0.1:5432
-    database: cloudpulse
-    user: cloudpulse
+    database: torvix
+    user: torvix
     secureJsonData:
-      password: cloudpulse
+      password: torvix
     jsonData:
       sslmode: "disable"
       postgresVersion: 18

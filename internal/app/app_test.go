@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/crypticani/cloudpulse/internal/config"
-	"github.com/crypticani/cloudpulse/internal/core/alerting"
-	"github.com/crypticani/cloudpulse/internal/core/analytics"
-	"github.com/crypticani/cloudpulse/internal/core/collect"
-	"github.com/crypticani/cloudpulse/internal/core/forecasting"
-	"github.com/crypticani/cloudpulse/internal/core/reporting"
-	"github.com/crypticani/cloudpulse/internal/domain"
+	"github.com/crypticani/torvix/internal/config"
+	"github.com/crypticani/torvix/internal/core/alerting"
+	"github.com/crypticani/torvix/internal/core/analytics"
+	"github.com/crypticani/torvix/internal/core/collect"
+	"github.com/crypticani/torvix/internal/core/forecasting"
+	"github.com/crypticani/torvix/internal/core/reporting"
+	"github.com/crypticani/torvix/internal/domain"
 )
 
 func TestDeliverScheduledReportsSendsDailyWeeklyAndMonthly(t *testing.T) {

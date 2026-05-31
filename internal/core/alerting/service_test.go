@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/crypticani/cloudpulse/internal/config"
-	"github.com/crypticani/cloudpulse/internal/domain"
+	"github.com/crypticani/torvix/internal/config"
+	"github.com/crypticani/torvix/internal/domain"
 )
 
 func TestSendReportHTTPNotifiers(t *testing.T) {
@@ -58,7 +58,7 @@ func TestSendReportHTTPNotifiers(t *testing.T) {
 				if body["chat_id"] != "12345" {
 					t.Fatalf("expected telegram chat id, got %#v", body)
 				}
-				if !strings.Contains(body["text"].(string), "CloudPulse Daily Report") {
+				if !strings.Contains(body["text"].(string), "Torvix Daily Report") {
 					t.Fatalf("expected telegram report text, got %#v", body)
 				}
 			},
@@ -263,7 +263,7 @@ func TestSendNotificationHTTPNotifiers(t *testing.T) {
 				if body["chat_id"] != "12345" {
 					t.Fatalf("expected telegram chat id, got %#v", body)
 				}
-				if !strings.Contains(body["text"].(string), "CloudPulse Ingestion Succeeded") {
+				if !strings.Contains(body["text"].(string), "Torvix Ingestion Succeeded") {
 					t.Fatalf("expected ingestion notification text, got %#v", body)
 				}
 			},
@@ -323,7 +323,7 @@ func TestSendReportEmail(t *testing.T) {
 		SMTPPort:      2525,
 		From:          "finops@example.test",
 		To:            []string{"ops@example.test"},
-		SubjectPrefix: "[CloudPulse]",
+		SubjectPrefix: "[Torvix]",
 	}})
 	svc.sendMail = func(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
 		gotAddr = addr
@@ -343,7 +343,7 @@ func TestSendReportEmail(t *testing.T) {
 		t.Fatalf("unexpected envelope from=%s to=%v", gotFrom, gotTo)
 	}
 	msg := string(gotMsg)
-	if !strings.Contains(msg, "Subject: [CloudPulse] CloudPulse Daily Report") {
+	if !strings.Contains(msg, "Subject: [Torvix] Torvix Daily Report") {
 		t.Fatalf("expected subject in email, got %s", msg)
 	}
 	if !strings.Contains(msg, "Total Cost: USD 123.45") {
@@ -362,7 +362,7 @@ func TestSendNotificationEmail(t *testing.T) {
 		SMTPPort:      2525,
 		From:          "finops@example.test",
 		To:            []string{"ops@example.test"},
-		SubjectPrefix: "[CloudPulse]",
+		SubjectPrefix: "[Torvix]",
 	}})
 	svc.sendMail = func(_ string, _ smtp.Auth, _ string, _ []string, msg []byte) error {
 		gotMsg = append([]byte(nil), msg...)
@@ -373,7 +373,7 @@ func TestSendNotificationEmail(t *testing.T) {
 		t.Fatalf("send notification: %v", err)
 	}
 	msg := string(gotMsg)
-	if !strings.Contains(msg, "Subject: [CloudPulse] CloudPulse Ingestion Succeeded") {
+	if !strings.Contains(msg, "Subject: [Torvix] Torvix Ingestion Succeeded") {
 		t.Fatalf("expected subject in email, got %s", msg)
 	}
 	if !strings.Contains(msg, "Records inserted: 100") {
@@ -390,7 +390,7 @@ func TestSendReportUnsupportedNotifier(t *testing.T) {
 
 func sampleNotification() Notification {
 	return Notification{
-		Title:    "CloudPulse Ingestion Succeeded",
+		Title:    "Torvix Ingestion Succeeded",
 		Severity: "success",
 		Message:  "Background ingestion finished with status success.",
 		Fields: []NotificationField{

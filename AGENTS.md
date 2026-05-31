@@ -2,19 +2,19 @@
 
 ## Project Structure & Module Organization
 
-`cmd/cloudpulse` contains the application entrypoint. `internal/app` wires configuration, migrations, lifecycle policies, collectors, services, HTTP routes, and scheduler startup. Core behavior lives under `internal/core` for collection, normalization, analytics, forecasting, reporting, and alerting. Shared models, config, and logging live in `internal/domain`, `internal/config`, and `internal/logging`.
+`cmd/torvix` contains the application entrypoint. `internal/app` wires configuration, migrations, lifecycle policies, collectors, services, HTTP routes, and scheduler startup. Core behavior lives under `internal/core` for collection, normalization, analytics, forecasting, reporting, and alerting. Shared models, config, and logging live in `internal/domain`, `internal/config`, and `internal/logging`.
 
 Infrastructure code belongs in `internal/adapters`: PostgreSQL/TimescaleDB persistence in `internal/adapters/postgres`, Prometheus metrics in `internal/adapters/prometheus`, and cloud collectors in `internal/adapters/providers`. HTTP handlers and API response contracts are in `internal/ports/http`; provider/storage interfaces live under `internal/ports`. SQL migrations are in `migrations`. Runtime assets are in `configs`, `deploy`, `docker`, and `dashboards`. Generated API docs live in `docs`. Cross-package tests live in `tests/unit`, with focused package tests beside the code they cover.
 
 ## Current Architecture Rules
 
-CloudPulse permanently uses PostgreSQL with the TimescaleDB extension. Do not add ClickHouse, dual database paths, or generic repository indirection unless the user explicitly asks for a new backend.
+Torvix permanently uses PostgreSQL with the TimescaleDB extension. Do not add ClickHouse, dual database paths, or generic repository indirection unless the user explicitly asks for a new backend.
 
 The project is operational FinOps tooling, not archival billing warehousing. Keep `ingestion.retention_days` at 90 days by default and `compression_after_days` at 7 days unless a task explicitly changes the lifecycle. Raw `cost_records`, dashboard summaries, anomalies, and forecasts should stay aligned to that operational horizon.
 
 OCI is a first-class provider. The current runtime only wires collectors for enabled providers; if only OCI is enabled, AWS, Azure, and GCP collectors must not run. Keep provider-specific parsing, mapping, and Object Storage behavior in `internal/adapters/providers/oci`, behind the provider interfaces in `internal/ports/providers`.
 
-Dashboard cost panels must read CloudPulse HTTP APIs backed by precomputed PostgreSQL/TimescaleDB summary tables. Production Grafana must not query PostgreSQL directly. Keep Prometheus focused on operational metrics; do not push high-cardinality billing dimensions into Prometheus labels.
+Dashboard cost panels must read Torvix HTTP APIs backed by precomputed PostgreSQL/TimescaleDB summary tables. Production Grafana must not query PostgreSQL directly. Keep Prometheus focused on operational metrics; do not push high-cardinality billing dimensions into Prometheus labels.
 
 ## Branching & Release Workflow
 
@@ -32,24 +32,24 @@ When the user asks to release, merge the feature branch back to `main`, tag from
 - `make fmt`: run `go fmt ./...`.
 - `make tidy`: synchronize Go module dependencies.
 - `make swagger`: regenerate `docs` from Swagger annotations with `swag`.
-- `make compose-dev-up`: start the full local stack: CloudPulse, TimescaleDB, Prometheus, and Grafana.
+- `make compose-dev-up`: start the full local stack: Torvix, TimescaleDB, Prometheus, and Grafana.
 - `make compose-dev-down`: stop the local stack and remove volumes.
 - `make compose-dev-config`: validate the dev Compose file.
-- `make compose-prod-up`: start only the CloudPulse production app container.
+- `make compose-prod-up`: start only the Torvix production app container.
 - `make compose-prod-down`: stop the production app container.
 - `make compose-prod-config`: validate the production Compose file.
 
 If Go needs writable build caches in this environment, use:
 
 ```bash
-env GOCACHE=/tmp/cloudpulse-go-build GOMODCACHE=/tmp/cloudpulse-go-mod go test ./...
+env GOCACHE=/tmp/torvix-go-build GOMODCACHE=/tmp/torvix-go-mod go test ./...
 ```
 
 ## Coding Style & Naming Conventions
 
 Use standard Go formatting and keep code `gofmt` clean. Prefer small packages with explicit responsibilities and constructor-style `New(...)` functions. Exported identifiers use `CamelCase`; unexported helpers use `camelCase`. Keep interfaces in `internal/ports` and concrete implementations in `internal/adapters`.
 
-Use structured logging through `log/slog`, especially around provider discovery, download, parsing, normalization, insertion, dashboard refresh, retention, and query execution boundaries. Keep YAML keys `snake_case`, and preserve environment override behavior for `CLOUDPULSE_HTTP_ADDRESS`, `CLOUDPULSE_HTTP_PORT`, and `CLOUDPULSE_GRAFANA_API_BEARER_TOKEN`.
+Use structured logging through `log/slog`, especially around provider discovery, download, parsing, normalization, insertion, dashboard refresh, retention, and query execution boundaries. Keep YAML keys `snake_case`, and preserve environment override behavior for `TORVIX_HTTP_ADDRESS`, `TORVIX_HTTP_PORT`, and `TORVIX_GRAFANA_API_BEARER_TOKEN`.
 
 ## Ingestion Contract
 
@@ -76,7 +76,7 @@ Provider-scoped dashboard endpoints are part of the public contract, especially:
 - `/api/v1/dashboard/anomalies?provider=oci`
 - `/api/v1/dashboard/ingestion-status`
 
-When changing Grafana dashboards or provisioning, validate that the running dashboard actually calls the CloudPulse APIs on load. Curling endpoints or editing a panel manually is not enough. Inspect the live provisioned dashboard if behavior differs from JSON on disk.
+When changing Grafana dashboards or provisioning, validate that the running dashboard actually calls the Torvix APIs on load. Curling endpoints or editing a panel manually is not enough. Inspect the live provisioned dashboard if behavior differs from JSON on disk.
 
 ## Testing Guidelines
 
@@ -92,4 +92,4 @@ Use concise imperative commit messages, for example `fix dashboard date range ma
 
 Do not commit real cloud credentials, database passwords, webhook URLs, SMTP credentials, billing exports, or OCI config files. Start from `configs/config.example.yaml` or `configs/config.prod.example.yaml` and keep real environment files ignored.
 
-Treat cloud collectors and billing exports as external-input boundaries: validate file formats, sanitize parsed fields, tolerate schema drift, and preserve bucket, object name, ETag, and provider metadata for traceability. In production, keep PostgreSQL private to CloudPulse and database administration paths; Grafana should access cost data only through CloudPulse API endpoints and Prometheus.
+Treat cloud collectors and billing exports as external-input boundaries: validate file formats, sanitize parsed fields, tolerate schema drift, and preserve bucket, object name, ETag, and provider metadata for traceability. In production, keep PostgreSQL private to Torvix and database administration paths; Grafana should access cost data only through Torvix API endpoints and Prometheus.

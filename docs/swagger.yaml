@@ -1,11 +1,11 @@
 basePath: /
 definitions:
-  github_com_crypticani_cloudpulse_internal_domain.AggregatedCost:
+  github_com_crypticani_torvix_internal_domain.AggregatedCost:
     properties:
       account_id:
         type: string
       provider:
-        $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Provider'
+        $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.Provider'
       service:
         type: string
       total_cost:
@@ -15,7 +15,7 @@ definitions:
       window_start:
         type: string
     type: object
-  github_com_crypticani_cloudpulse_internal_domain.Anomaly:
+  github_com_crypticani_torvix_internal_domain.Anomaly:
     properties:
       account_id:
         type: string
@@ -36,7 +36,7 @@ definitions:
       percent_deviation:
         type: number
       provider:
-        $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Provider'
+        $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.Provider'
       region:
         type: string
       service:
@@ -46,7 +46,7 @@ definitions:
       z_score:
         type: number
     type: object
-  github_com_crypticani_cloudpulse_internal_domain.ForecastPoint:
+  github_com_crypticani_torvix_internal_domain.ForecastPoint:
     properties:
       account_id:
         type: string
@@ -59,11 +59,11 @@ definitions:
       forecast_cost:
         type: number
       provider:
-        $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Provider'
+        $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.Provider'
       service:
         type: string
     type: object
-  github_com_crypticani_cloudpulse_internal_domain.Provider:
+  github_com_crypticani_torvix_internal_domain.Provider:
     enum:
     - aws
     - azure
@@ -75,23 +75,23 @@ definitions:
     - ProviderAzure
     - ProviderGCP
     - ProviderOCI
-  github_com_crypticani_cloudpulse_internal_domain.Report:
+  github_com_crypticani_torvix_internal_domain.Report:
     properties:
       anomalies:
         items:
-          $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Anomaly'
+          $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.Anomaly'
         type: array
       cost_decreases:
         items:
-          $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.CostVariance'
+          $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.CostVariance'
         type: array
       cost_increases:
         items:
-          $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.CostVariance'
+          $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.CostVariance'
         type: array
       forecast:
         items:
-          $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.ForecastPoint'
+          $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.ForecastPoint'
         type: array
       from:
         type: string
@@ -101,7 +101,7 @@ definitions:
         type: string
       summary:
         items:
-          $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.AggregatedCost'
+          $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.AggregatedCost'
         type: array
       to:
         type: string
@@ -206,13 +206,13 @@ definitions:
 host: localhost:8080
 info:
   contact:
-    name: CloudPulse Team
+    name: Torvix Team
   description: Multi-cloud FinOps cost analytics platform. Collects billing data from
     AWS, Azure, GCP, and OCI, normalises it into a canonical schema, and provides
     precomputed cost summaries, deterministic anomaly detection, forecasting, and
     automated reporting.
-  title: CloudPulse API
-  version: 0.6.1
+  title: Torvix API
+  version: 0.7.0
 paths:
   /api/v1/analytics/anomalies:
     get:
@@ -236,7 +236,7 @@ paths:
           description: Detected anomalies
           schema:
             items:
-              $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Anomaly'
+              $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.Anomaly'
             type: array
         "500":
           description: Detection failed
@@ -267,7 +267,7 @@ paths:
           description: Forecast data points
           schema:
             items:
-              $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.ForecastPoint'
+              $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.ForecastPoint'
             type: array
         "500":
           description: Forecast generation failed
@@ -307,7 +307,7 @@ paths:
           description: Cost aggregation results
           schema:
             items:
-              $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.AggregatedCost'
+              $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.AggregatedCost'
             type: array
         "500":
           description: Aggregation failed
@@ -392,7 +392,7 @@ paths:
         "200":
           description: Daily report
           schema:
-            $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Report'
+            $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.Report'
         "500":
           description: Report generation failed
           schema:
@@ -433,7 +433,7 @@ paths:
         "200":
           description: Monthly report
           schema:
-            $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Report'
+            $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.Report'
         "500":
           description: Report generation failed
           schema:
@@ -474,7 +474,7 @@ paths:
         "200":
           description: Weekly report
           schema:
-            $ref: '#/definitions/github_com_crypticani_cloudpulse_internal_domain.Report'
+            $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.Report'
         "500":
           description: Report generation failed
           schema:
@@ -488,7 +488,7 @@ paths:
       - Reports
   /healthz:
     get:
-      description: Returns the health status of the CloudPulse API server.
+      description: Returns the health status of the Torvix API server.
       produces:
       - application/json
       responses:

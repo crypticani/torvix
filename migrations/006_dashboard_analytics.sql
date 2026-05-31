@@ -1,5 +1,5 @@
 -- Precomputed dashboard analytics for production-safe Grafana panels.
--- Grafana reads these through CloudPulse HTTP APIs; it should not query
+-- Grafana reads these through Torvix HTTP APIs; it should not query
 -- PostgreSQL directly in production.
 
 CREATE TABLE IF NOT EXISTS daily_cost_summaries

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/crypticani/cloudpulse/internal/domain"
+	"github.com/crypticani/torvix/internal/domain"
 )
 
 type FileBatch struct {

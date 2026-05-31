@@ -14,12 +14,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	httpSwagger "github.com/swaggo/http-swagger"
 
-	"github.com/crypticani/cloudpulse/internal/core/alerting"
-	"github.com/crypticani/cloudpulse/internal/core/analytics"
-	"github.com/crypticani/cloudpulse/internal/core/collect"
-	"github.com/crypticani/cloudpulse/internal/core/forecasting"
-	"github.com/crypticani/cloudpulse/internal/core/reporting"
-	"github.com/crypticani/cloudpulse/internal/domain"
+	"github.com/crypticani/torvix/internal/core/alerting"
+	"github.com/crypticani/torvix/internal/core/analytics"
+	"github.com/crypticani/torvix/internal/core/collect"
+	"github.com/crypticani/torvix/internal/core/forecasting"
+	"github.com/crypticani/torvix/internal/core/reporting"
+	"github.com/crypticani/torvix/internal/domain"
 )
 
 type Handler struct {
@@ -139,7 +139,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // health godoc
 //
 //	@Summary		Health check
-//	@Description	Returns the health status of the CloudPulse API server.
+//	@Description	Returns the health status of the Torvix API server.
 //	@Tags			Health
 //	@Produce		json
 //	@Success		200	{object}	StatusResponse	"Service is healthy"
@@ -320,7 +320,7 @@ func ingestionNotification(job IngestionJobResponse) alerting.Notification {
 	}
 
 	return alerting.Notification{
-		Title:    "CloudPulse Ingestion " + titleForNotification(job.Status),
+		Title:    "Torvix Ingestion " + titleForNotification(job.Status),
 		Severity: severity,
 		Message:  message,
 		Fields: []alerting.NotificationField{

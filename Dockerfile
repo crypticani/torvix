@@ -5,11 +5,13 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=${TARGETARCH:-$(go env GOARCH)} go build -o /out/cloudpulse ./cmd/cloudpulse
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=${TARGETARCH:-$(go env GOARCH)} go build -o /out/torvix ./cmd/torvix
 
 FROM alpine:3.22
+LABEL org.opencontainers.image.title="Torvix" \
+      org.opencontainers.image.description="Torvix is an open-source cloud cost intelligence and waste detection platform."
 WORKDIR /app
-COPY --from=build /out/cloudpulse /app/cloudpulse
+COPY --from=build /out/torvix /app/torvix
 COPY migrations /app/migrations
 EXPOSE 8080
-ENTRYPOINT ["/app/cloudpulse"]
+ENTRYPOINT ["/app/torvix"]

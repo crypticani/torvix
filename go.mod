@@ -1,4 +1,4 @@
-module github.com/crypticani/cloudpulse
+module github.com/crypticani/torvix
 
 go 1.24.0
 

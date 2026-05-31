@@ -1,19 +1,19 @@
 log_level: info
 
 logging:
-  # Can be overridden with CLOUDPULSE_LOG_LEVEL.
+  # Can be overridden with TORVIX_LOG_LEVEL.
   level: info
-  # Can be overridden with CLOUDPULSE_LOG_DIR.
+  # Can be overridden with TORVIX_LOG_DIR.
   dir: logs
-  # Can be overridden with CLOUDPULSE_LOG_RETENTION_DAYS.
+  # Can be overridden with TORVIX_LOG_RETENTION_DAYS.
   retention_days: 14
 
 http:
-  # Can be overridden at runtime with CLOUDPULSE_HTTP_ADDRESS or CLOUDPULSE_HTTP_PORT.
+  # Can be overridden at runtime with TORVIX_HTTP_ADDRESS, TORVIX_HTTP_PORT, or TORVIX_API_PORT.
   address: ":8080"
 
 db:
-  dsn: "postgres://cloudpulse:cloudpulse@postgres:5432/cloudpulse?sslmode=disable"
+  dsn: "postgres://torvix:torvix@postgres:5432/torvix?sslmode=disable"
   max_conns: 20
   min_conns: 2
 
@@ -80,14 +80,15 @@ reporting:
       smtp_port: 587
       username: "replace_with_smtp_user"
       password: "replace_with_smtp_password"
-      from: "cloudpulse@example.com"
+      from: "torvix@example.com"
       to:
         - "finops@example.com"
-      subject_prefix: "[CloudPulse]"
+      subject_prefix: "[Torvix]"
       currency: INR
       enabled: false
 
 metrics:
+  # The legacy cloudpulse namespace remains the compatibility default for existing dashboards.
   namespace: cloudpulse
   cost_stats_enabled: false
 

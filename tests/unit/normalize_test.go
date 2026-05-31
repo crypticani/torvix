@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/crypticani/cloudpulse/internal/core/normalize"
-	"github.com/crypticani/cloudpulse/internal/domain"
+	"github.com/crypticani/torvix/internal/core/normalize"
+	"github.com/crypticani/torvix/internal/domain"
 )
 
 func TestNormalize(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"github.com/oracle/oci-go-sdk/v65/common"
 	"github.com/oracle/oci-go-sdk/v65/objectstorage"
 
-	"github.com/crypticani/cloudpulse/internal/config"
+	"github.com/crypticani/torvix/internal/config"
 )
 
 type ObjectInfo struct {

@@ -10,17 +10,17 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/crypticani/cloudpulse/docs"
-	"github.com/crypticani/cloudpulse/internal/app"
-	"github.com/crypticani/cloudpulse/internal/config"
-	"github.com/crypticani/cloudpulse/internal/logging"
+	_ "github.com/crypticani/torvix/docs"
+	"github.com/crypticani/torvix/internal/app"
+	"github.com/crypticani/torvix/internal/config"
+	"github.com/crypticani/torvix/internal/logging"
 )
 
-//	@title			CloudPulse API
-//	@version		0.6.1
-//	@description	Multi-cloud FinOps cost analytics platform. Collects billing data from AWS, Azure, GCP, and OCI, normalises it into a canonical schema, and provides real-time cost summaries, anomaly detection, forecasting, and automated reporting.
+//	@title			Torvix API
+//	@version		0.7.0
+//	@description	Torvix is an open-source FinOps platform for cloud cost visibility, anomaly detection, forecasting, and unused-resource detection across cloud providers.
 
-//	@contact.name	CloudPulse Team
+//	@contact.name	Torvix Team
 
 //	@host			localhost:8080
 //	@BasePath		/

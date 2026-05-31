@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/crypticani/cloudpulse/internal/domain"
+	"github.com/crypticani/torvix/internal/domain"
 )
 
 func (r *Repository) RefreshDashboardAnalytics(ctx context.Context, from, to time.Time, retentionDays int) error {

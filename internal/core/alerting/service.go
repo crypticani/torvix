@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/crypticani/cloudpulse/internal/config"
-	"github.com/crypticani/cloudpulse/internal/domain"
+	"github.com/crypticani/torvix/internal/config"
+	"github.com/crypticani/torvix/internal/domain"
 )
 
 type smtpSender func(addr string, auth smtp.Auth, from string, to []string, msg []byte) error
@@ -462,7 +462,7 @@ func summarize(target config.Webhook, report domain.Report) reportSummary {
 		total += s.TotalCost
 	}
 	return reportSummary{
-		Title:            fmt.Sprintf("CloudPulse %s Report", title(report.Period)),
+		Title:            fmt.Sprintf("Torvix %s Report", title(report.Period)),
 		PeriodRange:      reportPeriodRange(report),
 		TotalCost:        formatCost(target.Currency, total),
 		AnomalyCount:     len(report.Anomalies),

@@ -30,10 +30,10 @@ func TestLoggingDefaults(t *testing.T) {
 
 func TestLoggingEnvOverrides(t *testing.T) {
 	t.Setenv(EnvLogLevel, "debug")
-	t.Setenv(EnvLogDir, "/var/log/cloudpulse")
+	t.Setenv(EnvLogDir, "/var/log/torvix")
 	t.Setenv(EnvLogRetentionDays, "3")
 
-	cfg := loadTestConfig(t, "log_level: error\nlogging:\n  level: warn\n  dir: /tmp/cloudpulse\n  retention_days: 30\n")
+	cfg := loadTestConfig(t, "log_level: error\nlogging:\n  level: warn\n  dir: /tmp/torvix\n  retention_days: 30\n")
 
 	if cfg.Logging.Level != "debug" {
 		t.Fatalf("expected %s override debug, got %q", EnvLogLevel, cfg.Logging.Level)
@@ -41,11 +41,61 @@ func TestLoggingEnvOverrides(t *testing.T) {
 	if cfg.LogLevel != "debug" {
 		t.Fatalf("expected legacy log_level mirror debug, got %q", cfg.LogLevel)
 	}
-	if cfg.Logging.Dir != "/var/log/cloudpulse" {
-		t.Fatalf("expected %s override /var/log/cloudpulse, got %q", EnvLogDir, cfg.Logging.Dir)
+	if cfg.Logging.Dir != "/var/log/torvix" {
+		t.Fatalf("expected %s override /var/log/torvix, got %q", EnvLogDir, cfg.Logging.Dir)
 	}
 	if cfg.Logging.RetentionDays != 3 {
 		t.Fatalf("expected %s override 3, got %d", EnvLogRetentionDays, cfg.Logging.RetentionDays)
+	}
+}
+
+func TestTorvixEnvOverridesTakePriorityOverLegacyEnv(t *testing.T) {
+	t.Setenv(EnvHTTPPort, "19090")
+	t.Setenv(LegacyEnvHTTPPort, "18080")
+	t.Setenv(EnvLogLevel, "debug")
+	t.Setenv(LegacyEnvLogLevel, "warn")
+	t.Setenv(EnvGrafanaAPIBearerToken, "torvix-token")
+	t.Setenv(LegacyEnvGrafanaAPIBearerToken, "cloudpulse-token")
+
+	cfg := loadTestConfig(t, "http:\n  address: \":8080\"\n")
+
+	if cfg.HTTP.Address != ":19090" {
+		t.Fatalf("expected %s priority over %s, got %q", EnvHTTPPort, LegacyEnvHTTPPort, cfg.HTTP.Address)
+	}
+	if cfg.Logging.Level != "debug" {
+		t.Fatalf("expected %s priority over %s, got %q", EnvLogLevel, LegacyEnvLogLevel, cfg.Logging.Level)
+	}
+	if cfg.Grafana.APIAuth.BearerToken != "torvix-token" {
+		t.Fatalf("expected %s priority over %s, got %q", EnvGrafanaAPIBearerToken, LegacyEnvGrafanaAPIBearerToken, cfg.Grafana.APIAuth.BearerToken)
+	}
+}
+
+func TestLegacyEnvFallbacksStillWork(t *testing.T) {
+	t.Setenv(LegacyEnvHTTPPort, "18080")
+	t.Setenv(LegacyEnvLogDir, "/var/log/cloudpulse")
+	t.Setenv(LegacyEnvLogRetentionDays, "5")
+
+	cfg := loadTestConfig(t, "http:\n  address: \":8080\"\n")
+
+	if cfg.HTTP.Address != ":18080" {
+		t.Fatalf("expected legacy %s fallback, got %q", LegacyEnvHTTPPort, cfg.HTTP.Address)
+	}
+	if cfg.Logging.Dir != "/var/log/cloudpulse" {
+		t.Fatalf("expected legacy %s fallback, got %q", LegacyEnvLogDir, cfg.Logging.Dir)
+	}
+	if cfg.Logging.RetentionDays != 5 {
+		t.Fatalf("expected legacy %s fallback, got %d", LegacyEnvLogRetentionDays, cfg.Logging.RetentionDays)
+	}
+}
+
+func TestAPIPortAliasOverridesHTTPPortFallback(t *testing.T) {
+	t.Setenv(EnvAPIPort, "19090")
+	t.Setenv(LegacyEnvHTTPPort, "18080")
+
+	cfg := loadTestConfig(t, "http:\n  address: \":8080\"\n")
+
+	if cfg.HTTP.Address != ":19090" {
+		t.Fatalf("expected %s priority over %s, got %q", EnvAPIPort, LegacyEnvHTTPPort, cfg.HTTP.Address)
 	}
 }
 

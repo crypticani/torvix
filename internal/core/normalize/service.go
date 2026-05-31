@@ -1,6 +1,6 @@
 package normalize
 
-import "github.com/crypticani/cloudpulse/internal/domain"
+import "github.com/crypticani/torvix/internal/domain"
 
 type Service struct{}
 

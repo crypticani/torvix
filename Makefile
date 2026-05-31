@@ -1,4 +1,4 @@
-APP=cloudpulse
+APP=torvix
 DEV_COMPOSE=docker compose -f docker-compose.dev.yml
 PROD_COMPOSE=docker compose -f docker-compose.prod.yml
 
@@ -8,10 +8,10 @@ build:
 	go build ./cmd/... ./internal/...
 
 swagger:
-	swag init -g cmd/cloudpulse/main.go -o docs --parseDependency --parseInternal
+	swag init -g cmd/torvix/main.go -o docs --parseDependency --parseInternal
 
 run:
-	go run ./cmd/cloudpulse -config configs/config.yaml
+	go run ./cmd/torvix -config configs/config.yaml
 
 test:
 	go test ./cmd/... ./internal/... ./tests/...

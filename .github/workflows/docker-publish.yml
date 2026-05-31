@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE_NAME: crypticani/cloudpulse
+  IMAGE_NAME: crypticani/torvix
 
 jobs:
   docker:

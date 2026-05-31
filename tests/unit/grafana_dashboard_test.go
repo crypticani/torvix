@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
-	b, err := os.ReadFile("../../dashboards/cloudpulse-oci-finops-dashboard.json")
+func TestGrafanaDashboardUsesTorvixDashboardAPIs(t *testing.T) {
+	b, err := os.ReadFile("../../dashboards/torvix-oci-finops-dashboard.json")
 	if err != nil {
 		t.Fatalf("read dashboard: %v", err)
 	}
@@ -20,10 +20,10 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 		} `json:"time"`
 		Templating struct {
 			List []struct {
-				Name          string `json:"name"`
-				QueryType     string `json:"queryType"`
-				Refresh       int    `json:"refresh"`
-				Query         struct {
+				Name      string `json:"name"`
+				QueryType string `json:"queryType"`
+				Refresh   int    `json:"refresh"`
+				Query     struct {
 					RefID         string `json:"refId"`
 					QueryType     string `json:"queryType"`
 					InfinityQuery struct {
@@ -113,7 +113,7 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 		t.Fatalf("dashboard must not depend on PostgreSQL datasource or legacy grafana raw endpoints")
 	}
 	if !strings.Contains(joined, "from=${__from:date:iso}") || !strings.Contains(joined, "to=${__to:date:iso}") {
-		t.Fatalf("dashboard API panels must pass the selected Grafana time range to CloudPulse APIs")
+		t.Fatalf("dashboard API panels must pass the selected Grafana time range to Torvix APIs")
 	}
 	if strings.Contains(joined, "currencyUSD") {
 		t.Fatalf("dashboard must not hardcode USD currency units for OCI cost panels")
@@ -126,7 +126,7 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	if !strings.Contains(joined, "region=${region}") ||
 		!strings.Contains(joined, "compartment=${compartment}") ||
 		!strings.Contains(joined, "service=${service}") {
-		t.Fatalf("dashboard drill-down panels must pass region, compartment, and service variables to CloudPulse APIs")
+		t.Fatalf("dashboard drill-down panels must pass region, compartment, and service variables to Torvix APIs")
 	}
 	if len(dashboard.Templating.List) != 3 {
 		t.Fatalf("expected region, compartment, and service variables, got %d", len(dashboard.Templating.List))
@@ -171,12 +171,12 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 		}
 	}
 	for _, panel := range dashboard.Panels {
-		if panel.Datasource.UID != "CloudPulseAPI" {
+		if panel.Datasource.UID != "TorvixAPI" {
 			continue
 		}
 		for _, target := range panel.Targets {
 			if target.Parser != "backend" {
-				t.Fatalf("CloudPulse API target %q must use Infinity backend parser, got %q", target.URL, target.Parser)
+				t.Fatalf("Torvix API target %q must use Infinity backend parser, got %q", target.URL, target.Parser)
 			}
 			if strings.HasPrefix(target.URL, "/api/v1/dashboard/overview") && target.RootSelector == "data" && !target.RootIsNotArray {
 				t.Fatalf("overview target must mark root data object as not an array for Infinity")

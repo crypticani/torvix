@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/crypticani/cloudpulse/internal/domain"
-	"github.com/crypticani/cloudpulse/internal/ports/storage"
+	"github.com/crypticani/torvix/internal/domain"
+	"github.com/crypticani/torvix/internal/ports/storage"
 )
 
 type Service struct {

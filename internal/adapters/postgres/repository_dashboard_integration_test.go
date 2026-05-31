@@ -13,9 +13,9 @@ import (
 )
 
 func TestRefreshCostAnomaliesExecutesAgainstPostgres(t *testing.T) {
-	dsn := os.Getenv("CLOUDPULSE_TEST_DATABASE_URL")
+	dsn := testDatabaseURL()
 	if dsn == "" {
-		t.Skip("set CLOUDPULSE_TEST_DATABASE_URL to run PostgreSQL anomaly SQL regression test")
+		t.Skip("set TORVIX_TEST_DATABASE_URL or CLOUDPULSE_TEST_DATABASE_URL to run PostgreSQL anomaly SQL regression test")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -108,9 +108,9 @@ func TestRefreshCostAnomaliesExecutesAgainstPostgres(t *testing.T) {
 }
 
 func TestPostgresReportsTimestampComparedToIntervalRegressionMessage(t *testing.T) {
-	dsn := os.Getenv("CLOUDPULSE_TEST_DATABASE_URL")
+	dsn := testDatabaseURL()
 	if dsn == "" {
-		t.Skip("set CLOUDPULSE_TEST_DATABASE_URL to run PostgreSQL timestamp-vs-interval error regression test")
+		t.Skip("set TORVIX_TEST_DATABASE_URL or CLOUDPULSE_TEST_DATABASE_URL to run PostgreSQL timestamp-vs-interval error regression test")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -129,4 +129,11 @@ func TestPostgresReportsTimestampComparedToIntervalRegressionMessage(t *testing.
 	if !strings.Contains(err.Error(), "timestamp with time zone >= interval") {
 		t.Fatalf("expected exact timestamp-vs-interval error, got %v", err)
 	}
+}
+
+func testDatabaseURL() string {
+	if dsn := strings.TrimSpace(os.Getenv("TORVIX_TEST_DATABASE_URL")); dsn != "" {
+		return dsn
+	}
+	return strings.TrimSpace(os.Getenv("CLOUDPULSE_TEST_DATABASE_URL"))
 }

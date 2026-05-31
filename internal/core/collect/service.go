@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/crypticani/cloudpulse/internal/core/normalize"
-	"github.com/crypticani/cloudpulse/internal/domain"
-	"github.com/crypticani/cloudpulse/internal/ports/providers"
-	"github.com/crypticani/cloudpulse/internal/ports/storage"
+	"github.com/crypticani/torvix/internal/core/normalize"
+	"github.com/crypticani/torvix/internal/domain"
+	"github.com/crypticani/torvix/internal/ports/providers"
+	"github.com/crypticani/torvix/internal/ports/storage"
 )
 
 type Service struct {

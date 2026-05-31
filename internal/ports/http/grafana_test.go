@@ -11,9 +11,9 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/crypticani/cloudpulse/internal/core/analytics"
-	"github.com/crypticani/cloudpulse/internal/core/collect"
-	"github.com/crypticani/cloudpulse/internal/domain"
+	"github.com/crypticani/torvix/internal/core/analytics"
+	"github.com/crypticani/torvix/internal/core/collect"
+	"github.com/crypticani/torvix/internal/domain"
 )
 
 type grafanaRepo struct{}

@@ -1,11 +1,13 @@
+name: torvix
+
 services:
   postgres:
     image: timescale/timescaledb:2.26.4-pg18
-    container_name: cloudpulse-postgres
+    container_name: torvix-postgres
     environment:
-      POSTGRES_DB: cloudpulse
-      POSTGRES_USER: cloudpulse
-      POSTGRES_PASSWORD: cloudpulse
+      POSTGRES_DB: ${POSTGRES_DB:-torvix}
+      POSTGRES_USER: ${POSTGRES_USER:-torvix}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-torvix}
     volumes:
       - postgres_data:/var/lib/postgresql
     network_mode: host
@@ -21,16 +23,16 @@ services:
           cpus: "0.25"
           memory: 256M
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cloudpulse -d cloudpulse"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-torvix} -d $${POSTGRES_DB:-torvix}"]
       interval: 10s
       timeout: 5s
       retries: 10
 
-  cloudpulse:
+  torvix:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: cloudpulse
+    container_name: torvix
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,8 +41,15 @@ services:
     mem_limit: 512m
     cpus: "1.0"
     environment:
+      - TORVIX_HTTP_ADDRESS
+      - TORVIX_HTTP_PORT
+      - TORVIX_API_PORT
+      - TORVIX_LOG_LEVEL
+      - TORVIX_LOG_DIR
+      - TORVIX_LOG_RETENTION_DAYS
       - CLOUDPULSE_HTTP_ADDRESS
       - CLOUDPULSE_HTTP_PORT
+      - CLOUDPULSE_API_PORT
       - CLOUDPULSE_LOG_LEVEL
       - CLOUDPULSE_LOG_DIR
       - CLOUDPULSE_LOG_RETENTION_DAYS
@@ -59,7 +68,7 @@ services:
 
   prometheus:
     image: prom/prometheus:v3.5.0
-    container_name: cloudpulse-prometheus
+    container_name: torvix-prometheus
     volumes:
       - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     network_mode: host
@@ -77,7 +86,7 @@ services:
 
   grafana:
     image: grafana/grafana:13.0.1
-    container_name: cloudpulse-grafana
+    container_name: torvix-grafana
     network_mode: host
     restart: unless-stopped
     mem_limit: 512m

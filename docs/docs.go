@@ -10,7 +10,7 @@ const docTemplate = `{
         "description": "{{escape .Description}}",
         "title": "{{.Title}}",
         "contact": {
-            "name": "CloudPulse Team"
+            "name": "Torvix Team"
         },
         "version": "{{.Version}}"
     },
@@ -49,7 +49,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.Anomaly"
+                                "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.Anomaly"
                             }
                         }
                     },
@@ -94,7 +94,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.ForecastPoint"
+                                "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.ForecastPoint"
                             }
                         }
                     },
@@ -151,7 +151,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.AggregatedCost"
+                                "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.AggregatedCost"
                             }
                         }
                     },
@@ -272,7 +272,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Daily report",
                         "schema": {
-                            "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.Report"
+                            "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.Report"
                         }
                     },
                     "500": {
@@ -331,7 +331,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Monthly report",
                         "schema": {
-                            "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.Report"
+                            "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.Report"
                         }
                     },
                     "500": {
@@ -390,7 +390,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Weekly report",
                         "schema": {
-                            "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.Report"
+                            "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.Report"
                         }
                     },
                     "500": {
@@ -410,7 +410,7 @@ const docTemplate = `{
         },
         "/healthz": {
             "get": {
-                "description": "Returns the health status of the CloudPulse API server.",
+                "description": "Returns the health status of the Torvix API server.",
                 "produces": [
                     "application/json"
                 ],
@@ -430,14 +430,14 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "github_com_crypticani_cloudpulse_internal_domain.AggregatedCost": {
+        "github_com_crypticani_torvix_internal_domain.AggregatedCost": {
             "type": "object",
             "properties": {
                 "account_id": {
                     "type": "string"
                 },
                 "provider": {
-                    "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.Provider"
+                    "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.Provider"
                 },
                 "service": {
                     "type": "string"
@@ -453,7 +453,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_crypticani_cloudpulse_internal_domain.Anomaly": {
+        "github_com_crypticani_torvix_internal_domain.Anomaly": {
             "type": "object",
             "properties": {
                 "account_id": {
@@ -484,7 +484,7 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "provider": {
-                    "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.Provider"
+                    "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.Provider"
                 },
                 "region": {
                     "type": "string"
@@ -500,7 +500,7 @@ const docTemplate = `{
                 }
             }
         },
-        "github_com_crypticani_cloudpulse_internal_domain.ForecastPoint": {
+        "github_com_crypticani_torvix_internal_domain.ForecastPoint": {
             "type": "object",
             "properties": {
                 "account_id": {
@@ -519,14 +519,14 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "provider": {
-                    "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.Provider"
+                    "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.Provider"
                 },
                 "service": {
                     "type": "string"
                 }
             }
         },
-        "github_com_crypticani_cloudpulse_internal_domain.Provider": {
+        "github_com_crypticani_torvix_internal_domain.Provider": {
             "type": "string",
             "enum": [
                 "aws",
@@ -541,31 +541,31 @@ const docTemplate = `{
                 "ProviderOCI"
             ]
         },
-        "github_com_crypticani_cloudpulse_internal_domain.Report": {
+        "github_com_crypticani_torvix_internal_domain.Report": {
             "type": "object",
             "properties": {
                 "anomalies": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.Anomaly"
+                        "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.Anomaly"
                     }
                 },
                 "cost_decreases": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.CostVariance"
+                        "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.CostVariance"
                     }
                 },
                 "cost_increases": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.CostVariance"
+                        "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.CostVariance"
                     }
                 },
                 "forecast": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.ForecastPoint"
+                        "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.ForecastPoint"
                     }
                 },
                 "from": {
@@ -580,7 +580,7 @@ const docTemplate = `{
                 "summary": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/github_com_crypticani_cloudpulse_internal_domain.AggregatedCost"
+                        "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.AggregatedCost"
                     }
                 },
                 "to": {
@@ -728,12 +728,12 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "0.6.1",
+	Version:          "0.7.0",
 	Host:             "localhost:8080",
 	BasePath:         "/",
 	Schemes:          []string{"http"},
-	Title:            "CloudPulse API",
-	Description:      "Multi-cloud FinOps cost analytics platform. Collects daily billing data from AWS, Azure, GCP, and OCI, normalises it into a canonical schema, and provides precomputed cost summaries, deterministic anomaly detection, forecasting, and automated reporting.",
+	Title:            "Torvix API",
+	Description:      "Torvix is an open-source FinOps platform for cloud cost visibility, anomaly detection, forecasting, and unused-resource detection across cloud providers.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

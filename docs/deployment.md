@@ -1,9 +1,9 @@
-# CloudPulse Deployment
+# Torvix Deployment
 
-CloudPulse has two Compose entry points:
+Torvix has two Compose entry points:
 
-- `docker-compose.dev.yml`: full laptop/dev stack with CloudPulse, TimescaleDB, Prometheus, and Grafana.
-- `docker-compose.prod.yml`: CloudPulse application only. Use this when production already has PostgreSQL/TimescaleDB, Prometheus, and Grafana.
+- `docker-compose.dev.yml`: full laptop/dev stack with Torvix, TimescaleDB, Prometheus, and Grafana.
+- `docker-compose.prod.yml`: Torvix application only. Use this when production already has PostgreSQL/TimescaleDB, Prometheus, and Grafana.
 
 Do not put real OCI credentials, database passwords, alert webhooks, or SMTP passwords in tracked files. Use local ignored config files under `configs/`.
 
@@ -31,17 +31,17 @@ The development setup is self-contained and starts all dependencies.
    make compose-dev-up
    ```
 
-   To run CloudPulse on a different host-network port, set the app bind port:
+   To run Torvix on a different host-network port, set the app bind port:
 
    ```bash
-   CLOUDPULSE_HTTP_PORT=18080 docker compose -f docker-compose.dev.yml up --build
+   TORVIX_HTTP_PORT=18080 docker compose -f docker-compose.dev.yml up --build
    ```
 
    If you change the dev API port, also update `deploy/prometheus.yml` so the bundled Prometheus scrapes the same port.
 
 4. Open the local services:
 
-   - CloudPulse API: `http://localhost:8080`
+   - Torvix API: `http://localhost:8080`
    - Grafana: `http://localhost:3000`
    - Prometheus: `http://localhost:9090`
    - PostgreSQL/TimescaleDB: `localhost:5432`
@@ -55,12 +55,12 @@ The development setup is self-contained and starts all dependencies.
 The dev Grafana datasource provisioning expects:
 
 - Prometheus datasource UID: `Prometheus`
-- CloudPulse API datasource UID: `CloudPulseAPI`
+- Torvix API datasource UID: `TorvixAPI`
 - PostgreSQL datasource UID: `PostgreSQL` for local inspection only
 
-The bundled dashboard uses `CloudPulseAPI` and `Prometheus`. It does not query PostgreSQL directly.
+The bundled dashboard uses `TorvixAPI` and `Prometheus`. It does not query PostgreSQL directly.
 
-CloudPulse is daily operational FinOps tooling, not long-term archival billing warehousing. The default lifecycle is:
+Torvix is daily operational FinOps tooling, not long-term archival billing warehousing. The default lifecycle is:
 
 ```yaml
 ingestion:
@@ -71,11 +71,11 @@ ingestion:
 
 Raw `cost_records` older than 90 days are removed by TimescaleDB retention and lifecycle maintenance. Precomputed dashboard summary and anomaly tables are refreshed after ingestion and pruned to the same 90-day horizon. Forecast rows are regenerated for the current forward-looking 7-day horizon and old forecast rows are pruned.
 
-Object-level selection and `processed_report_files` dedupe reduce unnecessary OCI downloads. For broad prefixes such as `reports/`, CloudPulse narrows OCI proprietary cost report selection to `reports/cost-csv/`, seeks near the recent Object Storage metadata window, and processes the bounded candidate set newest-first. OCI numeric suffixes are not authoritative billing-period recency signals, and record-level filtering is still required because a recently modified billing export can contain historical usage rows. CloudPulse filters each parsed record by `ingestion.lookback_days` before insertion, so old rows are reported as `records_skipped_old` and never rely on retention cleanup to disappear. If selected reports produce zero rows inside the lookback window, `max_zero_yield_files` stops the run before it can spend minutes parsing historical data.
+Object-level selection and `processed_report_files` dedupe reduce unnecessary OCI downloads. For broad prefixes such as `reports/`, Torvix narrows OCI proprietary cost report selection to `reports/cost-csv/`, seeks near the recent Object Storage metadata window, and processes the bounded candidate set newest-first. OCI numeric suffixes are not authoritative billing-period recency signals, and record-level filtering is still required because a recently modified billing export can contain historical usage rows. Torvix filters each parsed record by `ingestion.lookback_days` before insertion, so old rows are reported as `records_skipped_old` and never rely on retention cleanup to disappear. If selected reports produce zero rows inside the lookback window, `max_zero_yield_files` stops the run before it can spend minutes parsing historical data.
 
 ## Production Setup
 
-Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are managed outside the CloudPulse Compose stack.
+Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are managed outside the Torvix Compose stack.
 
 1. Create the production config:
 
@@ -87,14 +87,14 @@ Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are 
 
    ```yaml
    db:
-     dsn: "postgres://cloudpulse:replace_with_password@postgres.example.internal:5432/cloudpulse?sslmode=require"
+     dsn: "postgres://torvix:replace_with_password@postgres.example.internal:5432/torvix?sslmode=require"
    ```
 
    If PostgreSQL runs on the Docker host, use:
 
    ```yaml
    db:
-     dsn: "postgres://cloudpulse:replace_with_password@host.docker.internal:5432/cloudpulse?sslmode=disable"
+     dsn: "postgres://torvix:replace_with_password@host.docker.internal:5432/torvix?sslmode=disable"
    ```
 
 3. Set production OCI provider credentials in `configs/config.prod.yaml`.
@@ -102,7 +102,7 @@ Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are 
 4. Configure any alerting targets under `reporting.webhooks`.
    The production example includes disabled placeholders for Slack, Microsoft Teams, Telegram, Discord, and SMTP email. Keep only the targets you use, replace placeholder secrets, set the correct `currency`, and set `enabled: true`.
 
-5. Start only the CloudPulse app:
+5. Start only the Torvix app:
 
    ```bash
    docker compose -f docker-compose.prod.yml up --build -d
@@ -124,7 +124,7 @@ Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are 
 The production Compose file uses host networking and does not publish Docker ports. The app binds to `:8080` by default. Override the actual app listener with:
 
 ```bash
-CLOUDPULSE_HTTP_PORT=18080 docker compose -f docker-compose.prod.yml up --build -d
+TORVIX_HTTP_PORT=18080 docker compose -f docker-compose.prod.yml up --build -d
 ```
 
 Then validate with:
@@ -143,64 +143,66 @@ http:
 
 Runtime precedence is:
 
-1. `CLOUDPULSE_HTTP_ADDRESS`, for example `0.0.0.0:18080`
-2. `CLOUDPULSE_HTTP_PORT`, for example `18080`
-3. `http.address` in the YAML config
-4. default `:8080`
+1. `TORVIX_HTTP_ADDRESS`, for example `0.0.0.0:18080`
+2. `TORVIX_HTTP_PORT`, for example `18080`
+3. `TORVIX_API_PORT`, for example `18080`
+4. legacy `CLOUDPULSE_HTTP_ADDRESS`, `CLOUDPULSE_HTTP_PORT`, or `CLOUDPULSE_API_PORT`
+5. `http.address` in the YAML config
+6. default `:8080`
 
-The production Compose healthcheck checks `http://127.0.0.1:${CLOUDPULSE_HTTP_PORT:-8080}/healthz`. If you use `CLOUDPULSE_HTTP_ADDRESS`, the healthcheck derives the port from that value when `CLOUDPULSE_HTTP_PORT` is not set.
+The production Compose healthcheck checks `http://127.0.0.1:${TORVIX_HTTP_PORT:-8080}/healthz` and also understands `TORVIX_API_PORT` plus legacy port variables. If you use `TORVIX_HTTP_ADDRESS`, the healthcheck derives the port from that value when no port variable is set.
 
-If you change only `http.address` in `configs/config.prod.yaml`, also set `CLOUDPULSE_HTTP_PORT` to the same port or update the healthcheck command in `docker-compose.prod.yml`. Compose cannot read the mounted YAML value into its healthcheck automatically.
+If you change only `http.address` in `configs/config.prod.yaml`, also set `TORVIX_HTTP_PORT` to the same port or update the healthcheck command in `docker-compose.prod.yml`. Compose cannot read the mounted YAML value into its healthcheck automatically.
 
-CloudPulse writes file-only JSON logs and does not emit normal application logs to stdout. Logs are split by subsystem into `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `scheduler.log`, and `alerting.log`. The bundled Compose files mount `./logs` to `/app/logs`; set `CLOUDPULSE_LOG_DIR=/app/logs` or keep `logging.dir: logs` while the container runs from `/app`.
+Torvix writes file-only JSON logs and does not emit normal application logs to stdout. Logs are split by subsystem into `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `scheduler.log`, and `alerting.log`. The bundled Compose files mount `./logs` to `/app/logs`; set `TORVIX_LOG_DIR=/app/logs` or keep `logging.dir: logs` while the container runs from `/app`.
 
 Logging runtime controls:
 
 ```bash
-CLOUDPULSE_LOG_LEVEL=debug
-CLOUDPULSE_LOG_RETENTION_DAYS=14
-CLOUDPULSE_LOG_DIR=/app/logs
+TORVIX_LOG_LEVEL=debug
+TORVIX_LOG_RETENTION_DAYS=14
+TORVIX_LOG_DIR=/app/logs
 ```
 
-CloudPulse deletes `.log` files in the configured log directory whose modification time is older than the retention window.
+Torvix deletes `.log` files in the configured log directory whose modification time is older than the retention window.
 
 Resource limits can be tuned with:
 
 ```bash
-CLOUDPULSE_CPU_LIMIT=1.0 CLOUDPULSE_MEMORY_LIMIT=512M docker compose -f docker-compose.prod.yml up --build -d
+TORVIX_CPU_LIMIT=1.0 TORVIX_MEMORY_LIMIT=512M docker compose -f docker-compose.prod.yml up --build -d
 ```
 
 ## Connect Production Prometheus
 
-CloudPulse exposes Prometheus metrics at:
+Torvix exposes Prometheus metrics at:
 
 ```text
-http://<cloudpulse-host>:<cloudpulse-port>/metrics
+http://<torvix-host>:<torvix-port>/metrics
 ```
 
 Add this scrape job to your existing Prometheus configuration:
 
 ```yaml
 scrape_configs:
-  - job_name: cloudpulse
+  - job_name: torvix
     metrics_path: /metrics
     scrape_interval: 60s
     static_configs:
       - targets:
-          - cloudpulse.example.internal:8080
+          - torvix.example.internal:8080
 ```
 
 An example snippet is available at `deploy/prometheus.prod-scrape.example.yml`.
 
-Keep the target port aligned with the CloudPulse listener. For example, if production runs with `CLOUDPULSE_HTTP_PORT=18080` or `http.address: ":18080"`, scrape `cloudpulse.example.internal:18080` instead of `cloudpulse.example.internal:8080`. The `60s` scrape interval is intentional because cost data changes on ingestion/report cadence, not every few seconds; lower it only if you need faster app health or ingestion-failure detection.
+Keep the target port aligned with the Torvix listener. For example, if production runs with `TORVIX_HTTP_PORT=18080` or `http.address: ":18080"`, scrape `torvix.example.internal:18080` instead of `torvix.example.internal:8080`. The `60s` scrape interval is intentional because cost data changes on ingestion/report cadence, not every few seconds; lower it only if you need faster app health or ingestion-failure detection.
 
 After reloading Prometheus, verify the target is up:
 
 ```promql
-up{job="cloudpulse"}
+up{job="torvix"}
 ```
 
-Useful CloudPulse metrics include:
+Useful Torvix metrics include:
 
 ```promql
 cloudpulse_processed_records_total
@@ -211,9 +213,11 @@ cloudpulse_records_deleted_total
 cloudpulse_compressed_chunks_total
 ```
 
-Cost values belong in PostgreSQL-backed CloudPulse APIs, not Prometheus labels. Prometheus should carry operational health metrics only: ingestion duration, files processed, records inserted, failures, skipped old files, records pruned, compressed chunks, and API/runtime status.
+The metric namespace intentionally remains `cloudpulse` by default for dashboard and alert compatibility after the Torvix rename.
 
-If `metrics.cost_stats_enabled` is enabled, CloudPulse also exposes coarse aggregate cost gauges from dashboard summary API calls:
+Cost values belong in PostgreSQL-backed Torvix APIs, not Prometheus labels. Prometheus should carry operational health metrics only: ingestion duration, files processed, records inserted, failures, skipped old files, records pruned, compressed chunks, and API/runtime status.
+
+If `metrics.cost_stats_enabled` is enabled, Torvix also exposes coarse aggregate cost gauges from dashboard summary API calls:
 
 ```promql
 cloudpulse_cost_total
@@ -225,18 +229,18 @@ These metrics only use a low-cardinality `window` label. Do not add service, acc
 
 ## Import Dashboard Into Production Grafana
 
-CloudPulse ships one OCI-specific Grafana dashboard JSON:
+Torvix ships one OCI-specific Grafana dashboard JSON:
 
-- `dashboards/cloudpulse-oci-finops-dashboard.json`
+- `dashboards/torvix-oci-finops-dashboard.json`
 
 The file can be pasted directly into a separate production Grafana import flow after the required datasources are configured. Local development and production both use this same dashboard JSON. The local PostgreSQL datasource is provisioned only for direct developer inspection.
 
-PostgreSQL must remain private in production. Do not expose the TimescaleDB port to Grafana users or public networks, and do not provision a production PostgreSQL datasource for dashboards. Production Grafana should read only from CloudPulse API endpoints and Prometheus.
+PostgreSQL must remain private in production. Do not expose the TimescaleDB port to Grafana users or public networks, and do not provision a production PostgreSQL datasource for dashboards. Production Grafana should read only from Torvix API endpoints and Prometheus.
 
 The OCI dashboard expects these Grafana datasource UIDs:
 
 - `Prometheus`: your production Prometheus datasource.
-- `CloudPulseAPI`: an Infinity datasource that points at the CloudPulse API.
+- `TorvixAPI`: an Infinity datasource that points at the Torvix API.
 
 The production API endpoints are:
 
@@ -275,41 +279,41 @@ environment:
 
 Create an Infinity datasource with:
 
-- Name: `CloudPulse API`
-- UID: `CloudPulseAPI`
+- Name: `Torvix API`
+- UID: `TorvixAPI`
 - Type: `yesoreyeram-infinity-datasource`
-- URL: your CloudPulse API base URL, for example `https://cloudpulse.example.internal`
+- URL: your Torvix API base URL, for example `https://torvix.example.internal`
 - Access: `Server` or `Proxy`
 
-If CloudPulse dashboard API auth is enabled, configure the Infinity datasource to send:
+If Torvix dashboard API auth is enabled, configure the Infinity datasource to send:
 
 ```text
-Authorization: Bearer <cloudpulse_grafana_api_bearer_token>
+Authorization: Bearer <torvix_grafana_api_bearer_token>
 ```
 
-The bundled dashboard variables use Infinity backend JSON queries. If the datasource UID is not exactly `CloudPulseAPI`, map it during import or edit the JSON before import.
+The bundled dashboard variables use Infinity backend JSON queries. If the datasource UID is not exactly `TorvixAPI`, map it during import or edit the JSON before import.
 
 ### Option 1: Grafana UI Import
 
 1. In Grafana, go to **Dashboards -> New -> Import**.
-2. Confirm the Infinity datasource plugin is installed and that a datasource with UID `CloudPulseAPI` exists.
-3. Upload or paste `dashboards/cloudpulse-oci-finops-dashboard.json`.
+2. Confirm the Infinity datasource plugin is installed and that a datasource with UID `TorvixAPI` exists.
+3. Upload or paste `dashboards/torvix-oci-finops-dashboard.json`.
 4. If Grafana asks for datasources, map:
    - `Prometheus` to your production Prometheus datasource.
-   - `CloudPulseAPI` to your CloudPulse API datasource.
+   - `TorvixAPI` to your Torvix API datasource.
 
 If your existing datasource UIDs are different and Grafana does not prompt for mapping, either create datasource aliases with the UIDs above or edit the JSON before import.
 
 ### Option 2: Grafana Provisioning
 
-Copy `dashboards/cloudpulse-oci-finops-dashboard.json` to your Grafana dashboard provisioning path and configure a provider similar to:
+Copy `dashboards/torvix-oci-finops-dashboard.json` to your Grafana dashboard provisioning path and configure a provider similar to:
 
 ```yaml
 apiVersion: 1
 
 providers:
-  - name: cloudpulse
-    folder: CloudPulse
+  - name: torvix
+    folder: Torvix
     type: file
     disableDeletion: false
     editable: true
@@ -330,21 +334,21 @@ datasources:
     url: http://prometheus.example.internal:9090
     isDefault: true
 
-  - name: CloudPulse API
-    uid: CloudPulseAPI
+  - name: Torvix API
+    uid: TorvixAPI
     type: yesoreyeram-infinity-datasource
     access: proxy
-    url: https://cloudpulse.example.internal
+    url: https://torvix.example.internal
     jsonData:
       auth_method: "bearerToken"
       httpHeaderName1: "Authorization"
     secureJsonData:
-      httpHeaderValue1: "Bearer replace_with_cloudpulse_grafana_token"
+      httpHeaderValue1: "Bearer replace_with_torvix_grafana_token"
 ```
 
 Restart or reload Grafana provisioning after copying the files.
 
-Enable the CloudPulse Grafana API auth placeholder in production config:
+Enable the Torvix Grafana API auth placeholder in production config:
 
 ```yaml
 grafana:
@@ -353,7 +357,7 @@ grafana:
     bearer_token: "replace_with_long_random_token"
 ```
 
-The same value can be supplied with `CLOUDPULSE_GRAFANA_API_BEARER_TOKEN`. When auth is enabled, production Grafana must send `Authorization: Bearer <token>` to `/api/v1/dashboard/*`.
+The same value can be supplied with `TORVIX_GRAFANA_API_BEARER_TOKEN`. When auth is enabled, production Grafana must send `Authorization: Bearer <token>` to `/api/v1/dashboard/*`.
 
 ## Verify Dashboard Data After Ingestion
 
@@ -391,7 +395,7 @@ When all downloaded rows are historical, expect `records_inserted: 0`. In that c
 
 ## Anomaly Detection
 
-CloudPulse anomaly detection is deterministic. It does not use AI/ML today.
+Torvix anomaly detection is deterministic. It does not use AI/ML today.
 
 - Dimensions: provider, account, service, category, and region.
 - Baseline: trailing 7 daily summary rows from `daily_cost_summaries`.
@@ -409,7 +413,7 @@ OCI Storage daily spend was 82.0% above its trailing baseline: observed 18.40, e
 ## Operational Notes
 
 - Production Compose does not run PostgreSQL, Prometheus, or Grafana.
-- CloudPulse applies SQL migrations on startup, so the configured database user needs permissions to create tables, indexes, Timescale hypertables, compression policies, and retention policies.
+- Torvix applies SQL migrations on startup, so the configured database user needs permissions to create tables, indexes, Timescale hypertables, compression policies, and retention policies.
 - Keep `configs/config.prod.yaml` outside git. It is ignored by `.gitignore`.
 - The app should be reachable by Prometheus over the network path configured in the scrape target.
-- The database should be reachable only by CloudPulse and database administration paths, not by production Grafana.
+- The database should be reachable only by Torvix and database administration paths, not by production Grafana.

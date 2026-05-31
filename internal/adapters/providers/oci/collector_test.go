@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/crypticani/cloudpulse/internal/config"
-	"github.com/crypticani/cloudpulse/internal/domain"
-	"github.com/crypticani/cloudpulse/internal/ports/providers"
+	"github.com/crypticani/torvix/internal/config"
+	"github.com/crypticani/torvix/internal/domain"
+	"github.com/crypticani/torvix/internal/ports/providers"
 )
 
 func TestCollectorSkipsProcessedFiles(t *testing.T) {

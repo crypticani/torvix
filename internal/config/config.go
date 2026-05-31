@@ -11,12 +11,21 @@ import (
 )
 
 const (
-	EnvHTTPAddress           = "CLOUDPULSE_HTTP_ADDRESS"
-	EnvHTTPPort              = "CLOUDPULSE_HTTP_PORT"
-	EnvGrafanaAPIBearerToken = "CLOUDPULSE_GRAFANA_API_BEARER_TOKEN"
-	EnvLogLevel              = "CLOUDPULSE_LOG_LEVEL"
-	EnvLogDir                = "CLOUDPULSE_LOG_DIR"
-	EnvLogRetentionDays      = "CLOUDPULSE_LOG_RETENTION_DAYS"
+	EnvHTTPAddress           = "TORVIX_HTTP_ADDRESS"
+	EnvHTTPPort              = "TORVIX_HTTP_PORT"
+	EnvAPIPort               = "TORVIX_API_PORT"
+	EnvGrafanaAPIBearerToken = "TORVIX_GRAFANA_API_BEARER_TOKEN"
+	EnvLogLevel              = "TORVIX_LOG_LEVEL"
+	EnvLogDir                = "TORVIX_LOG_DIR"
+	EnvLogRetentionDays      = "TORVIX_LOG_RETENTION_DAYS"
+
+	LegacyEnvHTTPAddress           = "CLOUDPULSE_HTTP_ADDRESS"
+	LegacyEnvHTTPPort              = "CLOUDPULSE_HTTP_PORT"
+	LegacyEnvAPIPort               = "CLOUDPULSE_API_PORT"
+	LegacyEnvGrafanaAPIBearerToken = "CLOUDPULSE_GRAFANA_API_BEARER_TOKEN"
+	LegacyEnvLogLevel              = "CLOUDPULSE_LOG_LEVEL"
+	LegacyEnvLogDir                = "CLOUDPULSE_LOG_DIR"
+	LegacyEnvLogRetentionDays      = "CLOUDPULSE_LOG_RETENTION_DAYS"
 )
 
 type Config struct {
@@ -150,6 +159,7 @@ func Load(path string) (Config, error) {
 	cfg.Logging = cfg.Logging.WithDefaults(cfg.LogLevel)
 	cfg.LogLevel = cfg.Logging.Level
 	if cfg.Metrics.Namespace == "" {
+		// Keep the original metric namespace as the compatibility default.
 		cfg.Metrics.Namespace = "cloudpulse"
 	}
 	cfg.Ingestion = cfg.Ingestion.WithDefaults()
@@ -158,28 +168,35 @@ func Load(path string) (Config, error) {
 }
 
 func applyEnvOverrides(cfg *Config) {
-	if address := strings.TrimSpace(os.Getenv(EnvHTTPAddress)); address != "" {
+	if address := envValue(EnvHTTPAddress, LegacyEnvHTTPAddress); address != "" {
 		cfg.HTTP.Address = address
-		return
-	}
-	if port := strings.TrimSpace(os.Getenv(EnvHTTPPort)); port != "" {
+	} else if port := envValue(EnvHTTPPort, EnvAPIPort, LegacyEnvHTTPPort, LegacyEnvAPIPort); port != "" {
 		cfg.HTTP.Address = normalizeHTTPPort(port)
 	}
-	if token := strings.TrimSpace(os.Getenv(EnvGrafanaAPIBearerToken)); token != "" {
+	if token := envValue(EnvGrafanaAPIBearerToken, LegacyEnvGrafanaAPIBearerToken); token != "" {
 		cfg.Grafana.APIAuth.Enabled = true
 		cfg.Grafana.APIAuth.BearerToken = token
 	}
-	if level := strings.TrimSpace(os.Getenv(EnvLogLevel)); level != "" {
+	if level := envValue(EnvLogLevel, LegacyEnvLogLevel); level != "" {
 		cfg.Logging.Level = level
 	}
-	if dir := strings.TrimSpace(os.Getenv(EnvLogDir)); dir != "" {
+	if dir := envValue(EnvLogDir, LegacyEnvLogDir); dir != "" {
 		cfg.Logging.Dir = dir
 	}
-	if retention := strings.TrimSpace(os.Getenv(EnvLogRetentionDays)); retention != "" {
+	if retention := envValue(EnvLogRetentionDays, LegacyEnvLogRetentionDays); retention != "" {
 		if days, err := strconv.Atoi(retention); err == nil {
 			cfg.Logging.RetentionDays = days
 		}
 	}
+}
+
+func envValue(names ...string) string {
+	for _, name := range names {
+		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func normalizeHTTPPort(port string) string {

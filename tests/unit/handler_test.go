@@ -9,13 +9,13 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/crypticani/cloudpulse/internal/core/alerting"
-	"github.com/crypticani/cloudpulse/internal/core/analytics"
-	"github.com/crypticani/cloudpulse/internal/core/collect"
-	"github.com/crypticani/cloudpulse/internal/core/forecasting"
-	"github.com/crypticani/cloudpulse/internal/core/normalize"
-	"github.com/crypticani/cloudpulse/internal/core/reporting"
-	httpapi "github.com/crypticani/cloudpulse/internal/ports/http"
+	"github.com/crypticani/torvix/internal/core/alerting"
+	"github.com/crypticani/torvix/internal/core/analytics"
+	"github.com/crypticani/torvix/internal/core/collect"
+	"github.com/crypticani/torvix/internal/core/forecasting"
+	"github.com/crypticani/torvix/internal/core/normalize"
+	"github.com/crypticani/torvix/internal/core/reporting"
+	httpapi "github.com/crypticani/torvix/internal/ports/http"
 )
 
 func TestHandlerRoutes(t *testing.T) {

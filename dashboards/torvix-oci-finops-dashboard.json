@@ -1,8 +1,8 @@
 {
-  "title": "CloudPulse OCI FinOps Dashboard",
-  "uid": "cloudpulse-oci-finops-dashboard",
+  "title": "Torvix OCI FinOps Dashboard",
+  "uid": "torvix-oci-finops-dashboard",
   "schemaVersion": 39,
-  "version": 16,
+  "version": 17,
   "refresh": "1m",
   "time": {
     "from": "now-30d",
@@ -15,7 +15,7 @@
       "title": "Total OCI Cost",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -69,7 +69,7 @@
       "title": "Previous 30-Day Spend",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -112,7 +112,7 @@
       "title": "Anomalies",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -172,7 +172,7 @@
       "title": "Daily OCI Cost Trend",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -246,7 +246,7 @@
       "title": "OCI Cost by Service",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -308,7 +308,7 @@
       "title": "Top OCI Cost Drivers",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -373,7 +373,7 @@
       "title": "OCI Cost by Compartment",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -435,7 +435,7 @@
       "title": "OCI Cost by Region",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -497,7 +497,7 @@
       "title": "Daily Cost Increases",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -564,7 +564,7 @@
       "title": "Weekly Cost Increases",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -631,7 +631,7 @@
       "title": "Monthly Cost Increases",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -698,7 +698,7 @@
       "title": "Daily Cost Decreases",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -765,7 +765,7 @@
       "title": "Weekly Cost Decreases",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -832,7 +832,7 @@
       "title": "Monthly Cost Decreases",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -899,7 +899,7 @@
       "title": "Anomaly Table",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -971,7 +971,7 @@
       "title": "Latest Billing Period Status",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
-        "uid": "CloudPulseAPI"
+        "uid": "TorvixAPI"
       },
       "targets": [
         {
@@ -1180,7 +1180,7 @@
         },
         "datasource": {
           "type": "yesoreyeram-infinity-datasource",
-          "uid": "CloudPulseAPI"
+          "uid": "TorvixAPI"
         },
         "definition": "/api/v1/dashboard/filter-options?dimension=region&provider=oci&format=values",
         "query": {
@@ -1250,7 +1250,7 @@
         },
         "datasource": {
           "type": "yesoreyeram-infinity-datasource",
-          "uid": "CloudPulseAPI"
+          "uid": "TorvixAPI"
         },
         "definition": "/api/v1/dashboard/filter-options?dimension=compartment&provider=oci&region=${region}&format=values",
         "query": {
@@ -1320,7 +1320,7 @@
         },
         "datasource": {
           "type": "yesoreyeram-infinity-datasource",
-          "uid": "CloudPulseAPI"
+          "uid": "TorvixAPI"
         },
         "definition": "/api/v1/dashboard/filter-options?dimension=service&provider=oci&region=${region}&compartment=${compartment}&format=values",
         "query": {

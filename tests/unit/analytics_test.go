@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/crypticani/cloudpulse/internal/core/analytics"
-	"github.com/crypticani/cloudpulse/internal/domain"
+	"github.com/crypticani/torvix/internal/core/analytics"
+	"github.com/crypticani/torvix/internal/domain"
 )
 
 func TestDetectSeriesAnomalies(t *testing.T) {

@@ -9,19 +9,19 @@ import (
 
 	prom "github.com/prometheus/client_golang/prometheus"
 
-	"github.com/crypticani/cloudpulse/internal/adapters/postgres"
-	metricsadapter "github.com/crypticani/cloudpulse/internal/adapters/prometheus"
-	ociadapter "github.com/crypticani/cloudpulse/internal/adapters/providers/oci"
-	"github.com/crypticani/cloudpulse/internal/config"
-	"github.com/crypticani/cloudpulse/internal/core/alerting"
-	"github.com/crypticani/cloudpulse/internal/core/analytics"
-	"github.com/crypticani/cloudpulse/internal/core/collect"
-	"github.com/crypticani/cloudpulse/internal/core/forecasting"
-	"github.com/crypticani/cloudpulse/internal/core/normalize"
-	"github.com/crypticani/cloudpulse/internal/core/reporting"
-	"github.com/crypticani/cloudpulse/internal/logging"
-	httpapi "github.com/crypticani/cloudpulse/internal/ports/http"
-	"github.com/crypticani/cloudpulse/internal/ports/providers"
+	"github.com/crypticani/torvix/internal/adapters/postgres"
+	metricsadapter "github.com/crypticani/torvix/internal/adapters/prometheus"
+	ociadapter "github.com/crypticani/torvix/internal/adapters/providers/oci"
+	"github.com/crypticani/torvix/internal/config"
+	"github.com/crypticani/torvix/internal/core/alerting"
+	"github.com/crypticani/torvix/internal/core/analytics"
+	"github.com/crypticani/torvix/internal/core/collect"
+	"github.com/crypticani/torvix/internal/core/forecasting"
+	"github.com/crypticani/torvix/internal/core/normalize"
+	"github.com/crypticani/torvix/internal/core/reporting"
+	"github.com/crypticani/torvix/internal/logging"
+	httpapi "github.com/crypticani/torvix/internal/ports/http"
+	"github.com/crypticani/torvix/internal/ports/providers"
 )
 
 type App struct {

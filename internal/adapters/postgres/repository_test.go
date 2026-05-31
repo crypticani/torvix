@@ -9,7 +9,7 @@ import (
 
 	pgxmock "github.com/pashagolub/pgxmock/v4"
 
-	"github.com/crypticani/cloudpulse/internal/domain"
+	"github.com/crypticani/torvix/internal/domain"
 )
 
 func TestAggregateCostsUsesDailySummary(t *testing.T) {
