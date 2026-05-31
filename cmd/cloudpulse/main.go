@@ -17,7 +17,7 @@ import (
 )
 
 //	@title			CloudPulse API
-//	@version		0.6.0
+//	@version		0.6.1
 //	@description	Multi-cloud FinOps cost analytics platform. Collects billing data from AWS, Azure, GCP, and OCI, normalises it into a canonical schema, and provides real-time cost summaries, anomaly detection, forecasting, and automated reporting.
 
 //	@contact.name	CloudPulse Team
