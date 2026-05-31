@@ -22,6 +22,7 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 			List []struct {
 				Name          string `json:"name"`
 				QueryType     string `json:"queryType"`
+				Refresh       int    `json:"refresh"`
 				InfinityQuery struct {
 					URL          string `json:"url"`
 					Parser       string `json:"parser"`
@@ -54,7 +55,7 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	if dashboard.Refresh != "1m" {
 		t.Fatalf("expected dashboard to retry transient initial empty results every minute, got refresh %q", dashboard.Refresh)
 	}
-	if dashboard.Version < 13 {
+	if dashboard.Version < 14 {
 		t.Fatalf("expected dashboard version to be bumped for Grafana provisioning reloads, got %d", dashboard.Version)
 	}
 	joined := string(b)
@@ -109,6 +110,9 @@ func TestGrafanaDashboardUsesCloudPulseDashboardAPIs(t *testing.T) {
 	for _, variable := range dashboard.Templating.List {
 		if variable.QueryType != "infinity" {
 			t.Fatalf("variable %q must use Infinity standard variable mode, got queryType %q", variable.Name, variable.QueryType)
+		}
+		if variable.Refresh != 1 {
+			t.Fatalf("variable %q must refresh on dashboard load, got refresh mode %d", variable.Name, variable.Refresh)
 		}
 		if variable.InfinityQuery.Parser != "backend" || variable.InfinityQuery.RootSelector != "" || variable.InfinityQuery.URL == "" {
 			t.Fatalf("variable %q has incomplete Infinity query configuration: %+v", variable.Name, variable.InfinityQuery)
