@@ -11,13 +11,24 @@ import (
 )
 
 const (
-	EnvHTTPAddress           = "TORVIX_HTTP_ADDRESS"
-	EnvHTTPPort              = "TORVIX_HTTP_PORT"
-	EnvAPIPort               = "TORVIX_API_PORT"
-	EnvGrafanaAPIBearerToken = "TORVIX_GRAFANA_API_BEARER_TOKEN"
-	EnvLogLevel              = "TORVIX_LOG_LEVEL"
-	EnvLogDir                = "TORVIX_LOG_DIR"
-	EnvLogRetentionDays      = "TORVIX_LOG_RETENTION_DAYS"
+	EnvHTTPAddress                    = "TORVIX_HTTP_ADDRESS"
+	EnvHTTPPort                       = "TORVIX_HTTP_PORT"
+	EnvAPIPort                        = "TORVIX_API_PORT"
+	EnvGrafanaAPIBearerToken          = "TORVIX_GRAFANA_API_BEARER_TOKEN"
+	EnvLogLevel                       = "TORVIX_LOG_LEVEL"
+	EnvLogDir                         = "TORVIX_LOG_DIR"
+	EnvLogRetentionDays               = "TORVIX_LOG_RETENTION_DAYS"
+	EnvReportTimezone                 = "TORVIX_REPORT_TIMEZONE"
+	EnvDailyReportCron                = "TORVIX_DAILY_REPORT_CRON"
+	EnvWeeklyReportCron               = "TORVIX_WEEKLY_REPORT_CRON"
+	EnvReportRequireCompleteIngestion = "TORVIX_REPORT_REQUIRE_COMPLETE_INGESTION"
+	EnvDailyReportTargetLagDays       = "TORVIX_DAILY_REPORT_TARGET_LAG_DAYS"
+
+	LegacyEnvReportTimezone                 = "CLOUDPULSE_REPORT_TIMEZONE"
+	LegacyEnvDailyReportCron                = "CLOUDPULSE_DAILY_REPORT_CRON"
+	LegacyEnvWeeklyReportCron               = "CLOUDPULSE_WEEKLY_REPORT_CRON"
+	LegacyEnvReportRequireCompleteIngestion = "CLOUDPULSE_REPORT_REQUIRE_COMPLETE_INGESTION"
+	LegacyEnvDailyReportTargetLagDays       = "CLOUDPULSE_DAILY_REPORT_TARGET_LAG_DAYS"
 )
 
 type Config struct {
@@ -100,7 +111,12 @@ type IngestionLimits struct {
 }
 
 type Reporting struct {
-	Webhooks []Webhook `yaml:"webhooks"`
+	Timezone                 string    `yaml:"timezone"`
+	DailyReportCron          string    `yaml:"daily_report_cron"`
+	WeeklyReportCron         string    `yaml:"weekly_report_cron"`
+	RequireCompleteIngestion bool      `yaml:"require_complete_ingestion"`
+	DailyReportTargetLagDays int       `yaml:"daily_report_target_lag_days"`
+	Webhooks                 []Webhook `yaml:"webhooks"`
 }
 
 type Webhook struct {
@@ -136,7 +152,7 @@ type GrafanaAPIAuth struct {
 }
 
 func Load(path string) (Config, error) {
-	var cfg Config
+	cfg := Config{Reporting: Reporting{RequireCompleteIngestion: true}}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return cfg, fmt.Errorf("read config: %w", err)
@@ -155,6 +171,7 @@ func Load(path string) (Config, error) {
 	}
 	cfg.Ingestion = cfg.Ingestion.WithDefaults()
 	cfg.Scheduler = cfg.Scheduler.WithDefaults()
+	cfg.Reporting = cfg.Reporting.WithDefaults()
 	return cfg, nil
 }
 
@@ -177,6 +194,25 @@ func applyEnvOverrides(cfg *Config) {
 	if retention := envValue(EnvLogRetentionDays); retention != "" {
 		if days, err := strconv.Atoi(retention); err == nil {
 			cfg.Logging.RetentionDays = days
+		}
+	}
+	if timezone := envValue(EnvReportTimezone, LegacyEnvReportTimezone); timezone != "" {
+		cfg.Reporting.Timezone = timezone
+	}
+	if cron := envValue(EnvDailyReportCron, LegacyEnvDailyReportCron); cron != "" {
+		cfg.Reporting.DailyReportCron = cron
+	}
+	if cron := envValue(EnvWeeklyReportCron, LegacyEnvWeeklyReportCron); cron != "" {
+		cfg.Reporting.WeeklyReportCron = cron
+	}
+	if require := envValue(EnvReportRequireCompleteIngestion, LegacyEnvReportRequireCompleteIngestion); require != "" {
+		if parsed, err := strconv.ParseBool(require); err == nil {
+			cfg.Reporting.RequireCompleteIngestion = parsed
+		}
+	}
+	if lag := envValue(EnvDailyReportTargetLagDays, LegacyEnvDailyReportTargetLagDays); lag != "" {
+		if days, err := strconv.Atoi(lag); err == nil {
+			cfg.Reporting.DailyReportTargetLagDays = days
 		}
 	}
 }
@@ -202,6 +238,22 @@ func (s Scheduler) WithDefaults() Scheduler {
 		s.IngestInterval = "24h"
 	}
 	return s
+}
+
+func (r Reporting) WithDefaults() Reporting {
+	if r.Timezone == "" {
+		r.Timezone = "Asia/Kolkata"
+	}
+	if r.DailyReportCron == "" {
+		r.DailyReportCron = "0 14 * * *"
+	}
+	if r.WeeklyReportCron == "" {
+		r.WeeklyReportCron = "0 15 * * 1"
+	}
+	if r.DailyReportTargetLagDays <= 0 {
+		r.DailyReportTargetLagDays = 1
+	}
+	return r
 }
 
 func (l Logging) WithDefaults(legacyLevel string) Logging {

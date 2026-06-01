@@ -128,7 +128,7 @@ curl "http://localhost:8080/api/v1/dashboard/ingestion-status"
 }
 ```
 
-When enabled alerting targets are configured, Torvix sends an ingestion completion notification with success, partial failure, or failure status plus files and record counts. Only successful ingestion runs deliver the daily, weekly, and monthly cost reports to the same enabled alerting targets, so reports are sent after the latest ingestion has completed cleanly.
+When enabled alerting targets are configured, Torvix sends an ingestion completion notification with success, partial failure, or failure status plus files and record counts. Cost reports are delivered by the report scheduler, not by every ingestion run, so a short ingestion interval cannot send repeated daily reports.
 
 Ingestion status separates parsing from retained inserts. `records_parsed` is the number of billing rows read from downloaded reports, `records_within_lookback` is the number of rows whose usage timestamp is inside the configured lookback window, `records_skipped_old` is the number of historical rows skipped before storage, and `records_inserted` is the number of records actually handed to PostgreSQL. If an OCI report contains only historical data, a successful job can report:
 
@@ -189,8 +189,8 @@ The bundled OCI Grafana dashboard drills into cost in this order: Region -> Comp
 
 Report endpoints use operational FinOps windows by default:
 
-- Daily: yesterday. If yesterday has no ingested rows yet, Torvix falls back to the latest prior day with data within the last 7 days so OCI billing export lag does not produce empty daily alerts.
-- Weekly: the last completed Monday-to-Monday week.
+- Daily: day-1 in the configured report timezone. With the default `Asia/Kolkata` timezone, a report generated on `2026-06-01` targets `2026-05-31`.
+- Weekly: the previous full Monday-to-Sunday week. A report generated on Monday, `2026-06-01`, covers `2026-05-25` through `2026-05-31`.
 - Monthly: the last completed calendar month.
 
 Pass `from=YYYY-MM-DD&to=YYYY-MM-DD` to override those defaults. Add `deliver=true` to send the report to enabled alerting targets.
@@ -252,9 +252,14 @@ In `configs/config.yaml`:
     ingest_interval: "24h"
   ```
   If `ingest_interval` is omitted, Torvix defaults to `24h`.
-- **Alerting:** Set up Slack, Microsoft Teams, Telegram, Discord, or SMTP email targets to receive ingestion completion notifications and daily/weekly/monthly cost reports after successful ingestion runs. Partial or failed ingestion sends only the ingestion completion notification, not cost reports. Targets are disabled by default; keep credentials in local or deployment-specific config. Notifications include the top 5 anomalies and leave the full anomaly list in Grafana/API views.
+- **Alerting:** Set up Slack, Microsoft Teams, Telegram, Discord, or SMTP email targets to receive ingestion completion notifications and scheduled daily/weekly reports. Partial or failed ingestion sends only the ingestion completion notification. Targets are disabled by default; keep credentials in local or deployment-specific config. Reports include the top 5 anomalies plus the most significant cost increases and decreases, and leave full details in Grafana/API views.
   ```yaml
   reporting:
+    timezone: "Asia/Kolkata"
+    daily_report_cron: "0 14 * * *"
+    weekly_report_cron: "0 15 * * 1"
+    require_complete_ingestion: true
+    daily_report_target_lag_days: 1
     webhooks:
       - name: slack-finops
         type: slack
@@ -290,6 +295,7 @@ In `configs/config.yaml`:
         currency: INR
         enabled: false
   ```
+  Defaults are 2:00 PM IST daily and 3:00 PM IST every Monday. Daily reports use day-1 data. Weekly reports cover the previous Monday-to-Sunday range. When `require_complete_ingestion` is enabled, Torvix skips daily or weekly delivery if the target date or full weekly range has no ingested daily data. Successful deliveries are recorded per provider, report type, period range, and destination so the same report is not sent repeatedly.
 
 ## Backup and Restore
 

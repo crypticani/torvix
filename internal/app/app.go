@@ -31,6 +31,7 @@ type App struct {
 	reporting       *reporting.Service
 	collector       *collect.Service
 	schedulerCfg    config.Scheduler
+	reportingCfg    config.Reporting
 	logger          *slog.Logger
 	schedulerLogger *slog.Logger
 	stop            chan struct{}
@@ -93,7 +94,11 @@ func NewWithLoggers(cfg config.Config, loggers logging.Loggers) (*App, error) {
 	})
 	analyticsSvc := analytics.New(repo)
 	forecastingSvc := forecasting.New(repo)
-	reportingSvc := reporting.New(analyticsSvc, forecastingSvc)
+	reportingSvc := reporting.NewWithOptions(analyticsSvc, forecastingSvc, reporting.Options{
+		Timezone:                 cfg.Reporting.Timezone,
+		DailyReportTargetLagDays: cfg.Reporting.DailyReportTargetLagDays,
+		RequireCompleteIngestion: cfg.Reporting.RequireCompleteIngestion,
+	})
 	alertingSvc := alerting.NewWithLogger(&http.Client{Timeout: 10 * time.Second}, cfg.Reporting.Webhooks, loggers.Alerting)
 	handler := httpapi.NewWithOptions(collectorSvc, analyticsSvc, forecastingSvc, reportingSvc, alertingSvc, reg, httpapi.HandlerOptions{
 		LookbackDays:       cfg.Ingestion.LookbackDays,
@@ -116,6 +121,7 @@ func NewWithLoggers(cfg config.Config, loggers logging.Loggers) (*App, error) {
 		reporting:       reportingSvc,
 		collector:       collectorSvc,
 		schedulerCfg:    cfg.Scheduler,
+		reportingCfg:    cfg.Reporting,
 		logger:          loggers.App,
 		schedulerLogger: loggers.Scheduler,
 		stop:            make(chan struct{}),
@@ -126,12 +132,13 @@ func NewWithLoggers(cfg config.Config, loggers logging.Loggers) (*App, error) {
 
 func (a *App) Start() error {
 	if a.schedulerCfg.Enabled {
-		go a.runScheduler()
+		go a.runIngestionScheduler()
+		go a.runReportScheduler()
 	}
 	return a.server.ListenAndServe()
 }
 
-func (a *App) runScheduler() {
+func (a *App) runIngestionScheduler() {
 	d, err := time.ParseDuration(a.schedulerCfg.IngestInterval)
 	if err != nil || d <= 0 {
 		a.schedulerLogger.Error("invalid ingest interval", "error", err)
@@ -144,12 +151,9 @@ func (a *App) runScheduler() {
 		select {
 		case <-ticker.C:
 			a.schedulerLogger.Info("scheduler triggered ingestion")
-			results, err := a.collector.Run(a.schedulerCtx, time.Time{})
+			_, err := a.collector.Run(a.schedulerCtx, time.Time{})
 			if err != nil {
 				a.schedulerLogger.Error("scheduled ingestion failed", "error", err)
-			}
-			if shouldDeliverScheduledReports(results, err) {
-				a.deliverScheduledReports(a.schedulerCtx)
 			}
 		case <-a.stop:
 			return
@@ -157,21 +161,69 @@ func (a *App) runScheduler() {
 	}
 }
 
-func shouldDeliverScheduledReports(results []collect.ProviderResult, err error) bool {
-	return err == nil && len(results) > 0
+func (a *App) runReportScheduler() {
+	location, err := time.LoadLocation(a.reportingCfg.Timezone)
+	if err != nil {
+		a.schedulerLogger.Error("invalid report timezone", "timezone", a.reportingCfg.Timezone, "error", err)
+		return
+	}
+	daily, err := parseReportCron(a.reportingCfg.DailyReportCron, location)
+	if err != nil {
+		a.schedulerLogger.Error("invalid daily report cron", "cron", a.reportingCfg.DailyReportCron, "error", err)
+		return
+	}
+	weekly, err := parseReportCron(a.reportingCfg.WeeklyReportCron, location)
+	if err != nil {
+		a.schedulerLogger.Error("invalid weekly report cron", "cron", a.reportingCfg.WeeklyReportCron, "error", err)
+		return
+	}
+	a.schedulerLogger.Info("starting report scheduler", "timezone", location.String(), "daily_cron", a.reportingCfg.DailyReportCron, "weekly_cron", a.reportingCfg.WeeklyReportCron)
+
+	now := time.Now()
+	nextDaily := daily.Next(now)
+	nextWeekly := weekly.Next(now)
+	for {
+		nextRun := earliest(nextDaily, nextWeekly)
+		timer := time.NewTimer(time.Until(nextRun))
+		select {
+		case <-timer.C:
+			runAt := time.Now()
+			if !runAt.Before(nextDaily) {
+				a.deliverScheduledReport(a.schedulerCtx, "daily", runAt)
+				nextDaily = daily.Next(runAt)
+			}
+			if !runAt.Before(nextWeekly) {
+				a.deliverScheduledReport(a.schedulerCtx, "weekly", runAt)
+				nextWeekly = weekly.Next(runAt)
+			}
+		case <-a.stop:
+			timer.Stop()
+			return
+		}
+	}
 }
 
-func (a *App) deliverScheduledReports(ctx context.Context) {
+func (a *App) deliverScheduledReport(ctx context.Context, period string, now time.Time) {
 	if a.reporting == nil || a.alerting == nil {
 		return
 	}
 	reportCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	for _, result := range a.reporting.DeliverDefaultReports(reportCtx, a.alerting, time.Now().UTC()) {
+	for _, result := range a.reporting.DeliverScheduledReport(reportCtx, a.alerting, period, now, reporting.DeliverOptions{}) {
+		if result.Skipped && result.SkipReason != "" && a.logger != nil {
+			a.logger.Info(result.SkipReason, "period", result.Period, "from", result.From, "to", result.To, "destination", result.Destination)
+		}
 		if result.Error != nil && a.logger != nil {
 			a.logger.Error("failed to deliver scheduled report", "period", result.Period, "from", result.From, "to", result.To, "error", result.Error)
 		}
 	}
+}
+
+func earliest(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
 }
 
 func (a *App) Shutdown(ctx context.Context) error {

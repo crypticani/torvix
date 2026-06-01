@@ -216,10 +216,10 @@ func (r *recordFilteringRepo) ForecastCosts(context.Context, time.Time, time.Tim
 func (r *recordFilteringRepo) IsReportProcessed(context.Context, domain.Provider, string, string, string) (bool, error) {
 	return false, nil
 }
-func (r *recordFilteringRepo) IsReportDelivered(context.Context, string, time.Time, time.Time) (bool, error) {
+func (r *recordFilteringRepo) IsReportDelivered(context.Context, domain.ReportDeliveryKey) (bool, error) {
 	return false, nil
 }
-func (r *recordFilteringRepo) RecordReportDelivery(context.Context, string, time.Time, time.Time) error {
+func (r *recordFilteringRepo) RecordReportDelivery(context.Context, domain.ReportDeliveryKey) error {
 	return nil
 }
 func (r *recordFilteringRepo) ApplyDataLifecyclePolicies(context.Context, int, int) error {

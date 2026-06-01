@@ -103,6 +103,57 @@ func TestSchedulerDefaultsToDailyIngestion(t *testing.T) {
 	}
 }
 
+func TestReportingScheduleDefaults(t *testing.T) {
+	cfg := loadTestConfig(t, "{}\n")
+
+	if cfg.Reporting.Timezone != "Asia/Kolkata" {
+		t.Fatalf("expected default report timezone Asia/Kolkata, got %q", cfg.Reporting.Timezone)
+	}
+	if cfg.Reporting.DailyReportCron != "0 14 * * *" {
+		t.Fatalf("expected daily report cron 0 14 * * *, got %q", cfg.Reporting.DailyReportCron)
+	}
+	if cfg.Reporting.WeeklyReportCron != "0 15 * * 1" {
+		t.Fatalf("expected weekly report cron 0 15 * * 1, got %q", cfg.Reporting.WeeklyReportCron)
+	}
+	if !cfg.Reporting.RequireCompleteIngestion {
+		t.Fatal("expected report completeness gate enabled by default")
+	}
+	if cfg.Reporting.DailyReportTargetLagDays != 1 {
+		t.Fatalf("expected daily target lag 1, got %d", cfg.Reporting.DailyReportTargetLagDays)
+	}
+}
+
+func TestReportingEnvOverridesPreferTorvixOverLegacyNames(t *testing.T) {
+	t.Setenv(EnvReportTimezone, "Asia/Kolkata")
+	t.Setenv(LegacyEnvReportTimezone, "UTC")
+	t.Setenv(EnvDailyReportCron, "5 14 * * *")
+	t.Setenv(LegacyEnvDailyReportCron, "0 */6 * * *")
+	t.Setenv(EnvWeeklyReportCron, "10 15 * * 1")
+	t.Setenv(LegacyEnvWeeklyReportCron, "0 12 * * 0")
+	t.Setenv(EnvReportRequireCompleteIngestion, "false")
+	t.Setenv(LegacyEnvReportRequireCompleteIngestion, "true")
+	t.Setenv(EnvDailyReportTargetLagDays, "2")
+	t.Setenv(LegacyEnvDailyReportTargetLagDays, "1")
+
+	cfg := loadTestConfig(t, "{}\n")
+
+	if cfg.Reporting.Timezone != "Asia/Kolkata" {
+		t.Fatalf("expected %s override, got %q", EnvReportTimezone, cfg.Reporting.Timezone)
+	}
+	if cfg.Reporting.DailyReportCron != "5 14 * * *" {
+		t.Fatalf("expected %s override, got %q", EnvDailyReportCron, cfg.Reporting.DailyReportCron)
+	}
+	if cfg.Reporting.WeeklyReportCron != "10 15 * * 1" {
+		t.Fatalf("expected %s override, got %q", EnvWeeklyReportCron, cfg.Reporting.WeeklyReportCron)
+	}
+	if cfg.Reporting.RequireCompleteIngestion {
+		t.Fatalf("expected %s=false override", EnvReportRequireCompleteIngestion)
+	}
+	if cfg.Reporting.DailyReportTargetLagDays != 2 {
+		t.Fatalf("expected %s=2 override, got %d", EnvDailyReportTargetLagDays, cfg.Reporting.DailyReportTargetLagDays)
+	}
+}
+
 func TestProviderInheritsMaxZeroYieldFilesDefault(t *testing.T) {
 	cfg := loadTestConfig(t, "ingestion:\n  max_zero_yield_files: 17\n")
 	provider := cfg.Providers.OCI.WithIngestionDefaults(cfg.Ingestion)

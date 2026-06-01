@@ -66,6 +66,36 @@ func (s *Service) SendReport(ctx context.Context, report domain.Report) error {
 	return nil
 }
 
+func (s *Service) ReportDestinations() []string {
+	destinations := make([]string, 0, len(s.webhooks))
+	seen := make(map[string]bool, len(s.webhooks))
+	for i, target := range s.webhooks {
+		if !target.Enabled {
+			continue
+		}
+		destination := reportDestination(target, i)
+		if seen[destination] {
+			continue
+		}
+		destinations = append(destinations, destination)
+		seen[destination] = true
+	}
+	return destinations
+}
+
+func (s *Service) SendReportToDestination(ctx context.Context, destination string, report domain.Report) error {
+	for i, target := range s.webhooks {
+		if !target.Enabled {
+			continue
+		}
+		if reportDestination(target, i) != destination {
+			continue
+		}
+		return s.sendReport(ctx, target, report)
+	}
+	return fmt.Errorf("report destination %q is not configured", destination)
+}
+
 func (s *Service) SendNotification(ctx context.Context, notification Notification) error {
 	for _, target := range s.webhooks {
 		if !target.Enabled {
@@ -76,6 +106,16 @@ func (s *Service) SendNotification(ctx context.Context, notification Notificatio
 		}
 	}
 	return nil
+}
+
+func reportDestination(target config.Webhook, index int) string {
+	if target.Name != "" {
+		return target.Name
+	}
+	if target.Type != "" {
+		return fmt.Sprintf("%s-%d", strings.ToLower(target.Type), index+1)
+	}
+	return fmt.Sprintf("destination-%d", index+1)
 }
 
 func (s *Service) sendReport(ctx context.Context, target config.Webhook, report domain.Report) error {

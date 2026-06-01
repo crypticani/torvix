@@ -233,7 +233,7 @@ const docTemplate = `{
         },
         "/api/v1/reports/daily": {
             "get": {
-                "description": "Builds a daily cost report including summary, anomalies, and forecast. Optionally delivers via configured webhooks.",
+                "description": "Builds a daily cost report for day-1 in the configured report timezone by default, including summary, anomalies, and forecast. Optionally delivers via configured webhooks.",
                 "produces": [
                     "application/json"
                 ],
@@ -351,7 +351,7 @@ const docTemplate = `{
         },
         "/api/v1/reports/weekly": {
             "get": {
-                "description": "Builds a weekly cost report including summary, anomalies, and forecast. Optionally delivers via configured webhooks.",
+                "description": "Builds a weekly cost report for the previous full Monday-to-Sunday week by default, including summary, anomalies, and forecast. Optionally delivers via configured webhooks.",
                 "produces": [
                     "application/json"
                 ],
@@ -728,7 +728,7 @@ const docTemplate = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "0.7.1",
+	Version:          "0.7.2",
 	Host:             "localhost:8080",
 	BasePath:         "/",
 	Schemes:          []string{"http"},

@@ -212,7 +212,7 @@ info:
     precomputed cost summaries, deterministic anomaly detection, forecasting, and
     automated reporting.
   title: Torvix API
-  version: 0.7.1
+  version: 0.7.2
 paths:
   /api/v1/analytics/anomalies:
     get:
@@ -365,7 +365,8 @@ paths:
       - Ingestion
   /api/v1/reports/daily:
     get:
-      description: Builds a daily cost report including summary, anomalies, and forecast.
+      description: Builds a daily cost report for day-1 in the configured report timezone
+        by default, including summary, anomalies, and forecast.
         Optionally delivers via configured webhooks.
       parameters:
       - description: Start date (YYYY-MM-DD). Defaults to 30 days ago.
@@ -447,7 +448,8 @@ paths:
       - Reports
   /api/v1/reports/weekly:
     get:
-      description: Builds a weekly cost report including summary, anomalies, and forecast.
+      description: Builds a weekly cost report for the previous full Monday-to-Sunday
+        week by default, including summary, anomalies, and forecast.
         Optionally delivers via configured webhooks.
       parameters:
       - description: Start date (YYYY-MM-DD). Defaults to 30 days ago.

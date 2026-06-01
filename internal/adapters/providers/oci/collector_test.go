@@ -556,11 +556,11 @@ func (f *fakeRepository) IsReportProcessed(_ context.Context, _ domain.Provider,
 	return f.processed[objectName+"|"+etag], nil
 }
 
-func (f *fakeRepository) IsReportDelivered(context.Context, string, time.Time, time.Time) (bool, error) {
+func (f *fakeRepository) IsReportDelivered(context.Context, domain.ReportDeliveryKey) (bool, error) {
 	return false, nil
 }
 
-func (f *fakeRepository) RecordReportDelivery(context.Context, string, time.Time, time.Time) error {
+func (f *fakeRepository) RecordReportDelivery(context.Context, domain.ReportDeliveryKey) error {
 	return nil
 }
 

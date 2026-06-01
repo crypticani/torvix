@@ -232,7 +232,6 @@ func (h *Handler) runIngestionJob(jobID string, since time.Time) {
 			err := fmt.Errorf("ingestion panic: %v", recovered)
 			job := h.ingestions.complete(jobID, ingestionStatusFailed, nil, err)
 			h.notifyIngestionComplete(job)
-			h.deliverIngestionReports(job)
 		}
 	}()
 	results, err := h.collector.Run(context.Background(), since)
@@ -246,7 +245,6 @@ func (h *Handler) runIngestionJob(jobID string, since time.Time) {
 	}
 	job := h.ingestions.complete(jobID, status, resp, err)
 	h.notifyIngestionComplete(job)
-	h.deliverIngestionReports(job)
 }
 
 func ingestionResponses(results []collect.ProviderResult) []IngestResponse {
@@ -276,22 +274,6 @@ func (h *Handler) notifyIngestionComplete(job IngestionJobResponse) {
 	defer cancel()
 	if err := h.alerting.SendNotification(ctx, ingestionNotification(job)); err != nil {
 		h.logger.Error("failed to deliver ingestion completion alert", "job_id", job.JobID, "error", err)
-	}
-}
-
-func (h *Handler) deliverIngestionReports(job IngestionJobResponse) {
-	if h.reporting == nil || h.alerting == nil {
-		return
-	}
-	if job.Status != ingestionStatusSuccess {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	for _, result := range h.reporting.DeliverDefaultReports(ctx, h.alerting, time.Now().UTC()) {
-		if result.Error != nil {
-			h.logger.Error("failed to deliver post-ingestion report", "period", result.Period, "from", result.From, "to", result.To, "error", result.Error)
-		}
 	}
 }
 
@@ -461,12 +443,13 @@ func (h *Handler) forecast(w http.ResponseWriter, r *http.Request) {
 // dailyReport godoc
 //
 //	@Summary		Generate daily report
-//	@Description	Builds a daily cost report for yesterday by default, including summary, anomalies, and forecast. Optionally delivers via configured webhooks.
+//	@Description	Builds a daily cost report for day-1 in the configured report timezone by default, including summary, anomalies, and forecast. Optionally delivers via configured webhooks.
 //	@Tags			Reports
 //	@Produce		json
 //	@Param			from	query		string	false	"Start date (YYYY-MM-DD). Defaults to yesterday for daily reports."	example(2025-01-01)
 //	@Param			to		query		string	false	"End date (YYYY-MM-DD). Defaults to today for daily reports."		example(2025-01-31)
 //	@Param			deliver	query		string	false	"Set to 'true' to send report via webhooks."			Enums(true, false)	default(false)
+//	@Param			force	query		string	false	"Set to 'true' to resend even if this report was already delivered."	Enums(true, false)	default(false)
 //	@Success		200		{object}	domain.Report	"Daily report"
 //	@Failure		500		{object}	ErrorResponse	"Report generation failed"
 //	@Failure		502		{object}	ErrorResponse	"Webhook delivery failed"
@@ -487,12 +470,13 @@ func (h *Handler) dailyReport(w http.ResponseWriter, r *http.Request) {
 // weeklyReport godoc
 //
 //	@Summary		Generate weekly report
-//	@Description	Builds a weekly cost report for the last completed week by default, including summary, anomalies, and forecast. Optionally delivers via configured webhooks.
+//	@Description	Builds a weekly cost report for the previous full Monday-to-Sunday week by default, including summary, anomalies, and forecast. Optionally delivers via configured webhooks.
 //	@Tags			Reports
 //	@Produce		json
-//	@Param			from	query		string	false	"Start date (YYYY-MM-DD). Defaults to the start of last completed week."	example(2025-01-01)
-//	@Param			to		query		string	false	"End date (YYYY-MM-DD). Defaults to the start of this week."				example(2025-01-31)
+//	@Param			from	query		string	false	"Start date (YYYY-MM-DD). Defaults to previous Monday."	example(2025-01-01)
+//	@Param			to		query		string	false	"End date (YYYY-MM-DD). Defaults to current Monday."		example(2025-01-31)
 //	@Param			deliver	query		string	false	"Set to 'true' to send report via webhooks."			Enums(true, false)	default(false)
+//	@Param			force	query		string	false	"Set to 'true' to resend even if this report was already delivered."	Enums(true, false)	default(false)
 //	@Success		200		{object}	domain.Report	"Weekly report"
 //	@Failure		500		{object}	ErrorResponse	"Report generation failed"
 //	@Failure		502		{object}	ErrorResponse	"Webhook delivery failed"
@@ -519,6 +503,7 @@ func (h *Handler) weeklyReport(w http.ResponseWriter, r *http.Request) {
 //	@Param			from	query		string	false	"Start date (YYYY-MM-DD). Defaults to the start of last completed month."	example(2025-01-01)
 //	@Param			to		query		string	false	"End date (YYYY-MM-DD). Defaults to the start of this month."				example(2025-01-31)
 //	@Param			deliver	query		string	false	"Set to 'true' to send report via webhooks."			Enums(true, false)	default(false)
+//	@Param			force	query		string	false	"Set to 'true' to resend even if this report was already delivered."	Enums(true, false)	default(false)
 //	@Success		200		{object}	domain.Report	"Monthly report"
 //	@Failure		500		{object}	ErrorResponse	"Report generation failed"
 //	@Failure		502		{object}	ErrorResponse	"Webhook delivery failed"
@@ -548,7 +533,15 @@ func (h *Handler) maybeDeliver(r *http.Request, report domain.Report) error {
 	if r.URL.Query().Get("deliver") != "true" || h.alerting == nil {
 		return nil
 	}
-	return h.alerting.SendReport(r.Context(), report)
+	results := h.reporting.DeliverReport(r.Context(), h.alerting, report, reporting.DeliverOptions{
+		Force: r.URL.Query().Get("force") == "true",
+	})
+	for _, result := range results {
+		if result.Error != nil {
+			return result.Error
+		}
+	}
+	return nil
 }
 
 func (h *Handler) parseRange(r *http.Request) (time.Time, time.Time) {

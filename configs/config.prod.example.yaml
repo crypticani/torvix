@@ -50,6 +50,11 @@ scheduler:
   ingest_interval: "24h"
 
 reporting:
+  timezone: "Asia/Kolkata"
+  daily_report_cron: "0 14 * * *"
+  weekly_report_cron: "0 15 * * 1"
+  require_complete_ingestion: true
+  daily_report_target_lag_days: 1
   webhooks:
     - name: slack-finops
       type: slack

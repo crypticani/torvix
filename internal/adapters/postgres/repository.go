@@ -678,26 +678,28 @@ func (r *Repository) IsReportProcessed(ctx context.Context, provider domain.Prov
 	return exists, err
 }
 
-func (r *Repository) IsReportDelivered(ctx context.Context, period string, from, to time.Time) (bool, error) {
+func (r *Repository) IsReportDelivered(ctx context.Context, key domain.ReportDeliveryKey) (bool, error) {
 	var exists bool
 	err := r.db.QueryRow(ctx, `
 		SELECT EXISTS(
 			SELECT 1
 			FROM report_deliveries
-			WHERE period = $1
-			  AND period_start = $2
-			  AND period_end = $3
+			WHERE provider = $1
+			  AND report_type = $2
+			  AND period_start = $3
+			  AND period_end = $4
+			  AND destination = $5
 		)
-	`, period, from.UTC(), to.UTC()).Scan(&exists)
+	`, key.Provider, key.ReportType, key.PeriodStart.UTC(), key.PeriodEnd.UTC(), key.Destination).Scan(&exists)
 	return exists, err
 }
 
-func (r *Repository) RecordReportDelivery(ctx context.Context, period string, from, to time.Time) error {
+func (r *Repository) RecordReportDelivery(ctx context.Context, key domain.ReportDeliveryKey) error {
 	_, err := r.db.Exec(ctx, `
-		INSERT INTO report_deliveries (period, period_start, period_end, delivered_at)
-		VALUES ($1, $2, $3, now())
-		ON CONFLICT (period, period_start, period_end) DO NOTHING
-	`, period, from.UTC(), to.UTC())
+		INSERT INTO report_deliveries (provider, report_type, period_start, period_end, destination, delivered_at)
+		VALUES ($1, $2, $3, $4, $5, now())
+		ON CONFLICT (provider, report_type, period_start, period_end, destination) DO NOTHING
+	`, key.Provider, key.ReportType, key.PeriodStart.UTC(), key.PeriodEnd.UTC(), key.Destination)
 	return err
 }
 

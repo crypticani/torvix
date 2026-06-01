@@ -102,6 +102,21 @@ Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are 
 4. Configure any alerting targets under `reporting.webhooks`.
    The production example includes disabled placeholders for Slack, Microsoft Teams, Telegram, Discord, and SMTP email. Keep only the targets you use, replace placeholder secrets, set the correct `currency`, and set `enabled: true`.
 
+   The default report scheduler uses `Asia/Kolkata`:
+
+   ```yaml
+   reporting:
+     timezone: "Asia/Kolkata"
+     daily_report_cron: "0 14 * * *"
+     weekly_report_cron: "0 15 * * 1"
+     require_complete_ingestion: true
+     daily_report_target_lag_days: 1
+   ```
+
+   Daily reports run once per day at 2:00 PM IST and report day-1 data. Weekly reports run at 3:00 PM IST every Monday and cover the previous full Monday-to-Sunday week. If required daily data is not present, Torvix skips the report instead of sending an incomplete alert.
+
+   The same values can be overridden with `TORVIX_REPORT_TIMEZONE`, `TORVIX_DAILY_REPORT_CRON`, `TORVIX_WEEKLY_REPORT_CRON`, `TORVIX_REPORT_REQUIRE_COMPLETE_INGESTION`, and `TORVIX_DAILY_REPORT_TARGET_LAG_DAYS`. Existing `CLOUDPULSE_*` report env vars are accepted only as lower-priority compatibility fallbacks.
+
 5. Start only the Torvix app:
 
    ```bash

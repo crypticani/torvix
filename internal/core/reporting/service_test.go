@@ -47,137 +47,108 @@ func TestDefaultRange(t *testing.T) {
 	}
 }
 
-func TestDeliverDefaultReportsSendsDailyWeeklyAndMonthly(t *testing.T) {
-	repo := &reportingRepo{}
-	svc := New(analytics.New(repo), forecasting.New(repo))
-	sender := &recordingReportSender{}
-	now := time.Date(2026, 5, 17, 15, 30, 0, 0, time.UTC)
+func TestDefaultRangeWithReportTimezoneAndLag(t *testing.T) {
+	loc := mustLocation(t, "Asia/Kolkata")
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, loc)
 
-	results := svc.DeliverDefaultReports(context.Background(), sender, now)
+	dailyFrom, dailyTo := DefaultRangeWithOptions("daily", now, Options{Location: loc, DailyReportTargetLagDays: 1})
+	wantDailyFrom := time.Date(2026, 5, 31, 0, 0, 0, 0, loc).UTC()
+	wantDailyTo := time.Date(2026, 6, 1, 0, 0, 0, 0, loc).UTC()
+	if !dailyFrom.Equal(wantDailyFrom) || !dailyTo.Equal(wantDailyTo) {
+		t.Fatalf("daily range = %s - %s, want %s - %s", dailyFrom, dailyTo, wantDailyFrom, wantDailyTo)
+	}
 
-	if len(results) != 3 {
-		t.Fatalf("expected three delivery results, got %d", len(results))
-	}
-	if len(sender.reports) != 3 {
-		t.Fatalf("expected three delivered reports, got %d", len(sender.reports))
-	}
-	gotPeriods := []string{sender.reports[0].Period, sender.reports[1].Period, sender.reports[2].Period}
-	wantPeriods := []string{"daily", "weekly", "monthly"}
-	if !reflect.DeepEqual(gotPeriods, wantPeriods) {
-		t.Fatalf("delivered periods = %v, want %v", gotPeriods, wantPeriods)
-	}
-	wantRanges := map[string][2]time.Time{
-		"daily": {
-			time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC),
-			time.Date(2026, 5, 17, 0, 0, 0, 0, time.UTC),
-		},
-		"weekly": {
-			time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC),
-			time.Date(2026, 5, 11, 0, 0, 0, 0, time.UTC),
-		},
-		"monthly": {
-			time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC),
-			time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
-		},
-	}
-	for _, call := range repo.aggregateCalls {
-		want, ok := wantRanges[call.window]
-		if !ok {
-			t.Fatalf("unexpected aggregate window %q", call.window)
-		}
-		if !call.from.Equal(want[0]) || !call.to.Equal(want[1]) {
-			t.Fatalf("%s aggregate range = %s - %s, want %s - %s", call.window, call.from, call.to, want[0], want[1])
-		}
-	}
-	for _, result := range results {
-		if result.Error != nil {
-			t.Fatalf("expected successful delivery result for %s, got %v", result.Period, result.Error)
-		}
+	weeklyFrom, weeklyTo := DefaultRangeWithOptions("weekly", now, Options{Location: loc, DailyReportTargetLagDays: 1})
+	wantWeeklyFrom := time.Date(2026, 5, 25, 0, 0, 0, 0, loc).UTC()
+	wantWeeklyTo := time.Date(2026, 6, 1, 0, 0, 0, 0, loc).UTC()
+	if !weeklyFrom.Equal(wantWeeklyFrom) || !weeklyTo.Equal(wantWeeklyTo) {
+		t.Fatalf("weekly range = %s - %s, want %s - %s", weeklyFrom, weeklyTo, wantWeeklyFrom, wantWeeklyTo)
 	}
 }
 
-func TestDeliverDefaultReportsSkipsWeeklyAndMonthlyAlreadyDeliveredForPeriod(t *testing.T) {
-	now := time.Date(2026, 5, 17, 15, 30, 0, 0, time.UTC)
-	weeklyFrom, weeklyTo := DefaultRange("weekly", now)
-	monthlyFrom, monthlyTo := DefaultRange("monthly", now)
+func TestDeliverScheduledDailySkipsIncompleteTargetDate(t *testing.T) {
+	loc := mustLocation(t, "Asia/Kolkata")
+	repo := &reportingRepo{aggregateByDay: map[time.Time][]domain.AggregatedCost{}}
+	svc := NewWithOptions(analytics.New(repo), forecasting.New(repo), Options{
+		Location:                 loc,
+		DailyReportTargetLagDays: 1,
+		RequireCompleteIngestion: true,
+	})
+	sender := &recordingReportSender{destinations: []string{"slack"}}
+
+	results := svc.DeliverScheduledReport(context.Background(), sender, "daily", time.Date(2026, 6, 1, 12, 0, 0, 0, loc), DeliverOptions{})
+
+	if len(results) != 1 || !results[0].Skipped || results[0].SkipReason != SkipDailyIncomplete {
+		t.Fatalf("expected incomplete daily skip, got %+v", results)
+	}
+	if len(sender.reports) != 0 {
+		t.Fatalf("expected no reports sent, got %d", len(sender.reports))
+	}
+}
+
+func TestDeliverScheduledWeeklySkipsIncompleteRange(t *testing.T) {
+	loc := mustLocation(t, "Asia/Kolkata")
+	repo := &reportingRepo{aggregateByDay: map[time.Time][]domain.AggregatedCost{}}
+	for day := 25; day <= 30; day++ {
+		start := time.Date(2026, 5, day, 0, 0, 0, 0, loc).UTC()
+		repo.aggregateByDay[start] = []domain.AggregatedCost{{WindowStart: start, WindowEnd: start.AddDate(0, 0, 1), Provider: domain.ProviderOCI, Service: "Compute", TotalCost: 10}}
+	}
+	svc := NewWithOptions(analytics.New(repo), forecasting.New(repo), Options{
+		Location:                 loc,
+		DailyReportTargetLagDays: 1,
+		RequireCompleteIngestion: true,
+	})
+	sender := &recordingReportSender{destinations: []string{"slack"}}
+
+	results := svc.DeliverScheduledReport(context.Background(), sender, "weekly", time.Date(2026, 6, 1, 15, 0, 0, 0, loc), DeliverOptions{})
+
+	if len(results) != 1 || !results[0].Skipped || results[0].SkipReason != SkipWeeklyIncomplete {
+		t.Fatalf("expected incomplete weekly skip, got %+v", results)
+	}
+	if len(sender.reports) != 0 {
+		t.Fatalf("expected no reports sent, got %d", len(sender.reports))
+	}
+}
+
+func TestDeliverScheduledReportRecordsAndSkipsDuplicatePerDestination(t *testing.T) {
+	loc := mustLocation(t, "Asia/Kolkata")
+	targetStart := time.Date(2026, 5, 31, 0, 0, 0, 0, loc).UTC()
 	repo := &reportingRepo{
-		delivered: map[string]bool{
-			deliveryKey("weekly", weeklyFrom, weeklyTo):    true,
-			deliveryKey("monthly", monthlyFrom, monthlyTo): true,
+		aggregateByDay: map[time.Time][]domain.AggregatedCost{
+			targetStart: {{WindowStart: targetStart, WindowEnd: targetStart.AddDate(0, 0, 1), Provider: domain.ProviderOCI, Service: "Compute", TotalCost: 10}},
 		},
+		delivered: make(map[string]bool),
 	}
-	svc := New(analytics.New(repo), forecasting.New(repo))
-	sender := &recordingReportSender{}
+	svc := NewWithOptions(analytics.New(repo), forecasting.New(repo), Options{
+		Location:                 loc,
+		DailyReportTargetLagDays: 1,
+		RequireCompleteIngestion: true,
+	})
+	sender := &recordingReportSender{destinations: []string{"slack"}}
+	now := time.Date(2026, 6, 1, 14, 0, 0, 0, loc)
 
-	results := svc.DeliverDefaultReports(context.Background(), sender, now)
+	first := svc.DeliverScheduledReport(context.Background(), sender, "daily", now, DeliverOptions{})
+	second := svc.DeliverScheduledReport(context.Background(), sender, "daily", now, DeliverOptions{})
 
-	if len(results) != 3 {
-		t.Fatalf("expected three delivery results, got %d", len(results))
+	if len(first) != 1 || first[0].Error != nil || first[0].Skipped {
+		t.Fatalf("expected first delivery success, got %+v", first)
 	}
-	if len(sender.reports) != 1 || sender.reports[0].Period != "daily" {
-		t.Fatalf("expected only daily report to be delivered, got %+v", sender.reports)
+	if len(second) != 1 || !second[0].Skipped || second[0].SkipReason != "report already delivered" {
+		t.Fatalf("expected duplicate skip, got %+v", second)
 	}
-	if !reflect.DeepEqual(repo.aggregateWindows(), []string{"daily"}) {
-		t.Fatalf("aggregate windows = %v, want [daily]", repo.aggregateWindows())
+	if len(sender.reports) != 1 {
+		t.Fatalf("expected one sent report, got %d", len(sender.reports))
 	}
-}
-
-func TestDeliverDefaultReportsRecordsWeeklyAndMonthlyAfterSuccessfulDelivery(t *testing.T) {
-	repo := &reportingRepo{}
-	svc := New(analytics.New(repo), forecasting.New(repo))
-	sender := &recordingReportSender{}
-	now := time.Date(2026, 5, 17, 15, 30, 0, 0, time.UTC)
-
-	results := svc.DeliverDefaultReports(context.Background(), sender, now)
-
-	for _, result := range results {
-		if result.Error != nil {
-			t.Fatalf("expected successful delivery result for %s, got %v", result.Period, result.Error)
-		}
-	}
-	weeklyFrom, weeklyTo := DefaultRange("weekly", now)
-	monthlyFrom, monthlyTo := DefaultRange("monthly", now)
-	for _, key := range []string{
-		deliveryKey("weekly", weeklyFrom, weeklyTo),
-		deliveryKey("monthly", monthlyFrom, monthlyTo),
-	} {
-		if !repo.recorded[key] {
-			t.Fatalf("expected delivery key %s to be recorded, got %#v", key, repo.recorded)
-		}
-	}
-	dailyFrom, dailyTo := DefaultRange("daily", now)
-	if repo.recorded[deliveryKey("daily", dailyFrom, dailyTo)] {
-		t.Fatalf("daily reports should not be recorded for cadence gating")
-	}
-}
-
-func TestBuildDefaultIncludesTopCostIncreasesAndDecreases(t *testing.T) {
-	repo := &reportingRepo{
-		variances: []domain.CostVariance{
-			{Provider: domain.ProviderOCI, Service: "COMPUTE", CompartmentName: "app", CurrentCost: 300, PreviousCost: 100, Delta: 200, PercentChange: 200, Direction: "increase"},
-			{Provider: domain.ProviderOCI, Service: "OBJECTSTORE", CompartmentName: "data", CurrentCost: 40, PreviousCost: 140, Delta: -100, PercentChange: -71.4, Direction: "decrease"},
-			{Provider: domain.ProviderOCI, Service: "NETWORK", CompartmentName: "shared", CurrentCost: 50, PreviousCost: 50, Delta: 0, Direction: "flat"},
-		},
-	}
-	svc := New(analytics.New(repo), forecasting.New(repo))
-
-	report, err := svc.BuildDefault(context.Background(), "weekly", time.Date(2026, 5, 17, 15, 30, 0, 0, time.UTC))
-	if err != nil {
-		t.Fatalf("BuildDefault() error = %v", err)
-	}
-
-	if len(report.CostIncreases) != 1 || report.CostIncreases[0].Service != "COMPUTE" {
-		t.Fatalf("expected COMPUTE top increase, got %+v", report.CostIncreases)
-	}
-	if len(report.CostDecreases) != 1 || report.CostDecreases[0].Service != "OBJECTSTORE" {
-		t.Fatalf("expected OBJECTSTORE top decrease, got %+v", report.CostDecreases)
+	key := deliveryKey("all", "daily", targetStart, targetStart.AddDate(0, 0, 1), "slack")
+	if !repo.recorded[key] {
+		t.Fatalf("expected delivery key %s to be recorded, got %#v", key, repo.recorded)
 	}
 }
 
 func TestDeliverDefaultReportsContinuesAfterOneReportFails(t *testing.T) {
 	repo := &reportingRepo{}
-	svc := New(analytics.New(repo), forecasting.New(repo))
-	sender := &recordingReportSender{failPeriod: "weekly"}
+	svc := NewWithOptions(analytics.New(repo), forecasting.New(repo), Options{RequireCompleteIngestion: false})
+	sender := &recordingReportSender{destinations: []string{"slack"}, failPeriod: "weekly"}
 
 	results := svc.DeliverDefaultReports(context.Background(), sender, time.Date(2026, 5, 17, 15, 30, 0, 0, time.UTC))
 
@@ -198,70 +169,37 @@ func TestDeliverDefaultReportsContinuesAfterOneReportFails(t *testing.T) {
 	}
 }
 
-func TestBuildDefaultDailyFallsBackToLatestPriorDayWithData(t *testing.T) {
+func TestBuildDefaultIncludesTopCostIncreasesAndDecreases(t *testing.T) {
 	repo := &reportingRepo{
-		aggregateByDay: map[time.Time][]domain.AggregatedCost{
-			time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC): {
-				{
-					WindowStart: time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC),
-					WindowEnd:   time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC),
-					Provider:    domain.ProviderOCI,
-					Service:     "Compute",
-					TotalCost:   42,
-				},
-			},
+		variances: []domain.CostVariance{
+			{Provider: domain.ProviderOCI, Service: "COMPUTE", CompartmentName: "app", CurrentCost: 300, PreviousCost: 100, Delta: 200, PercentChange: 200, Direction: "increase"},
+			{Provider: domain.ProviderOCI, Service: "OBJECTSTORE", CompartmentName: "data", CurrentCost: 40, PreviousCost: 140, Delta: -100, PercentChange: -71.4, Direction: "decrease"},
+			{Provider: domain.ProviderOCI, Service: "NETWORK", CompartmentName: "shared", CurrentCost: 50, PreviousCost: 50, Delta: 0, Direction: "flat"},
 		},
 	}
-	svc := New(analytics.New(repo), forecasting.New(repo))
+	svc := NewWithOptions(analytics.New(repo), forecasting.New(repo), Options{RequireCompleteIngestion: false})
 
-	report, err := svc.BuildDefault(context.Background(), "daily", time.Date(2026, 5, 22, 4, 0, 0, 0, time.UTC))
+	report, err := svc.BuildDefault(context.Background(), "weekly", time.Date(2026, 5, 17, 15, 30, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatalf("BuildDefault() error = %v", err)
 	}
 
-	if len(report.Summary) != 1 {
-		t.Fatalf("expected fallback daily summary, got %d rows", len(report.Summary))
+	if len(report.CostIncreases) != 1 || report.CostIncreases[0].Service != "COMPUTE" {
+		t.Fatalf("expected COMPUTE top increase, got %+v", report.CostIncreases)
 	}
-	if !report.Summary[0].WindowStart.Equal(time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC)) {
-		t.Fatalf("expected latest prior day with data, got %s", report.Summary[0].WindowStart)
-	}
-}
-
-func TestBuildDefaultDailySkipsExpensiveAnalyticsForEmptyFallbackDays(t *testing.T) {
-	repo := &reportingRepo{
-		aggregateByDay: map[time.Time][]domain.AggregatedCost{
-			time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC): {
-				{
-					WindowStart: time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC),
-					WindowEnd:   time.Date(2026, 5, 21, 0, 0, 0, 0, time.UTC),
-					Provider:    domain.ProviderOCI,
-					Service:     "Compute",
-					TotalCost:   42,
-				},
-			},
-		},
-	}
-	svc := New(analytics.New(repo), forecasting.New(repo))
-
-	report, err := svc.BuildDefault(context.Background(), "daily", time.Date(2026, 5, 22, 4, 0, 0, 0, time.UTC))
-	if err != nil {
-		t.Fatalf("BuildDefault() error = %v", err)
-	}
-
-	if len(report.Summary) != 1 {
-		t.Fatalf("expected fallback daily summary, got %d rows", len(report.Summary))
-	}
-	if repo.detectCalls != 1 {
-		t.Fatalf("DetectAnomalies calls = %d, want 1 for selected report day only", repo.detectCalls)
-	}
-	if repo.forecastCalls != 1 {
-		t.Fatalf("ForecastCosts calls = %d, want 1 for selected report day only", repo.forecastCalls)
+	if len(report.CostDecreases) != 1 || report.CostDecreases[0].Service != "OBJECTSTORE" {
+		t.Fatalf("expected OBJECTSTORE top decrease, got %+v", report.CostDecreases)
 	}
 }
 
 type recordingReportSender struct {
-	reports    []domain.Report
-	failPeriod string
+	destinations []string
+	reports      []domain.Report
+	failPeriod   string
+}
+
+func (s *recordingReportSender) ReportDestinations() []string {
+	return s.destinations
 }
 
 func (s *recordingReportSender) SendReport(_ context.Context, report domain.Report) error {
@@ -270,6 +208,10 @@ func (s *recordingReportSender) SendReport(_ context.Context, report domain.Repo
 		return errors.New("delivery failed")
 	}
 	return nil
+}
+
+func (s *recordingReportSender) SendReportToDestination(ctx context.Context, _ string, report domain.Report) error {
+	return s.SendReport(ctx, report)
 }
 
 type aggregateCall struct {
@@ -355,29 +297,35 @@ func (r *reportingRepo) LatestIngestionStatus(context.Context) (domain.Ingestion
 	return domain.IngestionStatusSummary{}, nil
 }
 
-func (r *reportingRepo) IsReportDelivered(_ context.Context, period string, from, to time.Time) (bool, error) {
+func (r *reportingRepo) IsReportDelivered(_ context.Context, key domain.ReportDeliveryKey) (bool, error) {
 	if r.delivered == nil {
 		return false, nil
 	}
-	return r.delivered[deliveryKey(period, from, to)], nil
+	return r.delivered[deliveryKey(key.Provider, key.ReportType, key.PeriodStart, key.PeriodEnd, key.Destination)], nil
 }
 
-func (r *reportingRepo) RecordReportDelivery(_ context.Context, period string, from, to time.Time) error {
+func (r *reportingRepo) RecordReportDelivery(_ context.Context, key domain.ReportDeliveryKey) error {
 	if r.recorded == nil {
 		r.recorded = make(map[string]bool)
 	}
-	r.recorded[deliveryKey(period, from, to)] = true
+	if r.delivered == nil {
+		r.delivered = make(map[string]bool)
+	}
+	keyString := deliveryKey(key.Provider, key.ReportType, key.PeriodStart, key.PeriodEnd, key.Destination)
+	r.recorded[keyString] = true
+	r.delivered[keyString] = true
 	return nil
 }
 
-func (r *reportingRepo) aggregateWindows() []string {
-	out := make([]string, 0, len(r.aggregateCalls))
-	for _, call := range r.aggregateCalls {
-		out = append(out, call.window)
-	}
-	return out
+func deliveryKey(provider, period string, from, to time.Time, destination string) string {
+	return fmt.Sprintf("%s|%s|%s|%s|%s", provider, period, from.UTC().Format(time.RFC3339), to.UTC().Format(time.RFC3339), destination)
 }
 
-func deliveryKey(period string, from, to time.Time) string {
-	return fmt.Sprintf("%s|%s|%s", period, from.UTC().Format(time.RFC3339), to.UTC().Format(time.RFC3339))
+func mustLocation(t *testing.T, name string) *time.Location {
+	t.Helper()
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		t.Fatalf("load location %s: %v", name, err)
+	}
+	return loc
 }

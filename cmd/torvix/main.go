@@ -17,7 +17,7 @@ import (
 )
 
 //	@title			Torvix API
-//	@version		0.7.1
+//	@version		0.7.2
 //	@description	Torvix is an open-source FinOps platform for cloud cost visibility, anomaly detection, forecasting, and unused-resource detection across cloud providers.
 
 //	@contact.name	Torvix Team

@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -13,15 +12,54 @@ import (
 	"github.com/crypticani/torvix/internal/config"
 	"github.com/crypticani/torvix/internal/core/alerting"
 	"github.com/crypticani/torvix/internal/core/analytics"
-	"github.com/crypticani/torvix/internal/core/collect"
 	"github.com/crypticani/torvix/internal/core/forecasting"
 	"github.com/crypticani/torvix/internal/core/reporting"
 	"github.com/crypticani/torvix/internal/domain"
 )
 
-func TestDeliverScheduledReportsSendsDailyWeeklyAndMonthly(t *testing.T) {
-	repo := &scheduledReportRepo{}
-	reportingSvc := reporting.New(analytics.New(repo), forecasting.New(repo))
+func TestReportCronDailyRunsOncePerDayAtConfiguredLocalTime(t *testing.T) {
+	loc := mustLocation(t, "Asia/Kolkata")
+	cron, err := parseReportCron("0 14 * * *", loc)
+	if err != nil {
+		t.Fatalf("parseReportCron() error = %v", err)
+	}
+
+	sameDay := cron.Next(time.Date(2026, 6, 1, 13, 59, 0, 0, loc))
+	if !sameDay.Equal(time.Date(2026, 6, 1, 14, 0, 0, 0, loc)) {
+		t.Fatalf("next daily before cutoff = %s, want 2026-06-01 14:00 IST", sameDay)
+	}
+
+	nextDay := cron.Next(time.Date(2026, 6, 1, 14, 1, 0, 0, loc))
+	if !nextDay.Equal(time.Date(2026, 6, 2, 14, 0, 0, 0, loc)) {
+		t.Fatalf("next daily after cutoff = %s, want 2026-06-02 14:00 IST", nextDay)
+	}
+}
+
+func TestReportCronWeeklyRunsOnMonday(t *testing.T) {
+	loc := mustLocation(t, "Asia/Kolkata")
+	cron, err := parseReportCron("0 15 * * 1", loc)
+	if err != nil {
+		t.Fatalf("parseReportCron() error = %v", err)
+	}
+
+	next := cron.Next(time.Date(2026, 5, 31, 12, 0, 0, 0, loc))
+	want := time.Date(2026, 6, 1, 15, 0, 0, 0, loc)
+	if !next.Equal(want) {
+		t.Fatalf("next weekly = %s, want %s", next, want)
+	}
+}
+
+func TestDeliverScheduledReportSendsOnlyRequestedPeriod(t *testing.T) {
+	loc := mustLocation(t, "Asia/Kolkata")
+	targetStart := time.Date(2026, 5, 31, 0, 0, 0, 0, loc).UTC()
+	repo := &scheduledReportRepo{aggregateByDay: map[time.Time][]domain.AggregatedCost{
+		targetStart: {{WindowStart: targetStart, WindowEnd: targetStart.AddDate(0, 0, 1), Provider: domain.ProviderOCI, Service: "daily", TotalCost: 10}},
+	}}
+	reportingSvc := reporting.NewWithOptions(analytics.New(repo), forecasting.New(repo), reporting.Options{
+		Location:                 loc,
+		DailyReportTargetLagDays: 1,
+		RequireCompleteIngestion: true,
+	})
 	var posts atomic.Int32
 	alertingSvc := alerting.New(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		posts.Add(1)
@@ -34,25 +72,18 @@ func TestDeliverScheduledReportsSendsDailyWeeklyAndMonthly(t *testing.T) {
 	})}, []config.Webhook{{Name: "slack", Type: "slack", URL: "https://example.test/webhook", Enabled: true}})
 	a := &App{reporting: reportingSvc, alerting: alertingSvc}
 
-	a.deliverScheduledReports(context.Background())
+	a.deliverScheduledReport(context.Background(), "daily", time.Date(2026, 6, 1, 14, 0, 0, 0, loc))
 
-	if posts.Load() != 3 {
-		t.Fatalf("expected daily, weekly, and monthly report posts, got %d", posts.Load())
+	if posts.Load() != 1 {
+		t.Fatalf("expected only daily report post, got %d", posts.Load())
 	}
-	if len(repo.aggregateWindows) != 3 {
-		t.Fatalf("expected three report builds, got %d", len(repo.aggregateWindows))
+	if len(repo.reportWindows) == 0 {
+		t.Fatalf("expected daily report aggregate calls, got none")
 	}
-}
-
-func TestShouldDeliverScheduledReportsOnlyAfterSuccessfulIngestion(t *testing.T) {
-	if !shouldDeliverScheduledReports([]collect.ProviderResult{{Provider: "oci"}}, nil) {
-		t.Fatal("expected reports after successful ingestion")
-	}
-	if shouldDeliverScheduledReports([]collect.ProviderResult{{Provider: "oci", Error: "parse failed"}}, errors.New("parse failed")) {
-		t.Fatal("expected no reports after partial ingestion")
-	}
-	if shouldDeliverScheduledReports(nil, errors.New("database unavailable")) {
-		t.Fatal("expected no reports after failed ingestion")
+	for _, window := range repo.reportWindows {
+		if window != "daily" {
+			t.Fatalf("expected only daily report aggregate calls, got %v", repo.reportWindows)
+		}
 	}
 }
 
@@ -63,7 +94,9 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 type scheduledReportRepo struct {
-	aggregateWindows []string
+	aggregateByDay map[time.Time][]domain.AggregatedCost
+	reportWindows  []string
+	delivered      map[string]bool
 }
 
 func (r *scheduledReportRepo) StoreIngestedBatch(context.Context, domain.ProcessedReportFile, []domain.CanonicalCostRecord) error {
@@ -85,7 +118,13 @@ func (r *scheduledReportRepo) MarkIngestionCheckpoint(context.Context, domain.Pr
 	return nil
 }
 func (r *scheduledReportRepo) AggregateCosts(_ context.Context, from, to time.Time, window string) ([]domain.AggregatedCost, error) {
-	r.aggregateWindows = append(r.aggregateWindows, window)
+	r.reportWindows = append(r.reportWindows, window)
+	if window == "daily" && r.aggregateByDay != nil {
+		if rows, ok := r.aggregateByDay[from.UTC()]; ok {
+			return rows, nil
+		}
+		return []domain.AggregatedCost{}, nil
+	}
 	return []domain.AggregatedCost{{WindowStart: from, WindowEnd: to, Provider: domain.ProviderOCI, Service: window, TotalCost: 10}}, nil
 }
 func (r *scheduledReportRepo) CompareCostVariance(context.Context, string, time.Time, time.Time, time.Time, time.Time) ([]domain.CostVariance, error) {
@@ -100,10 +139,17 @@ func (r *scheduledReportRepo) ForecastCosts(_ context.Context, from, _ time.Time
 func (r *scheduledReportRepo) IsReportProcessed(context.Context, domain.Provider, string, string, string) (bool, error) {
 	return false, nil
 }
-func (r *scheduledReportRepo) IsReportDelivered(context.Context, string, time.Time, time.Time) (bool, error) {
-	return false, nil
+func (r *scheduledReportRepo) IsReportDelivered(_ context.Context, key domain.ReportDeliveryKey) (bool, error) {
+	if r.delivered == nil {
+		return false, nil
+	}
+	return r.delivered[reportDeliveryKey(key)], nil
 }
-func (r *scheduledReportRepo) RecordReportDelivery(context.Context, string, time.Time, time.Time) error {
+func (r *scheduledReportRepo) RecordReportDelivery(_ context.Context, key domain.ReportDeliveryKey) error {
+	if r.delivered == nil {
+		r.delivered = make(map[string]bool)
+	}
+	r.delivered[reportDeliveryKey(key)] = true
 	return nil
 }
 func (r *scheduledReportRepo) ApplyDataLifecyclePolicies(context.Context, int, int) error {
@@ -129,4 +175,17 @@ func (r *scheduledReportRepo) DashboardAnomalies(context.Context, time.Time, tim
 }
 func (r *scheduledReportRepo) LatestIngestionStatus(context.Context) (domain.IngestionStatusSummary, error) {
 	return domain.IngestionStatusSummary{}, nil
+}
+
+func reportDeliveryKey(key domain.ReportDeliveryKey) string {
+	return key.Provider + "|" + key.ReportType + "|" + key.PeriodStart.UTC().Format(time.RFC3339) + "|" + key.PeriodEnd.UTC().Format(time.RFC3339) + "|" + key.Destination
+}
+
+func mustLocation(t *testing.T, name string) *time.Location {
+	t.Helper()
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		t.Fatalf("load location %s: %v", name, err)
+	}
+	return loc
 }

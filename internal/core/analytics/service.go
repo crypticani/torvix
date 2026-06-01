@@ -34,12 +34,16 @@ func (s *Service) CompareVarianceWindows(ctx context.Context, period string, cur
 	return s.repo.CompareCostVariance(ctx, period, currentFrom.UTC(), currentTo.UTC(), previousFrom.UTC(), previousTo.UTC())
 }
 
-func (s *Service) IsReportDelivered(ctx context.Context, period string, from, to time.Time) (bool, error) {
-	return s.repo.IsReportDelivered(ctx, period, from.UTC(), to.UTC())
+func (s *Service) IsReportDelivered(ctx context.Context, key domain.ReportDeliveryKey) (bool, error) {
+	key.PeriodStart = key.PeriodStart.UTC()
+	key.PeriodEnd = key.PeriodEnd.UTC()
+	return s.repo.IsReportDelivered(ctx, key)
 }
 
-func (s *Service) RecordReportDelivery(ctx context.Context, period string, from, to time.Time) error {
-	return s.repo.RecordReportDelivery(ctx, period, from.UTC(), to.UTC())
+func (s *Service) RecordReportDelivery(ctx context.Context, key domain.ReportDeliveryKey) error {
+	key.PeriodStart = key.PeriodStart.UTC()
+	key.PeriodEnd = key.PeriodEnd.UTC()
+	return s.repo.RecordReportDelivery(ctx, key)
 }
 
 func (s *Service) DetectAnomalies(ctx context.Context, from, to time.Time) ([]domain.Anomaly, error) {

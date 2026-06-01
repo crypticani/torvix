@@ -47,6 +47,11 @@ services:
       - TORVIX_LOG_LEVEL
       - TORVIX_LOG_DIR
       - TORVIX_LOG_RETENTION_DAYS
+      - TORVIX_REPORT_TIMEZONE
+      - TORVIX_DAILY_REPORT_CRON
+      - TORVIX_WEEKLY_REPORT_CRON
+      - TORVIX_REPORT_REQUIRE_COMPLETE_INGESTION
+      - TORVIX_DAILY_REPORT_TARGET_LAG_DAYS
     volumes:
       - ./configs:/app/configs:ro
       - ./logs:/app/logs

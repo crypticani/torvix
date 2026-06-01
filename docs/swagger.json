@@ -9,7 +9,7 @@
         "contact": {
             "name": "Torvix Team"
         },
-        "version": "0.7.1"
+        "version": "0.7.2"
     },
     "host": "localhost:8080",
     "basePath": "",
@@ -230,7 +230,7 @@
         },
         "/api/v1/reports/daily": {
             "get": {
-                "description": "Builds a daily cost report including summary, anomalies, and forecast. Optionally delivers via configured webhooks.",
+                "description": "Builds a daily cost report for day-1 in the configured report timezone by default, including summary, anomalies, and forecast. Optionally delivers via configured webhooks.",
                 "produces": [
                     "application/json"
                 ],
@@ -348,7 +348,7 @@
         },
         "/api/v1/reports/weekly": {
             "get": {
-                "description": "Builds a weekly cost report including summary, anomalies, and forecast. Optionally delivers via configured webhooks.",
+                "description": "Builds a weekly cost report for the previous full Monday-to-Sunday week by default, including summary, anomalies, and forecast. Optionally delivers via configured webhooks.",
                 "produces": [
                     "application/json"
                 ],

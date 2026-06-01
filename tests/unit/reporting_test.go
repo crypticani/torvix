@@ -46,10 +46,10 @@ func (m *mockReportingRepo) MarkIngestionCheckpoint(ctx context.Context, provide
 func (m *mockReportingRepo) IsReportProcessed(ctx context.Context, provider domain.Provider, bucket, objectName, etag string) (bool, error) {
 	return false, nil
 }
-func (m *mockReportingRepo) IsReportDelivered(ctx context.Context, period string, from, to time.Time) (bool, error) {
+func (m *mockReportingRepo) IsReportDelivered(ctx context.Context, key domain.ReportDeliveryKey) (bool, error) {
 	return false, nil
 }
-func (m *mockReportingRepo) RecordReportDelivery(ctx context.Context, period string, from, to time.Time) error {
+func (m *mockReportingRepo) RecordReportDelivery(ctx context.Context, key domain.ReportDeliveryKey) error {
 	return nil
 }
 func (m *mockReportingRepo) ApplyDataLifecyclePolicies(ctx context.Context, retentionDays, compressionAfterDays int) error {

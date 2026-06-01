@@ -297,22 +297,23 @@ func TestReportDeliveryLedger(t *testing.T) {
 
 	from := time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 5, 11, 0, 0, 0, 0, time.UTC)
+	key := domain.ReportDeliveryKey{Provider: "all", ReportType: "weekly", PeriodStart: from, PeriodEnd: to, Destination: "slack"}
 	mock.ExpectQuery("FROM report_deliveries").
-		WithArgs("weekly", from, to).
+		WithArgs("all", "weekly", from, to, "slack").
 		WillReturnRows(pgxmock.NewRows([]string{"exists"}).AddRow(true))
 	mock.ExpectExec("INSERT INTO report_deliveries").
-		WithArgs("weekly", from, to).
+		WithArgs("all", "weekly", from, to, "slack").
 		WillReturnResult(pgxmock.NewResult("INSERT", 1))
 
 	repo := NewWithDB(mock)
-	ok, err := repo.IsReportDelivered(context.Background(), "weekly", from, to)
+	ok, err := repo.IsReportDelivered(context.Background(), key)
 	if err != nil {
 		t.Fatalf("IsReportDelivered() error = %v", err)
 	}
 	if !ok {
 		t.Fatalf("expected weekly report delivery to exist")
 	}
-	if err := repo.RecordReportDelivery(context.Background(), "weekly", from, to); err != nil {
+	if err := repo.RecordReportDelivery(context.Background(), key); err != nil {
 		t.Fatalf("RecordReportDelivery() error = %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

@@ -190,3 +190,11 @@ type Report struct {
 	CostIncreases []CostVariance   `json:"cost_increases"`
 	CostDecreases []CostVariance   `json:"cost_decreases"`
 }
+
+type ReportDeliveryKey struct {
+	Provider    string
+	ReportType  string
+	PeriodStart time.Time
+	PeriodEnd   time.Time
+	Destination string
+}

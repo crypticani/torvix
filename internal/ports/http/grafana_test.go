@@ -579,10 +579,10 @@ func (g *grafanaRepo) ForecastCosts(context.Context, time.Time, time.Time, int) 
 func (g *grafanaRepo) IsReportProcessed(context.Context, domain.Provider, string, string, string) (bool, error) {
 	return false, nil
 }
-func (g *grafanaRepo) IsReportDelivered(context.Context, string, time.Time, time.Time) (bool, error) {
+func (g *grafanaRepo) IsReportDelivered(context.Context, domain.ReportDeliveryKey) (bool, error) {
 	return false, nil
 }
-func (g *grafanaRepo) RecordReportDelivery(context.Context, string, time.Time, time.Time) error {
+func (g *grafanaRepo) RecordReportDelivery(context.Context, domain.ReportDeliveryKey) error {
 	return nil
 }
 func (g *grafanaRepo) ApplyDataLifecyclePolicies(context.Context, int, int) error { return nil }
