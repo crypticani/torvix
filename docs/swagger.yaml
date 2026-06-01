@@ -212,7 +212,7 @@ info:
     precomputed cost summaries, deterministic anomaly detection, forecasting, and
     automated reporting.
   title: Torvix API
-  version: 0.7.0
+  version: 0.7.1
 paths:
   /api/v1/analytics/anomalies:
     get:

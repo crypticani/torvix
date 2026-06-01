@@ -9,7 +9,7 @@
         "contact": {
             "name": "Torvix Team"
         },
-        "version": "0.7.0"
+        "version": "0.7.1"
     },
     "host": "localhost:8080",
     "basePath": "",
