@@ -146,11 +146,10 @@ Runtime precedence is:
 1. `TORVIX_HTTP_ADDRESS`, for example `0.0.0.0:18080`
 2. `TORVIX_HTTP_PORT`, for example `18080`
 3. `TORVIX_API_PORT`, for example `18080`
-4. legacy `CLOUDPULSE_HTTP_ADDRESS`, `CLOUDPULSE_HTTP_PORT`, or `CLOUDPULSE_API_PORT`
-5. `http.address` in the YAML config
-6. default `:8080`
+4. `http.address` in the YAML config
+5. default `:8080`
 
-The production Compose healthcheck checks `http://127.0.0.1:${TORVIX_HTTP_PORT:-8080}/healthz` and also understands `TORVIX_API_PORT` plus legacy port variables. If you use `TORVIX_HTTP_ADDRESS`, the healthcheck derives the port from that value when no port variable is set.
+The production Compose healthcheck checks `http://127.0.0.1:${TORVIX_HTTP_PORT:-8080}/healthz` and also understands `TORVIX_API_PORT`. If you use `TORVIX_HTTP_ADDRESS`, the healthcheck derives the port from that value when no port variable is set.
 
 If you change only `http.address` in `configs/config.prod.yaml`, also set `TORVIX_HTTP_PORT` to the same port or update the healthcheck command in `docker-compose.prod.yml`. Compose cannot read the mounted YAML value into its healthcheck automatically.
 
@@ -205,24 +204,22 @@ up{job="torvix"}
 Useful Torvix metrics include:
 
 ```promql
-cloudpulse_processed_records_total
-cloudpulse_collector_runs_total
-cloudpulse_ingestion_duration_seconds_count
-cloudpulse_ingestion_failures_total
-cloudpulse_records_deleted_total
-cloudpulse_compressed_chunks_total
+torvix_processed_records_total
+torvix_collector_runs_total
+torvix_ingestion_duration_seconds_count
+torvix_ingestion_failures_total
+torvix_records_deleted_total
+torvix_compressed_chunks_total
 ```
-
-The metric namespace intentionally remains `cloudpulse` by default for dashboard and alert compatibility after the Torvix rename.
 
 Cost values belong in PostgreSQL-backed Torvix APIs, not Prometheus labels. Prometheus should carry operational health metrics only: ingestion duration, files processed, records inserted, failures, skipped old files, records pruned, compressed chunks, and API/runtime status.
 
 If `metrics.cost_stats_enabled` is enabled, Torvix also exposes coarse aggregate cost gauges from dashboard summary API calls:
 
 ```promql
-cloudpulse_cost_total
-cloudpulse_cost_services
-cloudpulse_cost_anomalies
+torvix_cost_total
+torvix_cost_services
+torvix_cost_anomalies
 ```
 
 These metrics only use a low-cardinality `window` label. Do not add service, account, resource, tag, source object, or raw billing dimensions as Prometheus labels.

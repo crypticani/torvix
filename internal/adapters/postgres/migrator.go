@@ -16,7 +16,7 @@ type Migrator struct {
 	dir  string
 }
 
-const nonTransactionalMigrationMarker = "-- cloudpulse:nontransactional"
+const nonTransactionalMigrationMarker = "-- torvix:nontransactional"
 
 func NewMigrator(pool *pgxpool.Pool, dir string) *Migrator {
 	return &Migrator{pool: pool, dir: dir}

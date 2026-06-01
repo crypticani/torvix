@@ -101,9 +101,9 @@ func TestGrafanaDashboardUsesTorvixDashboardAPIs(t *testing.T) {
 		"Daily Cost Decreases",
 		"Weekly Cost Decreases",
 		"Monthly Cost Decreases",
-		"cloudpulse_processed_files_total{status=\\\"skipped_old\\\"}",
-		"cloudpulse_records_deleted_total",
-		"cloudpulse_compressed_chunks_total",
+		"torvix_processed_files_total{status=\\\"skipped_old\\\"}",
+		"torvix_records_deleted_total",
+		"torvix_compressed_chunks_total",
 	} {
 		if !strings.Contains(joined, required) {
 			t.Fatalf("expected dashboard to contain %q", required)

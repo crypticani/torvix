@@ -47,12 +47,6 @@ services:
       - TORVIX_LOG_LEVEL
       - TORVIX_LOG_DIR
       - TORVIX_LOG_RETENTION_DAYS
-      - CLOUDPULSE_HTTP_ADDRESS
-      - CLOUDPULSE_HTTP_PORT
-      - CLOUDPULSE_API_PORT
-      - CLOUDPULSE_LOG_LEVEL
-      - CLOUDPULSE_LOG_DIR
-      - CLOUDPULSE_LOG_RETENTION_DAYS
     volumes:
       - ./configs:/app/configs:ro
       - ./logs:/app/logs

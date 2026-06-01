@@ -88,8 +88,8 @@ reporting:
       enabled: false
 
 metrics:
-  # The legacy cloudpulse namespace remains the compatibility default for existing dashboards.
-  namespace: cloudpulse
+  # The legacy torvix namespace remains the compatibility default for existing dashboards.
+  namespace: torvix
   cost_stats_enabled: false
 
 grafana:

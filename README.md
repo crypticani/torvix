@@ -219,9 +219,9 @@ Torvix has two Docker Compose entry points:
 
 The bundled Grafana dashboard reads from the Torvix API and Prometheus. The local PostgreSQL datasource is only for direct development inspection; production Grafana should keep PostgreSQL private.
 
-Torvix listens on `http.address` from config by default. Override the actual app listener at runtime with `TORVIX_HTTP_ADDRESS`, `TORVIX_HTTP_PORT`, or `TORVIX_API_PORT`, which is useful when using host networking. Legacy `CLOUDPULSE_*` listener variables still work as fallbacks.
+Torvix listens on `http.address` from config by default. Override the actual app listener at runtime with `TORVIX_HTTP_ADDRESS`, `TORVIX_HTTP_PORT`, or `TORVIX_API_PORT`, which is useful when using host networking.
 
-Torvix writes JSON logs to subsystem files instead of stdout. Compose mounts `./logs` to `/app/logs`; control logging with `TORVIX_LOG_LEVEL`, `TORVIX_LOG_DIR`, and `TORVIX_LOG_RETENTION_DAYS`. Legacy `CLOUDPULSE_*` logging variables still work as fallbacks.
+Torvix writes JSON logs to subsystem files instead of stdout. Compose mounts `./logs` to `/app/logs`; control logging with `TORVIX_LOG_LEVEL`, `TORVIX_LOG_DIR`, and `TORVIX_LOG_RETENTION_DAYS`.
 
 For production setup, Prometheus scraping, and Grafana dashboard import instructions, see `docs/deployment.md`. If you change the app port, update the Prometheus scrape target in `deploy/prometheus.yml` or your production Prometheus config to match.
 
@@ -297,11 +297,3 @@ In `configs/config.yaml`:
 - Restore: `pg_restore -d torvix -h localhost -U torvix --clean torvix.dump`
 
 For local TimescaleDB data resets, use `make compose-dev-down`.
-
-## Renaming from CloudPulse to Torvix
-
-CloudPulse has been renamed to Torvix. New deployments should use Torvix naming, the `torvix` Docker service and image names, and `TORVIX_*` environment variables.
-
-Existing database names and old `CLOUDPULSE_*` environment variables may still work for compatibility. Existing users should review Docker Compose service and container names before upgrading, especially if automation references the old Compose service names or container names.
-
-The default Prometheus metric namespace remains `cloudpulse` for compatibility with existing dashboards and alerts. New user-facing dashboard, API metadata, Docker, and documentation branding uses Torvix.

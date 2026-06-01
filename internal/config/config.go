@@ -18,14 +18,6 @@ const (
 	EnvLogLevel              = "TORVIX_LOG_LEVEL"
 	EnvLogDir                = "TORVIX_LOG_DIR"
 	EnvLogRetentionDays      = "TORVIX_LOG_RETENTION_DAYS"
-
-	LegacyEnvHTTPAddress           = "CLOUDPULSE_HTTP_ADDRESS"
-	LegacyEnvHTTPPort              = "CLOUDPULSE_HTTP_PORT"
-	LegacyEnvAPIPort               = "CLOUDPULSE_API_PORT"
-	LegacyEnvGrafanaAPIBearerToken = "CLOUDPULSE_GRAFANA_API_BEARER_TOKEN"
-	LegacyEnvLogLevel              = "CLOUDPULSE_LOG_LEVEL"
-	LegacyEnvLogDir                = "CLOUDPULSE_LOG_DIR"
-	LegacyEnvLogRetentionDays      = "CLOUDPULSE_LOG_RETENTION_DAYS"
 )
 
 type Config struct {
@@ -159,8 +151,7 @@ func Load(path string) (Config, error) {
 	cfg.Logging = cfg.Logging.WithDefaults(cfg.LogLevel)
 	cfg.LogLevel = cfg.Logging.Level
 	if cfg.Metrics.Namespace == "" {
-		// Keep the original metric namespace as the compatibility default.
-		cfg.Metrics.Namespace = "cloudpulse"
+		cfg.Metrics.Namespace = "torvix"
 	}
 	cfg.Ingestion = cfg.Ingestion.WithDefaults()
 	cfg.Scheduler = cfg.Scheduler.WithDefaults()
@@ -168,22 +159,22 @@ func Load(path string) (Config, error) {
 }
 
 func applyEnvOverrides(cfg *Config) {
-	if address := envValue(EnvHTTPAddress, LegacyEnvHTTPAddress); address != "" {
+	if address := envValue(EnvHTTPAddress); address != "" {
 		cfg.HTTP.Address = address
-	} else if port := envValue(EnvHTTPPort, EnvAPIPort, LegacyEnvHTTPPort, LegacyEnvAPIPort); port != "" {
+	} else if port := envValue(EnvHTTPPort, EnvAPIPort); port != "" {
 		cfg.HTTP.Address = normalizeHTTPPort(port)
 	}
-	if token := envValue(EnvGrafanaAPIBearerToken, LegacyEnvGrafanaAPIBearerToken); token != "" {
+	if token := envValue(EnvGrafanaAPIBearerToken); token != "" {
 		cfg.Grafana.APIAuth.Enabled = true
 		cfg.Grafana.APIAuth.BearerToken = token
 	}
-	if level := envValue(EnvLogLevel, LegacyEnvLogLevel); level != "" {
+	if level := envValue(EnvLogLevel); level != "" {
 		cfg.Logging.Level = level
 	}
-	if dir := envValue(EnvLogDir, LegacyEnvLogDir); dir != "" {
+	if dir := envValue(EnvLogDir); dir != "" {
 		cfg.Logging.Dir = dir
 	}
-	if retention := envValue(EnvLogRetentionDays, LegacyEnvLogRetentionDays); retention != "" {
+	if retention := envValue(EnvLogRetentionDays); retention != "" {
 		if days, err := strconv.Atoi(retention); err == nil {
 			cfg.Logging.RetentionDays = days
 		}

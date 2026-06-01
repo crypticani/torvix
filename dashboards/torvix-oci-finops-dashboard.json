@@ -154,7 +154,7 @@
       },
       "targets": [
         {
-          "expr": "round(sum(increase(cloudpulse_ingestion_failures_total[$__range]))) or vector(0)",
+          "expr": "round(sum(increase(torvix_ingestion_failures_total[$__range]))) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -228,7 +228,7 @@
       },
       "targets": [
         {
-          "expr": "sum(cloudpulse_collector_runs_total) by (provider, status)",
+          "expr": "sum(torvix_collector_runs_total) by (provider, status)",
           "legendFormat": "{{provider}} {{status}}",
           "refId": "A"
         }
@@ -1032,7 +1032,7 @@
       },
       "targets": [
         {
-          "expr": "((sum(increase(cloudpulse_ingestion_duration_seconds_sum[$__range])) / sum(increase(cloudpulse_ingestion_duration_seconds_count[$__range]))) and on() (sum(increase(cloudpulse_ingestion_duration_seconds_count[$__range])) > 0)) or vector(0)",
+          "expr": "((sum(increase(torvix_ingestion_duration_seconds_sum[$__range])) / sum(increase(torvix_ingestion_duration_seconds_count[$__range]))) and on() (sum(increase(torvix_ingestion_duration_seconds_count[$__range])) > 0)) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -1059,7 +1059,7 @@
       },
       "targets": [
         {
-          "expr": "round(sum(increase(cloudpulse_processed_files_total{status=\"processed\"}[$__range]))) or vector(0)",
+          "expr": "round(sum(increase(torvix_processed_files_total{status=\"processed\"}[$__range]))) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -1081,7 +1081,7 @@
       },
       "targets": [
         {
-          "expr": "round(sum(increase(cloudpulse_processed_records_total[$__range]))) or vector(0)",
+          "expr": "round(sum(increase(torvix_processed_records_total[$__range]))) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -1103,7 +1103,7 @@
       },
       "targets": [
         {
-          "expr": "round(sum(increase(cloudpulse_processed_files_total{status=\"skipped_old\"}[$__range]))) or vector(0)",
+          "expr": "round(sum(increase(torvix_processed_files_total{status=\"skipped_old\"}[$__range]))) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -1125,7 +1125,7 @@
       },
       "targets": [
         {
-          "expr": "round(sum(increase(cloudpulse_records_deleted_total[$__range]))) or vector(0)",
+          "expr": "round(sum(increase(torvix_records_deleted_total[$__range]))) or vector(0)",
           "instant": true,
           "refId": "A"
         }
@@ -1147,7 +1147,7 @@
       },
       "targets": [
         {
-          "expr": "round(sum(increase(cloudpulse_compressed_chunks_total[$__range]))) or vector(0)",
+          "expr": "round(sum(increase(torvix_compressed_chunks_total[$__range]))) or vector(0)",
           "instant": true,
           "refId": "A"
         }
