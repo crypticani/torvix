@@ -70,6 +70,43 @@ func TestWasteFindingStatusPatch(t *testing.T) {
 	}
 }
 
+func TestWasteEndpointsRequireBearerWhenConfigured(t *testing.T) {
+	detector := &fakeWasteDetector{finding: waste.Finding{ID: 42, Status: waste.StatusOpen}}
+	handler := NewWithOptions(nil, nil, nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{
+		Waste:              detector,
+		GrafanaAuthEnabled: true,
+		GrafanaAuthToken:   "secret",
+	})
+
+	for _, tc := range []struct {
+		name   string
+		method string
+		path   string
+		body   string
+	}{
+		{name: "list", method: http.MethodGet, path: "/api/v1/waste/findings"},
+		{name: "detail", method: http.MethodGet, path: "/api/v1/waste/findings/42"},
+		{name: "status", method: http.MethodPatch, path: "/api/v1/waste/findings/42/status", body: `{"status":"ignored"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("expected unauthorized without token, got %d", rec.Code)
+			}
+
+			req = httptest.NewRequest(tc.method, tc.path, bytes.NewBufferString(tc.body))
+			req.Header.Set("Authorization", "Bearer secret")
+			rec = httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected ok with token, got %d", rec.Code)
+			}
+		})
+	}
+}
+
 type fakeWasteDetector struct {
 	lastFilters   waste.FindingFilters
 	finding       waste.Finding

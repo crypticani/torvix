@@ -2,6 +2,7 @@ package oci
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -76,55 +77,99 @@ func (c *InventoryCollector) Sync(ctx context.Context) (waste.InventoryResult, e
 		return waste.InventoryResult{Provider: domain.ProviderOCI, Skipped: true, Message: "OCI tenancy/account OCID is not configured"}, nil
 	}
 	c.logger.Info("OCI waste inventory sync started", "provider", "oci")
-	scopes, err := c.compartments(ctx)
+	runID, err := c.repo.StartCloudInventoryRun(ctx, waste.InventoryRun{
+		Provider: domain.ProviderOCI,
+		Region:   c.region,
+		ScopeID:  c.cfg.Account,
+		Status:   "running",
+		Metadata: map[string]any{"source": "oci_waste_inventory"},
+	})
 	if err != nil {
 		return waste.InventoryResult{Provider: domain.ProviderOCI}, err
 	}
+	scopes, err := c.compartments(ctx)
+	if err != nil {
+		_ = c.repo.CompleteCloudInventoryRun(ctx, runID, "failed", err.Error())
+		return waste.InventoryResult{Provider: domain.ProviderOCI}, err
+	}
 	var resources []waste.Resource
-	var relationships []waste.Relationship
+	relationshipBatches := map[waste.RelationshipScope][]waste.Relationship{}
+	var syncErrors []error
 	for _, scope := range scopes {
 		compartmentResources, ads, err := c.resourcesForCompartment(ctx, scope)
 		if err != nil {
 			c.logger.Warn("OCI waste inventory compartment sync failed", "scope_id", scope.id, "scope_name", scope.name, "error", err)
+			syncErrors = append(syncErrors, fmt.Errorf("sync compartment resources %s: %w", scope.id, err))
 			continue
 		}
 		resources = append(resources, compartmentResources...)
 		blockRelationships, err := c.blockVolumeRelationships(ctx, scope)
 		if err != nil {
 			c.logger.Warn("OCI block volume relationship sync failed", "scope_id", scope.id, "scope_name", scope.name, "error", err)
+			syncErrors = append(syncErrors, fmt.Errorf("sync block volume relationships %s: %w", scope.id, err))
 		} else {
-			relationships = append(relationships, blockRelationships...)
+			relationshipBatches[waste.RelationshipScope{Provider: domain.ProviderOCI, Region: c.region, ScopeID: scope.id, RelationshipType: waste.RelationshipBlockVolumeAttachedToInstance}] = blockRelationships
 		}
 		publicIPResources, publicIPRelationships, err := c.publicIPs(ctx, scope)
 		if err != nil {
 			c.logger.Warn("OCI public IP inventory sync failed", "scope_id", scope.id, "scope_name", scope.name, "error", err)
+			syncErrors = append(syncErrors, fmt.Errorf("sync public IP inventory %s: %w", scope.id, err))
 		} else {
 			resources = append(resources, publicIPResources...)
-			relationships = append(relationships, publicIPRelationships...)
+			relationshipBatches[waste.RelationshipScope{Provider: domain.ProviderOCI, Region: c.region, ScopeID: scope.id, RelationshipType: waste.RelationshipPublicIPAssignedToPrivateIP}] = publicIPRelationships
 		}
+		var bootRelationships []waste.Relationship
+		bootComplete := true
 		for ad := range ads {
-			bootRelationships, err := c.bootVolumeRelationships(ctx, scope, ad)
+			adRelationships, err := c.bootVolumeRelationships(ctx, scope, ad)
 			if err != nil {
 				c.logger.Warn("OCI boot volume relationship sync failed", "scope_id", scope.id, "scope_name", scope.name, "availability_domain", ad, "error", err)
+				syncErrors = append(syncErrors, fmt.Errorf("sync boot volume relationships %s/%s: %w", scope.id, ad, err))
+				bootComplete = false
 				continue
 			}
-			relationships = append(relationships, bootRelationships...)
+			bootRelationships = append(bootRelationships, adRelationships...)
+		}
+		if bootComplete {
+			relationshipBatches[waste.RelationshipScope{Provider: domain.ProviderOCI, Region: c.region, ScopeID: scope.id, RelationshipType: waste.RelationshipBootVolumeAttachedToInstance}] = bootRelationships
 		}
 	}
+	if len(syncErrors) > 0 {
+		err := errors.Join(syncErrors...)
+		_ = c.repo.CompleteCloudInventoryRun(ctx, runID, "failed", err.Error())
+		c.logger.Warn("OCI waste inventory sync failed; skipping waste detection for partial run", "provider", "oci", "errors", len(syncErrors), "duration", time.Since(started).String())
+		return waste.InventoryResult{Provider: domain.ProviderOCI, Message: "partial OCI inventory sync failed"}, err
+	}
+	for i := range resources {
+		resources[i].LastSeenRunID = runID
+	}
 	if err := c.repo.UpsertCloudResources(ctx, resources); err != nil {
+		_ = c.repo.CompleteCloudInventoryRun(ctx, runID, "failed", err.Error())
 		return waste.InventoryResult{Provider: domain.ProviderOCI}, err
 	}
-	if err := c.repo.ReplaceCloudRelationships(ctx, domain.ProviderOCI, relationships); err != nil {
+	var relationshipCount int
+	for scope, relationships := range relationshipBatches {
+		if err := c.repo.ReplaceCloudRelationshipsScoped(ctx, scope, relationships); err != nil {
+			_ = c.repo.CompleteCloudInventoryRun(ctx, runID, "failed", err.Error())
+			return waste.InventoryResult{Provider: domain.ProviderOCI}, err
+		}
+		relationshipCount += len(relationships)
+	}
+	if _, err := c.repo.MarkMissingCloudResourcesInactive(ctx, domain.ProviderOCI, c.region, runID); err != nil {
+		_ = c.repo.CompleteCloudInventoryRun(ctx, runID, "failed", err.Error())
+		return waste.InventoryResult{Provider: domain.ProviderOCI}, err
+	}
+	if err := c.repo.CompleteCloudInventoryRun(ctx, runID, "success", ""); err != nil {
 		return waste.InventoryResult{Provider: domain.ProviderOCI}, err
 	}
 	result := waste.InventoryResult{
 		Provider:              domain.ProviderOCI,
 		ResourcesScanned:      len(resources),
-		RelationshipsScanned:  len(relationships),
+		RelationshipsScanned:  relationshipCount,
 		ResourcesUpserted:     len(resources),
-		RelationshipsUpserted: len(relationships),
+		RelationshipsUpserted: relationshipCount,
 	}
-	c.logger.Info("OCI waste inventory sync completed", "provider", "oci", "resources", len(resources), "relationships", len(relationships), "duration", time.Since(started).String())
+	c.logger.Info("OCI waste inventory sync completed", "provider", "oci", "resources", len(resources), "relationships", relationshipCount, "duration", time.Since(started).String())
 	return result, nil
 }
 
@@ -221,7 +266,7 @@ func (c *InventoryCollector) instances(ctx context.Context, scope compartmentSco
 				LifecycleState:     string(item.LifecycleState),
 				AvailabilityDomain: stringValue(item.AvailabilityDomain),
 				TimeCreated:        sdkTime(item.TimeCreated),
-				Tags:               item.FreeformTags,
+				Tags:               ociTags(item.FreeformTags, item.DefinedTags),
 				Raw: map[string]any{
 					"shape": stringValue(item.Shape),
 				},
@@ -258,7 +303,7 @@ func (c *InventoryCollector) blockVolumes(ctx context.Context, scope compartment
 				LifecycleState:     string(item.LifecycleState),
 				AvailabilityDomain: stringValue(item.AvailabilityDomain),
 				TimeCreated:        sdkTime(item.TimeCreated),
-				Tags:               item.FreeformTags,
+				Tags:               ociTags(item.FreeformTags, item.DefinedTags),
 				Raw: map[string]any{
 					"volume_size_gb": int64Value(item.SizeInGBs),
 					"vpus_per_gb":    int64Value(item.VpusPerGB),
@@ -296,7 +341,7 @@ func (c *InventoryCollector) bootVolumes(ctx context.Context, scope compartmentS
 				LifecycleState:     string(item.LifecycleState),
 				AvailabilityDomain: stringValue(item.AvailabilityDomain),
 				TimeCreated:        sdkTime(item.TimeCreated),
-				Tags:               item.FreeformTags,
+				Tags:               ociTags(item.FreeformTags, item.DefinedTags),
 				Raw: map[string]any{
 					"volume_size_gb": int64Value(item.SizeInGBs),
 					"vpus_per_gb":    int64Value(item.VpusPerGB),
@@ -410,7 +455,7 @@ func (c *InventoryCollector) publicIPs(ctx context.Context, scope compartmentSco
 				LifecycleState:     string(item.LifecycleState),
 				AvailabilityDomain: stringValue(item.AvailabilityDomain),
 				TimeCreated:        sdkTime(item.TimeCreated),
-				Tags:               item.FreeformTags,
+				Tags:               ociTags(item.FreeformTags, item.DefinedTags),
 				Raw: map[string]any{
 					"ip_address":           stringValue(item.IpAddress),
 					"assigned_entity_type": string(item.AssignedEntityType),
@@ -472,4 +517,20 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func ociTags(freeform map[string]string, defined map[string]map[string]interface{}) map[string]string {
+	tags := make(map[string]string, len(freeform)+len(defined))
+	for key, value := range freeform {
+		tags[key] = value
+	}
+	for namespace, values := range defined {
+		for key, value := range values {
+			tagKey := "defined." + namespace + "." + key
+			tags[tagKey] = fmt.Sprint(value)
+			tags[namespace+"."+key] = fmt.Sprint(value)
+			tags[namespace+":"+key] = fmt.Sprint(value)
+		}
+	}
+	return tags
 }

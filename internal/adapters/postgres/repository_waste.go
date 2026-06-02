@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -14,6 +16,64 @@ import (
 	"github.com/crypticani/torvix/internal/waste"
 )
 
+func (r *Repository) StartCloudInventoryRun(ctx context.Context, run waste.InventoryRun) (string, error) {
+	if strings.TrimSpace(run.ID) == "" {
+		run.ID = newInventoryRunID()
+	}
+	if run.StartedAt.IsZero() {
+		run.StartedAt = time.Now().UTC()
+	}
+	if run.Status == "" {
+		run.Status = "running"
+	}
+	metadata, err := json.Marshal(nonNilAnyMap(run.Metadata))
+	if err != nil {
+		return "", fmt.Errorf("marshal inventory run metadata: %w", err)
+	}
+	_, err = r.db.Exec(ctx, `
+		INSERT INTO cloud_inventory_runs (id, provider, region, scope_id, status, started_at, metadata)
+		VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), $5, $6, $7::jsonb)
+	`, run.ID, run.Provider, run.Region, run.ScopeID, run.Status, run.StartedAt, metadata)
+	if err != nil {
+		return "", fmt.Errorf("start cloud inventory run: %w", err)
+	}
+	return run.ID, nil
+}
+
+func (r *Repository) CompleteCloudInventoryRun(ctx context.Context, runID, status, errMessage string) error {
+	if status == "" {
+		status = "success"
+	}
+	_, err := r.db.Exec(ctx, `
+		UPDATE cloud_inventory_runs
+		SET status = $2,
+		    completed_at = NOW(),
+		    error = NULLIF($3, '')
+		WHERE id = $1
+	`, runID, status, errMessage)
+	if err != nil {
+		return fmt.Errorf("complete cloud inventory run: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) MarkMissingCloudResourcesInactive(ctx context.Context, provider domain.Provider, region, runID string) (int, error) {
+	tag, err := r.db.Exec(ctx, `
+		UPDATE cloud_resources
+		SET active = FALSE,
+		    missing_since = COALESCE(missing_since, NOW()),
+		    inactive_at = NOW()
+		WHERE provider = $1
+		  AND ($2 = '' OR COALESCE(region, '') = $2)
+		  AND active = TRUE
+		  AND (last_seen_run_id IS NULL OR last_seen_run_id <> $3)
+	`, provider, region, runID)
+	if err != nil {
+		return 0, fmt.Errorf("mark missing cloud resources inactive: %w", err)
+	}
+	return int(tag.RowsAffected()), nil
+}
+
 func (r *Repository) UpsertCloudResources(ctx context.Context, resources []waste.Resource) error {
 	if len(resources) == 0 {
 		return nil
@@ -22,8 +82,9 @@ func (r *Repository) UpsertCloudResources(ctx context.Context, resources []waste
 	if err != nil {
 		return err
 	}
+	committed := false
 	defer func() {
-		if err != nil {
+		if !committed {
 			_ = tx.Rollback(ctx)
 		}
 	}()
@@ -42,8 +103,8 @@ func (r *Repository) UpsertCloudResources(ctx context.Context, resources []waste
 		}
 		_, err = tx.Exec(ctx, `
 			INSERT INTO cloud_resources
-				(provider, resource_id, resource_name, resource_type, region, scope_id, scope_name, lifecycle_state, availability_domain, time_created, tags, raw, first_seen_at, last_seen_at)
-			VALUES ($1, $2, NULLIF($3, ''), $4, NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''), $10, $11::jsonb, $12::jsonb, $13, NOW())
+				(provider, resource_id, resource_name, resource_type, region, scope_id, scope_name, lifecycle_state, availability_domain, time_created, tags, raw, first_seen_at, last_seen_at, active, last_seen_run_id, missing_since, inactive_at)
+			VALUES ($1, $2, NULLIF($3, ''), $4, NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''), NULLIF($9, ''), $10, $11::jsonb, $12::jsonb, $13, NOW(), TRUE, NULLIF($14, ''), NULL, NULL)
 			ON CONFLICT (provider, resource_id)
 			DO UPDATE SET
 				resource_name = EXCLUDED.resource_name,
@@ -56,8 +117,12 @@ func (r *Repository) UpsertCloudResources(ctx context.Context, resources []waste
 				time_created = EXCLUDED.time_created,
 				tags = EXCLUDED.tags,
 				raw = EXCLUDED.raw,
-				last_seen_at = NOW()
-		`, resource.Provider, resource.ResourceID, resource.ResourceName, resource.ResourceType, resource.Region, resource.ScopeID, resource.ScopeName, resource.LifecycleState, resource.AvailabilityDomain, nullableTime(resource.TimeCreated), tags, raw, firstSeenAt)
+				last_seen_at = NOW(),
+				active = TRUE,
+				last_seen_run_id = EXCLUDED.last_seen_run_id,
+				missing_since = NULL,
+				inactive_at = NULL
+		`, resource.Provider, resource.ResourceID, resource.ResourceName, resource.ResourceType, resource.Region, resource.ScopeID, resource.ScopeName, resource.LifecycleState, resource.AvailabilityDomain, nullableTime(resource.TimeCreated), tags, raw, firstSeenAt, resource.LastSeenRunID)
 		if err != nil {
 			return fmt.Errorf("upsert cloud resource %s: %w", resource.ResourceID, err)
 		}
@@ -65,20 +130,47 @@ func (r *Repository) UpsertCloudResources(ctx context.Context, resources []waste
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
+	committed = true
 	return nil
 }
 
 func (r *Repository) ReplaceCloudRelationships(ctx context.Context, provider domain.Provider, relationships []waste.Relationship) error {
+	scoped := make(map[waste.RelationshipScope][]waste.Relationship)
+	for _, rel := range relationships {
+		scope := waste.RelationshipScope{
+			Provider:         provider,
+			Region:           rel.Region,
+			ScopeID:          rel.ScopeID,
+			RelationshipType: rel.RelationshipType,
+		}
+		scoped[scope] = append(scoped[scope], rel)
+	}
+	for scope, scopedRelationships := range scoped {
+		if err := r.ReplaceCloudRelationshipsScoped(ctx, scope, scopedRelationships); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *Repository) ReplaceCloudRelationshipsScoped(ctx context.Context, scope waste.RelationshipScope, relationships []waste.Relationship) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
+	committed := false
 	defer func() {
-		if err != nil {
+		if !committed {
 			_ = tx.Rollback(ctx)
 		}
 	}()
-	if _, err = tx.Exec(ctx, `DELETE FROM cloud_resource_relationships WHERE provider = $1`, provider); err != nil {
+	if _, err = tx.Exec(ctx, `
+		DELETE FROM cloud_resource_relationships
+		WHERE provider = $1
+		  AND relationship_type = $2
+		  AND COALESCE(region, '') = COALESCE(NULLIF($3, ''), '')
+		  AND COALESCE(scope_id, '') = COALESCE(NULLIF($4, ''), '')
+	`, scope.Provider, scope.RelationshipType, scope.Region, scope.ScopeID); err != nil {
 		return fmt.Errorf("delete existing cloud relationships: %w", err)
 	}
 	for _, rel := range relationships {
@@ -108,6 +200,7 @@ func (r *Repository) ReplaceCloudRelationships(ctx context.Context, provider dom
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
+	committed = true
 	return nil
 }
 
@@ -117,6 +210,7 @@ func (r *Repository) ListCloudResources(ctx context.Context, provider domain.Pro
 		       COALESCE(lifecycle_state, ''), COALESCE(availability_domain, ''), time_created, tags, raw, first_seen_at, last_seen_at
 		FROM cloud_resources
 		WHERE provider = $1
+		  AND active = TRUE
 		ORDER BY resource_type, resource_name, resource_id
 	`, provider)
 	if err != nil {
@@ -450,4 +544,15 @@ func valueOrDefault(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func newInventoryRunID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("run-%d", time.Now().UTC().UnixNano())
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	encoded := hex.EncodeToString(b[:])
+	return encoded[0:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:32]
 }

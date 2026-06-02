@@ -106,6 +106,30 @@ func TestEvaluateOCIExclusionTagSkipsResource(t *testing.T) {
 	}
 }
 
+func TestEvaluateOCIDefinedExclusionTagSkipsResource(t *testing.T) {
+	now := time.Date(2026, 6, 2, 10, 0, 0, 0, time.UTC)
+	created := now.AddDate(0, 0, -21)
+	result := EvaluateOCI(EvaluationInput{
+		Config: testConfig(),
+		Now:    now,
+		Resources: []waste.Resource{{
+			Provider:       domain.ProviderOCI,
+			ResourceID:     "volume-1",
+			ResourceType:   waste.ResourceBlockVolume,
+			LifecycleState: "AVAILABLE",
+			TimeCreated:    &created,
+			Tags:           map[string]string{"defined.Operations.keep": "true"},
+		}},
+		Costs: map[string]waste.CostSignal{"volume-1": {Last7dCost: 14, HasLast7d: true}},
+	})
+	if len(result.Findings) != 0 {
+		t.Fatalf("expected no findings, got %d", len(result.Findings))
+	}
+	if result.Skipped != 1 {
+		t.Fatalf("expected 1 skipped resource, got %d", result.Skipped)
+	}
+}
+
 func TestEvaluateOCIStoppedComputeWithPaidStorage(t *testing.T) {
 	now := time.Date(2026, 6, 2, 10, 0, 0, 0, time.UTC)
 	instanceCreated := now.AddDate(0, 0, -6)

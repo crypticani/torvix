@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -71,22 +72,88 @@ func TestServiceConcurrentRunReturnsActiveError(t *testing.T) {
 	}
 }
 
-type fakeRepo struct {
-	resources     []waste.Resource
-	relationships []waste.Relationship
-	costs         map[string]waste.CostSignal
-	upserted      []waste.Finding
-	upsertOutcome string
-	resolvedSeen  map[string]struct{}
-	blockList     chan struct{}
-	listStarted   chan struct{}
+func TestServiceSkipsEvaluationWhenInventorySyncFails(t *testing.T) {
+	now := time.Now().UTC().AddDate(0, 0, -14)
+	repo := &fakeRepo{
+		resources: []waste.Resource{{
+			Provider:       domain.ProviderOCI,
+			ResourceID:     "volume-1",
+			ResourceType:   waste.ResourceBlockVolume,
+			LifecycleState: "AVAILABLE",
+			TimeCreated:    &now,
+		}},
+		costs: map[string]waste.CostSignal{"volume-1": {Last7dCost: 7, HasLast7d: true}},
+	}
+	provider := &fakeInventoryProvider{err: fmt.Errorf("partial OCI inventory sync")}
+	service := NewService(waste.Config{Enabled: true}, repo, []waste.InventoryProvider{provider}, nil)
+
+	result, err := service.Run(context.Background())
+	if err == nil {
+		t.Fatal("expected inventory sync error")
+	}
+	if result.ResourcesScanned != 0 {
+		t.Fatalf("expected no resources scanned after failed inventory, got %d", result.ResourcesScanned)
+	}
+	if repo.listResourceCalls != 0 || len(repo.upserted) != 0 {
+		t.Fatalf("expected detection to be skipped after failed inventory, list calls=%d upserted=%d", repo.listResourceCalls, len(repo.upserted))
+	}
 }
 
+func TestServiceResolvesOpenFindingsWhenPreviouslySeenResourceIsMissing(t *testing.T) {
+	repo := &fakeRepo{resolvedCount: 1}
+	service := NewService(waste.Config{Enabled: true}, repo, nil, nil)
+
+	result, err := service.Run(context.Background())
+	if err != nil {
+		t.Fatalf("run waste detection: %v", err)
+	}
+	if result.FindingsResolved != 1 {
+		t.Fatalf("expected one missing finding resolved, got %d", result.FindingsResolved)
+	}
+	if len(repo.resolvedSeen) != 0 {
+		t.Fatalf("expected resolver to receive an empty seen set, got %+v", repo.resolvedSeen)
+	}
+}
+
+func TestServiceRejectsInvalidFindingStatus(t *testing.T) {
+	service := NewService(waste.Config{Enabled: true}, &fakeRepo{}, nil, nil)
+
+	if _, err := service.UpdateFindingStatus(context.Background(), 42, "deleted"); err == nil {
+		t.Fatal("expected invalid status error")
+	}
+}
+
+type fakeRepo struct {
+	resources         []waste.Resource
+	relationships     []waste.Relationship
+	costs             map[string]waste.CostSignal
+	upserted          []waste.Finding
+	upsertOutcome     string
+	resolvedSeen      map[string]struct{}
+	resolvedCount     int
+	listResourceCalls int
+	blockList         chan struct{}
+	listStarted       chan struct{}
+}
+
+func (f *fakeRepo) StartCloudInventoryRun(context.Context, waste.InventoryRun) (string, error) {
+	return "run-1", nil
+}
+func (f *fakeRepo) CompleteCloudInventoryRun(context.Context, string, string, string) error {
+	return nil
+}
+func (f *fakeRepo) MarkMissingCloudResourcesInactive(context.Context, domain.Provider, string, string) (int, error) {
+	return 0, nil
+}
 func (f *fakeRepo) UpsertCloudResources(context.Context, []waste.Resource) error { return nil }
 func (f *fakeRepo) ReplaceCloudRelationships(context.Context, domain.Provider, []waste.Relationship) error {
 	return nil
 }
+func (f *fakeRepo) ReplaceCloudRelationshipsScoped(context.Context, waste.RelationshipScope, []waste.Relationship) error {
+	return nil
+}
 func (f *fakeRepo) ListCloudResources(context.Context, domain.Provider) ([]waste.Resource, error) {
+	f.listResourceCalls++
 	if f.blockList != nil {
 		close(f.listStarted)
 		<-f.blockList
@@ -111,7 +178,7 @@ func (f *fakeRepo) UpsertWasteFinding(_ context.Context, finding waste.Finding) 
 }
 func (f *fakeRepo) ResolveMissingWasteFindings(_ context.Context, _ domain.Provider, _ []string, seen map[string]struct{}) (int, error) {
 	f.resolvedSeen = seen
-	return 0, nil
+	return f.resolvedCount, nil
 }
 func (f *fakeRepo) ListWasteFindings(context.Context, waste.FindingFilters) ([]waste.Finding, error) {
 	return nil, nil
@@ -121,4 +188,16 @@ func (f *fakeRepo) GetWasteFinding(context.Context, int64) (waste.Finding, error
 }
 func (f *fakeRepo) UpdateWasteFindingStatus(context.Context, int64, string) (waste.Finding, error) {
 	return waste.Finding{}, nil
+}
+
+type fakeInventoryProvider struct {
+	err error
+}
+
+func (f *fakeInventoryProvider) Provider() domain.Provider {
+	return domain.ProviderOCI
+}
+
+func (f *fakeInventoryProvider) Sync(context.Context) (waste.InventoryResult, error) {
+	return waste.InventoryResult{Provider: domain.ProviderOCI}, f.err
 }

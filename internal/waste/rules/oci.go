@@ -383,7 +383,7 @@ func hasExclusionTag(resource waste.Resource, cfg waste.Config) bool {
 		keys[strings.ToLower(strings.TrimSpace(key))] = struct{}{}
 	}
 	for key, value := range resource.Tags {
-		if _, ok := keys[strings.ToLower(strings.TrimSpace(key))]; !ok {
+		if !matchesExclusionTagKey(key, keys) {
 			continue
 		}
 		switch strings.ToLower(strings.TrimSpace(value)) {
@@ -392,4 +392,23 @@ func hasExclusionTag(resource waste.Resource, cfg waste.Config) bool {
 		}
 	}
 	return false
+}
+
+func matchesExclusionTagKey(key string, configured map[string]struct{}) bool {
+	normalized := strings.ToLower(strings.TrimSpace(key))
+	if _, ok := configured[normalized]; ok {
+		return true
+	}
+	withoutPrefix := strings.TrimPrefix(normalized, "defined.")
+	if _, ok := configured[withoutPrefix]; ok {
+		return true
+	}
+	parts := strings.FieldsFunc(withoutPrefix, func(r rune) bool {
+		return r == '.' || r == ':'
+	})
+	if len(parts) == 0 {
+		return false
+	}
+	_, ok := configured[parts[len(parts)-1]]
+	return ok
 }

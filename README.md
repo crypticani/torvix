@@ -147,7 +147,7 @@ After new records are inserted, Torvix refreshes the affected daily, weekly, and
 
 ## Waste Detection
 
-Torvix Phase 1 waste detection is OCI-only. It syncs OCI inventory into provider-neutral resource and relationship tables, correlates resources with recent cost records, and creates recommendation-only findings for possible waste. Torvix does not delete, stop, resize, retag, or modify resources.
+Torvix Phase 1 waste detection is OCI-only and scans the configured OCI region. It syncs complete successful inventory runs into provider-neutral resource and relationship tables, correlates active/current resources with recent cost records, and creates recommendation-only findings for possible waste. Torvix does not delete, stop, resize, retag, or modify resources.
 
 Supported OCI Phase 1 rules:
 
@@ -179,7 +179,7 @@ curl "http://localhost:8080/api/v1/waste/findings?provider=oci&status=open"
 curl "http://localhost:8080/api/v1/waste/rules"
 ```
 
-Grafana can use the Torvix API datasource for open finding count, estimated monthly waste, waste by severity/service/region/scope, and a top findings table. See [docs/waste-detection.md](docs/waste-detection.md) for required OCI permissions, exclusion tags, status updates, and panel suggestions.
+The waste summary API is an open-findings summary. Grafana can use the Torvix API datasource for open finding count, estimated monthly waste, waste by severity/service/region/scope, and a top findings table. See [docs/waste-detection.md](docs/waste-detection.md) for required OCI permissions, exclusion tags, status updates, and panel suggestions.
 
 ## AWS Ingestion
 
@@ -422,7 +422,7 @@ In `configs/config.yaml`:
     dir: logs
     retention_days: 14
   ```
-  The files are `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `scheduler.log`, and `alerting.log`. Files older than `retention_days` are deleted from the configured log directory.
+  The files are `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `aws.log`, `scheduler.log`, `alerting.log`, and `waste.log`. Files older than `retention_days` are deleted from the configured log directory.
 - **Scheduler:** Torvix includes an in-process scheduler to run ingestion automatically.
   ```yaml
   scheduler:

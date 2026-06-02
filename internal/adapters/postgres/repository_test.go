@@ -10,6 +10,7 @@ import (
 	pgxmock "github.com/pashagolub/pgxmock/v4"
 
 	"github.com/crypticani/torvix/internal/domain"
+	"github.com/crypticani/torvix/internal/waste"
 )
 
 func TestAggregateCostsUsesDailySummary(t *testing.T) {
@@ -190,6 +191,139 @@ func TestAWSCostRecordsUseIdempotentUpsertKey(t *testing.T) {
 		if !strings.Contains(sql, want) {
 			t.Fatalf("AWS cost record upsert SQL must contain %q", want)
 		}
+	}
+}
+
+func TestListCloudResourcesOnlyReturnsActiveResources(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	defer mock.Close()
+
+	rows := pgxmock.NewRows([]string{
+		"id", "provider", "resource_id", "resource_name", "resource_type", "region", "scope_id", "scope_name",
+		"lifecycle_state", "availability_domain", "time_created", "tags", "raw", "first_seen_at", "last_seen_at",
+	})
+	mock.ExpectQuery("WHERE provider = \\$1\\s+AND active = TRUE").
+		WithArgs(domain.ProviderOCI).
+		WillReturnRows(rows)
+
+	repo := NewWithDB(mock)
+	got, err := repo.ListCloudResources(context.Background(), domain.ProviderOCI)
+	if err != nil {
+		t.Fatalf("ListCloudResources() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected no active resources, got %d", len(got))
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestMarkMissingCloudResourcesInactiveOnlyAfterSuccessfulRun(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	defer mock.Close()
+
+	mock.ExpectExec("UPDATE cloud_resources").
+		WithArgs(domain.ProviderOCI, "ap-mumbai-1", "run-1").
+		WillReturnResult(pgxmock.NewResult("UPDATE", 2))
+
+	repo := NewWithDB(mock)
+	count, err := repo.MarkMissingCloudResourcesInactive(context.Background(), domain.ProviderOCI, "ap-mumbai-1", "run-1")
+	if err != nil {
+		t.Fatalf("MarkMissingCloudResourcesInactive() error = %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 inactive resources, got %d", count)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestReplaceCloudRelationshipsScopedOnlyDeletesCompletedScopeType(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	defer mock.Close()
+
+	scope := waste.RelationshipScope{
+		Provider:         domain.ProviderOCI,
+		Region:           "ap-mumbai-1",
+		ScopeID:          "compartment-1",
+		RelationshipType: waste.RelationshipBlockVolumeAttachedToInstance,
+	}
+	mock.ExpectBegin()
+	mock.ExpectExec("DELETE FROM cloud_resource_relationships").
+		WithArgs(scope.Provider, scope.RelationshipType, scope.Region, scope.ScopeID).
+		WillReturnResult(pgxmock.NewResult("DELETE", 1))
+	mock.ExpectExec("INSERT INTO cloud_resource_relationships").
+		WithArgs(domain.ProviderOCI, "volume-1", "instance-1", waste.RelationshipBlockVolumeAttachedToInstance, "ap-mumbai-1", "compartment-1", pgxmock.AnyArg(), pgxmock.AnyArg()).
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectCommit()
+
+	repo := NewWithDB(mock)
+	err = repo.ReplaceCloudRelationshipsScoped(context.Background(), scope, []waste.Relationship{{
+		Provider:         domain.ProviderOCI,
+		SourceResourceID: "volume-1",
+		TargetResourceID: "instance-1",
+		RelationshipType: waste.RelationshipBlockVolumeAttachedToInstance,
+		Region:           "ap-mumbai-1",
+		ScopeID:          "compartment-1",
+		DetectedAt:       time.Date(2026, 6, 2, 10, 0, 0, 0, time.UTC),
+		Raw:              map[string]any{"attachment_id": "attachment-1"},
+	}})
+	if err != nil {
+		t.Fatalf("ReplaceCloudRelationshipsScoped() error = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
+	}
+}
+
+func TestReplaceCloudRelationshipsScopedRollsBackOnInsertFailure(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	defer mock.Close()
+
+	scope := waste.RelationshipScope{
+		Provider:         domain.ProviderOCI,
+		Region:           "ap-mumbai-1",
+		ScopeID:          "compartment-1",
+		RelationshipType: waste.RelationshipBlockVolumeAttachedToInstance,
+	}
+	mock.ExpectBegin()
+	mock.ExpectExec("DELETE FROM cloud_resource_relationships").
+		WithArgs(scope.Provider, scope.RelationshipType, scope.Region, scope.ScopeID).
+		WillReturnResult(pgxmock.NewResult("DELETE", 1))
+	mock.ExpectExec("INSERT INTO cloud_resource_relationships").
+		WithArgs(domain.ProviderOCI, "volume-1", "instance-1", waste.RelationshipBlockVolumeAttachedToInstance, "ap-mumbai-1", "compartment-1", pgxmock.AnyArg(), pgxmock.AnyArg()).
+		WillReturnError(os.ErrInvalid)
+	mock.ExpectRollback()
+
+	repo := NewWithDB(mock)
+	err = repo.ReplaceCloudRelationshipsScoped(context.Background(), scope, []waste.Relationship{{
+		Provider:         domain.ProviderOCI,
+		SourceResourceID: "volume-1",
+		TargetResourceID: "instance-1",
+		RelationshipType: waste.RelationshipBlockVolumeAttachedToInstance,
+		Region:           "ap-mumbai-1",
+		ScopeID:          "compartment-1",
+		DetectedAt:       time.Date(2026, 6, 2, 10, 0, 0, 0, time.UTC),
+	}})
+	if err == nil {
+		t.Fatal("expected insert failure")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet expectations: %v", err)
 	}
 }
 

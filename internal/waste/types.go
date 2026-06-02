@@ -61,6 +61,10 @@ type Resource struct {
 	Raw                map[string]any
 	FirstSeenAt        time.Time
 	LastSeenAt         time.Time
+	LastSeenRunID      string
+	Active             bool
+	MissingSince       *time.Time
+	InactiveAt         *time.Time
 }
 
 type Relationship struct {
@@ -73,6 +77,23 @@ type Relationship struct {
 	ScopeID          string
 	DetectedAt       time.Time
 	Raw              map[string]any
+}
+
+type InventoryRun struct {
+	ID        string
+	Provider  domain.Provider
+	Region    string
+	ScopeID   string
+	Status    string
+	StartedAt time.Time
+	Metadata  map[string]any
+}
+
+type RelationshipScope struct {
+	Provider         domain.Provider
+	Region           string
+	ScopeID          string
+	RelationshipType string
 }
 
 type CostSignal struct {
@@ -171,8 +192,12 @@ type InventoryProvider interface {
 }
 
 type Repository interface {
+	StartCloudInventoryRun(ctx context.Context, run InventoryRun) (string, error)
+	CompleteCloudInventoryRun(ctx context.Context, runID, status, errMessage string) error
+	MarkMissingCloudResourcesInactive(ctx context.Context, provider domain.Provider, region, runID string) (int, error)
 	UpsertCloudResources(ctx context.Context, resources []Resource) error
 	ReplaceCloudRelationships(ctx context.Context, provider domain.Provider, relationships []Relationship) error
+	ReplaceCloudRelationshipsScoped(ctx context.Context, scope RelationshipScope, relationships []Relationship) error
 	ListCloudResources(ctx context.Context, provider domain.Provider) ([]Resource, error)
 	ListCloudRelationships(ctx context.Context, provider domain.Provider) ([]Relationship, error)
 	GetResourceCostSignal(ctx context.Context, provider domain.Provider, resourceID string, now time.Time) (CostSignal, error)

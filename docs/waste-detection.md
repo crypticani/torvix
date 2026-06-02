@@ -1,6 +1,8 @@
 # Torvix Waste Detection
 
-Torvix Phase 1 waste detection is OCI-only and recommendation-only. It detects possible unused or wasteful OCI resources and writes findings into PostgreSQL. It does not delete, stop, resize, retag, or otherwise modify cloud resources.
+Torvix Phase 1 waste detection is OCI-only, single configured-region, and recommendation-only. It detects possible unused or wasteful OCI resources and writes findings into PostgreSQL. It does not delete, stop, resize, retag, or otherwise modify cloud resources.
+
+Each OCI inventory sync is tracked as a run. Torvix only evaluates resources from complete successful runs, marks resources missing from a successful run inactive, and leaves previous inventory untouched after failed or partial runs.
 
 AWS Cost Explorer and AWS CUR/S3 cost ingestion remain available, but AWS waste detection is planned for Phase 2 because it requires live inventory and utilization APIs such as EC2, EBS, ELB, RDS, CloudWatch, and multi-account/region discovery.
 
@@ -51,9 +53,11 @@ When tag exclusions are enabled, resources with any configured exclusion tag key
 - `retain`
 - `do-not-delete`
 
+OCI defined tags are flattened into stable keys such as `defined.Operations.keep`, `Operations.keep`, and `Operations:keep`. A configured exclusion key can match the full flattened key or the final tag key, such as `keep`.
+
 ## API Endpoints
 
-- `GET /api/v1/waste/summary`
+- `GET /api/v1/waste/summary` for open findings only
 - `GET /api/v1/waste/findings`
 - `GET /api/v1/waste/findings/{id}`
 - `GET /api/v1/waste/rules`
@@ -93,12 +97,14 @@ curl -X PATCH http://localhost:8080/api/v1/waste/findings/42/status \
   -d '{"status":"ignored"}'
 ```
 
+When Grafana/API bearer auth is enabled, all `/api/v1/waste/*` endpoints require the same bearer token as dashboard API endpoints.
+
 ## Grafana Panels
 
 The waste APIs are Grafana-compatible through the Torvix API datasource. Recommended panels:
 
 - Open waste findings count from `/api/v1/waste/summary`
-- Estimated monthly waste from `/api/v1/waste/summary`
+- Estimated monthly waste from open findings in `/api/v1/waste/summary`
 - Waste by severity from `findings_by_severity`
 - Waste by service from `findings_by_service`
 - Waste by region from `findings_by_region`
