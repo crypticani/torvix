@@ -119,6 +119,22 @@ Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are 
 
    The same values can be overridden with `TORVIX_REPORT_TIMEZONE`, `TORVIX_DAILY_REPORT_CRON`, `TORVIX_WEEKLY_REPORT_CRON`, `TORVIX_REPORT_REQUIRE_COMPLETE_INGESTION`, and `TORVIX_DAILY_REPORT_TARGET_LAG_DAYS`. Existing `CLOUDPULSE_*` report env vars are accepted only as lower-priority compatibility fallbacks.
 
+   Waste detection runs independently from billing ingestion and defaults to OCI-only Phase 1 detection once per day:
+
+   ```yaml
+   waste:
+     detection_enabled: true
+     provider: "oci"
+     scan_interval_hours: 24
+     min_resource_age_days: 7
+     stopped_instance_min_days: 3
+     min_cost_threshold: 0
+     high_monthly_threshold: 50
+     enable_tag_exclusions: true
+   ```
+
+   The same values can be overridden with `TORVIX_WASTE_DETECTION_ENABLED`, `TORVIX_WASTE_PROVIDER`, `TORVIX_WASTE_SCAN_INTERVAL_HOURS`, `TORVIX_WASTE_MIN_RESOURCE_AGE_DAYS`, `TORVIX_WASTE_STOPPED_INSTANCE_MIN_DAYS`, `TORVIX_WASTE_MIN_COST_THRESHOLD`, `TORVIX_WASTE_HIGH_MONTHLY_THRESHOLD`, `TORVIX_WASTE_ENABLE_TAG_EXCLUSIONS`, and `TORVIX_WASTE_EXCLUSION_TAG_KEYS`.
+
 5. Start only the Torvix app:
 
    ```bash
@@ -170,7 +186,7 @@ The production Compose healthcheck checks `http://127.0.0.1:${TORVIX_HTTP_PORT:-
 
 If you change only `http.address` in `configs/config.prod.yaml`, also set `TORVIX_HTTP_PORT` to the same port or update the healthcheck command in `docker-compose.prod.yml`. Compose cannot read the mounted YAML value into its healthcheck automatically.
 
-Torvix writes file-only JSON logs and does not emit normal application logs to stdout. Logs are split by subsystem into `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `aws.log`, `scheduler.log`, and `alerting.log`. The bundled Compose files mount `./logs` to `/app/logs`; set `TORVIX_LOG_DIR=/app/logs` or keep `logging.dir: logs` while the container runs from `/app`.
+Torvix writes file-only JSON logs and does not emit normal application logs to stdout. Logs are split by subsystem into `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `aws.log`, `scheduler.log`, `alerting.log`, and `waste.log`. The bundled Compose files mount `./logs` to `/app/logs`; set `TORVIX_LOG_DIR=/app/logs` or keep `logging.dir: logs` while the container runs from `/app`.
 
 Logging runtime controls:
 

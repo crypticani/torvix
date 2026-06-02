@@ -20,6 +20,7 @@ import (
 	"github.com/crypticani/torvix/internal/core/forecasting"
 	"github.com/crypticani/torvix/internal/core/reporting"
 	"github.com/crypticani/torvix/internal/domain"
+	"github.com/crypticani/torvix/internal/waste"
 )
 
 type Handler struct {
@@ -29,6 +30,7 @@ type Handler struct {
 	forecasting   *forecasting.Service
 	reporting     *reporting.Service
 	alerting      *alerting.Service
+	waste         waste.Detector
 	metrics       http.Handler
 	lookbackDays  int
 	retentionDays int
@@ -44,6 +46,7 @@ type HandlerOptions struct {
 	GrafanaAuthToken   string
 	GrafanaMetrics     GrafanaMetricsRecorder
 	Logger             *slog.Logger
+	Waste              waste.Detector
 }
 
 type GrafanaMetricsRecorder interface {
@@ -84,6 +87,7 @@ func NewWithOptions(collector *collect.Service, analytics *analytics.Service, fo
 		forecasting:   forecasting,
 		reporting:     reporting,
 		alerting:      alerting,
+		waste:         opts.Waste,
 		metrics:       promhttp.HandlerFor(reg, promhttp.HandlerOpts{}),
 		lookbackDays:  lookbackDays,
 		retentionDays: retentionDays,
@@ -123,6 +127,10 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/v1/dashboard/cost-decreases", h.withGrafanaAuth(h.dashboardCostDecreases))
 	h.mux.HandleFunc("/api/v1/dashboard/anomalies", h.withGrafanaAuth(h.dashboardAnomalies))
 	h.mux.HandleFunc("/api/v1/dashboard/ingestion-status", h.withGrafanaAuth(h.dashboardIngestionStatus))
+	h.mux.HandleFunc("/api/v1/waste/summary", h.withGrafanaAuth(h.wasteSummary))
+	h.mux.HandleFunc("/api/v1/waste/findings", h.withGrafanaAuth(h.wasteFindings))
+	h.mux.HandleFunc("/api/v1/waste/findings/", h.wasteFindingByID)
+	h.mux.HandleFunc("/api/v1/waste/rules", h.withGrafanaAuth(h.wasteRules))
 	h.mux.HandleFunc("/api/v1/grafana/timeseries/cost", h.withGrafanaAuth(h.grafanaCostTimeseries))
 	h.mux.HandleFunc("/api/v1/grafana/table/top-services", h.withGrafanaAuth(h.grafanaTopServices))
 	h.mux.HandleFunc("/api/v1/grafana/table/anomalies", h.withGrafanaAuth(h.grafanaAnomalies))

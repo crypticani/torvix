@@ -16,6 +16,7 @@ It is operational FinOps tooling, not long-term archival billing warehousing; th
 - Canonical multi-cloud normalization
 - Daily, weekly, and monthly precomputed dashboard summaries
 - Explainable anomaly detection using trailing baselines, percentage deviation, and optional z-score thresholds
+- OCI Phase 1 unused-resource and waste detection with recommendation-only findings
 - Rolling forecast generation
 - Slack, Microsoft Teams, Telegram, Discord, and SMTP email report delivery
 - Prometheus metrics and Grafana dashboards
@@ -143,6 +144,42 @@ Ingestion status separates parsing from retained inserts. `records_parsed` is th
 ```
 
 After new records are inserted, Torvix refreshes the affected daily, weekly, and monthly dashboard summary windows, recomputes anomalies for the affected daily window, recomputes a 7-day trailing-average forecast, prunes dashboard tables outside the 90-day horizon, and then serves Grafana from those precomputed tables.
+
+## Waste Detection
+
+Torvix Phase 1 waste detection is OCI-only. It syncs OCI inventory into provider-neutral resource and relationship tables, correlates resources with recent cost records, and creates recommendation-only findings for possible waste. Torvix does not delete, stop, resize, retag, or modify resources.
+
+Supported OCI Phase 1 rules:
+
+- `OCI_DETACHED_BLOCK_VOLUME`
+- `OCI_DETACHED_BOOT_VOLUME`
+- `OCI_STOPPED_COMPUTE_WITH_PAID_STORAGE`
+- `OCI_UNUSED_RESERVED_PUBLIC_IP`
+
+AWS cost ingestion remains available through CUR/S3 or Cost Explorer, but AWS waste detection is planned for Phase 2 because it needs live AWS inventory and utilization APIs.
+
+Waste detection defaults:
+
+```bash
+TORVIX_WASTE_DETECTION_ENABLED=true
+TORVIX_WASTE_PROVIDER=oci
+TORVIX_WASTE_SCAN_INTERVAL_HOURS=24
+TORVIX_WASTE_MIN_RESOURCE_AGE_DAYS=7
+TORVIX_WASTE_STOPPED_INSTANCE_MIN_DAYS=3
+TORVIX_WASTE_MIN_COST_THRESHOLD=0
+TORVIX_WASTE_HIGH_MONTHLY_THRESHOLD=50
+TORVIX_WASTE_ENABLE_TAG_EXCLUSIONS=true
+```
+
+Main APIs:
+
+```bash
+curl "http://localhost:8080/api/v1/waste/summary?provider=oci"
+curl "http://localhost:8080/api/v1/waste/findings?provider=oci&status=open"
+curl "http://localhost:8080/api/v1/waste/rules"
+```
+
+Grafana can use the Torvix API datasource for open finding count, estimated monthly waste, waste by severity/service/region/scope, and a top findings table. See [docs/waste-detection.md](docs/waste-detection.md) for required OCI permissions, exclusion tags, status updates, and panel suggestions.
 
 ## AWS Ingestion
 
