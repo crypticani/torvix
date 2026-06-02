@@ -9,6 +9,9 @@ services:
     container_name: torvix
     restart: unless-stopped
     network_mode: host
+    env_file:
+      - path: ./.env
+        required: false
     environment:
       - TORVIX_HTTP_ADDRESS
       - TORVIX_HTTP_PORT

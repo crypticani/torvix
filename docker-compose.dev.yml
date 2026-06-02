@@ -40,6 +40,9 @@ services:
     restart: unless-stopped
     mem_limit: 512m
     cpus: "1.0"
+    env_file:
+      - path: ./.env
+        required: false
     environment:
       - TORVIX_HTTP_ADDRESS
       - TORVIX_HTTP_PORT

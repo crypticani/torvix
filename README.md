@@ -337,6 +337,8 @@ Pass `from=YYYY-MM-DD&to=YYYY-MM-DD` to override those defaults. Add `deliver=tr
 ## Local Development
 
 ```bash
+cp configs/config.example.yaml configs/config.yaml
+cp .env.example .env
 make tidy
 make test
 make compose-dev-up
@@ -344,7 +346,7 @@ curl -X POST http://localhost:8080/api/v1/ingest
 curl "http://localhost:8080/api/v1/analytics/summary?window=weekly&from=2026-05-01&to=2026-05-31"
 ```
 
-The application applies SQL migrations from `migrations/` on startup.
+The Compose files load `.env` into the Torvix container with `env_file`; update it for AWS credentials, AWS CUR settings, report scheduler overrides, and port/resource limits. The application applies SQL migrations from `migrations/` on startup.
 
 Torvix has two Docker Compose entry points:
 
