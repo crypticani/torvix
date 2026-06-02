@@ -2,7 +2,7 @@ name: torvix
 
 services:
   torvix:
-    image: ${TORVIX_IMAGE:-torvix:latest}
+    image: ${TORVIX_IMAGE:-crypticani/torvix:latest}
     build:
       context: .
       dockerfile: Dockerfile
