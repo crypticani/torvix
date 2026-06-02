@@ -154,6 +154,90 @@ func TestReportingEnvOverridesPreferTorvixOverLegacyNames(t *testing.T) {
 	}
 }
 
+func TestAWSConfigDefaultsDisabled(t *testing.T) {
+	cfg := loadTestConfig(t, "{}\n")
+
+	if cfg.Providers.AWS.Enabled {
+		t.Fatal("expected AWS provider disabled by default")
+	}
+	if cfg.Providers.AWS.IngestionMode != "cur_s3" {
+		t.Fatalf("expected default AWS ingestion mode cur_s3, got %q", cfg.Providers.AWS.IngestionMode)
+	}
+	if cfg.Providers.AWS.Region != "us-east-1" {
+		t.Fatalf("expected default AWS region us-east-1, got %q", cfg.Providers.AWS.Region)
+	}
+	if cfg.Providers.AWS.CostMetric != "UnblendedCost" {
+		t.Fatalf("expected default AWS cost metric UnblendedCost, got %q", cfg.Providers.AWS.CostMetric)
+	}
+	if cfg.Providers.AWS.LookbackDays != 3 {
+		t.Fatalf("expected default AWS lookback days 3, got %d", cfg.Providers.AWS.LookbackDays)
+	}
+	if cfg.Providers.AWS.ReportLagDays != 2 {
+		t.Fatalf("expected default AWS report lag days 2, got %d", cfg.Providers.AWS.ReportLagDays)
+	}
+	if cfg.Providers.AWS.CURRegion != "us-east-1" {
+		t.Fatalf("expected default AWS CUR region us-east-1, got %q", cfg.Providers.AWS.CURRegion)
+	}
+	if cfg.Providers.AWS.CURFormat != "csv_gzip" {
+		t.Fatalf("expected default AWS CUR format csv_gzip, got %q", cfg.Providers.AWS.CURFormat)
+	}
+	if cfg.Providers.AWS.CURLookbackDays != 3 {
+		t.Fatalf("expected default AWS CUR lookback days 3, got %d", cfg.Providers.AWS.CURLookbackDays)
+	}
+	if cfg.Providers.AWS.CURReportLagDays != 2 {
+		t.Fatalf("expected default AWS CUR report lag days 2, got %d", cfg.Providers.AWS.CURReportLagDays)
+	}
+}
+
+func TestAWSEnvOverrides(t *testing.T) {
+	t.Setenv(EnvAWSEnabled, "true")
+	t.Setenv(EnvAWSIngestionMode, "cost_explorer")
+	t.Setenv("AWS_REGION", "ap-south-1")
+	t.Setenv(EnvAWSCostMetric, "AmortizedCost")
+	t.Setenv(EnvAWSLookbackDays, "5")
+	t.Setenv(EnvAWSReportLagDays, "3")
+	t.Setenv(EnvAWSCURBucket, "billing-bucket")
+	t.Setenv(EnvAWSCURPrefix, "exports/cur/")
+	t.Setenv(EnvAWSCURRegion, "us-east-2")
+	t.Setenv(EnvAWSCURFormat, "csv")
+	t.Setenv(EnvAWSCURLookbackDays, "4")
+	t.Setenv(EnvAWSCURReportLagDays, "5")
+	t.Setenv(EnvAWSCURLocalPath, "./testdata/aws/cur.csv.gz")
+
+	cfg := loadTestConfig(t, "{}\n")
+
+	if !cfg.Providers.AWS.Enabled {
+		t.Fatal("expected AWS provider enabled from env")
+	}
+	if cfg.Providers.AWS.IngestionMode != "cost_explorer" {
+		t.Fatalf("expected AWS ingestion mode env override, got %q", cfg.Providers.AWS.IngestionMode)
+	}
+	if cfg.Providers.AWS.Region != "ap-south-1" {
+		t.Fatalf("expected AWS region env override, got %q", cfg.Providers.AWS.Region)
+	}
+	if cfg.Providers.AWS.CostMetric != "AmortizedCost" {
+		t.Fatalf("expected AWS cost metric env override, got %q", cfg.Providers.AWS.CostMetric)
+	}
+	if cfg.Providers.AWS.LookbackDays != 5 {
+		t.Fatalf("expected AWS lookback env override 5, got %d", cfg.Providers.AWS.LookbackDays)
+	}
+	if cfg.Providers.AWS.ReportLagDays != 3 {
+		t.Fatalf("expected AWS report lag env override 3, got %d", cfg.Providers.AWS.ReportLagDays)
+	}
+	if cfg.Providers.AWS.CURBucket != "billing-bucket" || cfg.Providers.AWS.CURPrefix != "exports/cur/" {
+		t.Fatalf("expected AWS CUR bucket/prefix env overrides, got %q/%q", cfg.Providers.AWS.CURBucket, cfg.Providers.AWS.CURPrefix)
+	}
+	if cfg.Providers.AWS.CURRegion != "us-east-2" || cfg.Providers.AWS.CURFormat != "csv" {
+		t.Fatalf("expected AWS CUR region/format env overrides, got %q/%q", cfg.Providers.AWS.CURRegion, cfg.Providers.AWS.CURFormat)
+	}
+	if cfg.Providers.AWS.CURLookbackDays != 4 || cfg.Providers.AWS.CURReportLagDays != 5 {
+		t.Fatalf("expected AWS CUR lookback/report lag env overrides, got %d/%d", cfg.Providers.AWS.CURLookbackDays, cfg.Providers.AWS.CURReportLagDays)
+	}
+	if cfg.Providers.AWS.CURLocalPath != "./testdata/aws/cur.csv.gz" {
+		t.Fatalf("expected AWS CUR local path env override, got %q", cfg.Providers.AWS.CURLocalPath)
+	}
+}
+
 func TestProviderInheritsMaxZeroYieldFilesDefault(t *testing.T) {
 	cfg := loadTestConfig(t, "ingestion:\n  max_zero_yield_files: 17\n")
 	provider := cfg.Providers.OCI.WithIngestionDefaults(cfg.Ingestion)

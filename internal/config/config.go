@@ -23,6 +23,18 @@ const (
 	EnvWeeklyReportCron               = "TORVIX_WEEKLY_REPORT_CRON"
 	EnvReportRequireCompleteIngestion = "TORVIX_REPORT_REQUIRE_COMPLETE_INGESTION"
 	EnvDailyReportTargetLagDays       = "TORVIX_DAILY_REPORT_TARGET_LAG_DAYS"
+	EnvAWSEnabled                     = "TORVIX_AWS_ENABLED"
+	EnvAWSIngestionMode               = "TORVIX_AWS_INGESTION_MODE"
+	EnvAWSCostMetric                  = "TORVIX_AWS_COST_METRIC"
+	EnvAWSLookbackDays                = "TORVIX_AWS_LOOKBACK_DAYS"
+	EnvAWSReportLagDays               = "TORVIX_AWS_REPORT_LAG_DAYS"
+	EnvAWSCURBucket                   = "TORVIX_AWS_CUR_BUCKET"
+	EnvAWSCURPrefix                   = "TORVIX_AWS_CUR_PREFIX"
+	EnvAWSCURRegion                   = "TORVIX_AWS_CUR_REGION"
+	EnvAWSCURFormat                   = "TORVIX_AWS_CUR_FORMAT"
+	EnvAWSCURLookbackDays             = "TORVIX_AWS_CUR_LOOKBACK_DAYS"
+	EnvAWSCURReportLagDays            = "TORVIX_AWS_CUR_REPORT_LAG_DAYS"
+	EnvAWSCURLocalPath                = "TORVIX_AWS_CUR_LOCAL_PATH"
 
 	LegacyEnvReportTimezone                 = "CLOUDPULSE_REPORT_TIMEZONE"
 	LegacyEnvDailyReportCron                = "CLOUDPULSE_DAILY_REPORT_CRON"
@@ -37,7 +49,8 @@ type Config struct {
 	HTTP      HTTP    `yaml:"http"`
 	DB        DB      `yaml:"db"`
 	Providers struct {
-		OCI Provider `yaml:"oci"`
+		OCI Provider    `yaml:"oci"`
+		AWS AWSProvider `yaml:"aws"`
 	} `yaml:"providers"`
 	Ingestion Ingestion `yaml:"ingestion"`
 	Scheduler Scheduler `yaml:"scheduler"`
@@ -85,6 +98,22 @@ type Provider struct {
 	MaxMemoryBufferRecords int    `yaml:"max_memory_buffer_records"`
 	DryRun                 bool   `yaml:"dry_run"`
 	SampleMode             bool   `yaml:"sample_mode"`
+}
+
+type AWSProvider struct {
+	Enabled          bool   `yaml:"enabled"`
+	IngestionMode    string `yaml:"ingestion_mode"`
+	Region           string `yaml:"region"`
+	CostMetric       string `yaml:"cost_metric"`
+	LookbackDays     int    `yaml:"lookback_days"`
+	ReportLagDays    int    `yaml:"report_lag_days"`
+	CURBucket        string `yaml:"cur_bucket"`
+	CURPrefix        string `yaml:"cur_prefix"`
+	CURRegion        string `yaml:"cur_region"`
+	CURFormat        string `yaml:"cur_format"`
+	CURLookbackDays  int    `yaml:"cur_lookback_days"`
+	CURReportLagDays int    `yaml:"cur_report_lag_days"`
+	CURLocalPath     string `yaml:"cur_local_path"`
 }
 
 type Ingestion struct {
@@ -172,6 +201,7 @@ func Load(path string) (Config, error) {
 	cfg.Ingestion = cfg.Ingestion.WithDefaults()
 	cfg.Scheduler = cfg.Scheduler.WithDefaults()
 	cfg.Reporting = cfg.Reporting.WithDefaults()
+	cfg.Providers.AWS = cfg.Providers.AWS.WithDefaults()
 	return cfg, nil
 }
 
@@ -215,6 +245,55 @@ func applyEnvOverrides(cfg *Config) {
 			cfg.Reporting.DailyReportTargetLagDays = days
 		}
 	}
+	if enabled := envValue(EnvAWSEnabled); enabled != "" {
+		if parsed, err := strconv.ParseBool(enabled); err == nil {
+			cfg.Providers.AWS.Enabled = parsed
+		}
+	}
+	if mode := envValue(EnvAWSIngestionMode); mode != "" {
+		cfg.Providers.AWS.IngestionMode = mode
+	}
+	if region := envValue("AWS_REGION"); region != "" {
+		cfg.Providers.AWS.Region = region
+	}
+	if metric := envValue(EnvAWSCostMetric); metric != "" {
+		cfg.Providers.AWS.CostMetric = metric
+	}
+	if lookback := envValue(EnvAWSLookbackDays); lookback != "" {
+		if days, err := strconv.Atoi(lookback); err == nil {
+			cfg.Providers.AWS.LookbackDays = days
+		}
+	}
+	if lag := envValue(EnvAWSReportLagDays); lag != "" {
+		if days, err := strconv.Atoi(lag); err == nil {
+			cfg.Providers.AWS.ReportLagDays = days
+		}
+	}
+	if bucket := envValue(EnvAWSCURBucket); bucket != "" {
+		cfg.Providers.AWS.CURBucket = bucket
+	}
+	if prefix := envValue(EnvAWSCURPrefix); prefix != "" {
+		cfg.Providers.AWS.CURPrefix = prefix
+	}
+	if region := envValue(EnvAWSCURRegion); region != "" {
+		cfg.Providers.AWS.CURRegion = region
+	}
+	if format := envValue(EnvAWSCURFormat); format != "" {
+		cfg.Providers.AWS.CURFormat = format
+	}
+	if lookback := envValue(EnvAWSCURLookbackDays); lookback != "" {
+		if days, err := strconv.Atoi(lookback); err == nil {
+			cfg.Providers.AWS.CURLookbackDays = days
+		}
+	}
+	if lag := envValue(EnvAWSCURReportLagDays); lag != "" {
+		if days, err := strconv.Atoi(lag); err == nil {
+			cfg.Providers.AWS.CURReportLagDays = days
+		}
+	}
+	if localPath := envValue(EnvAWSCURLocalPath); localPath != "" {
+		cfg.Providers.AWS.CURLocalPath = localPath
+	}
 }
 
 func envValue(names ...string) string {
@@ -254,6 +333,42 @@ func (r Reporting) WithDefaults() Reporting {
 		r.DailyReportTargetLagDays = 1
 	}
 	return r
+}
+
+func (a AWSProvider) WithDefaults() AWSProvider {
+	a.IngestionMode = strings.TrimSpace(strings.ToLower(a.IngestionMode))
+	if a.IngestionMode == "" {
+		a.IngestionMode = "cur_s3"
+	}
+	if a.Region == "" {
+		a.Region = "us-east-1"
+	}
+	if a.CostMetric == "" {
+		a.CostMetric = "UnblendedCost"
+	}
+	if a.LookbackDays <= 0 {
+		a.LookbackDays = 3
+	}
+	if a.ReportLagDays <= 0 {
+		a.ReportLagDays = 2
+	}
+	if a.CURRegion == "" {
+		a.CURRegion = a.Region
+	}
+	a.CURFormat = strings.TrimSpace(strings.ToLower(a.CURFormat))
+	if a.CURFormat == "" {
+		a.CURFormat = "csv_gzip"
+	}
+	if a.CURLookbackDays <= 0 {
+		a.CURLookbackDays = 3
+	}
+	if a.CURReportLagDays <= 0 {
+		a.CURReportLagDays = a.ReportLagDays
+	}
+	if a.CURReportLagDays <= 0 {
+		a.CURReportLagDays = 2
+	}
+	return a
 }
 
 func (l Logging) WithDefaults(legacyLevel string) Logging {

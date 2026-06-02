@@ -12,7 +12,7 @@ It is operational FinOps tooling, not long-term archival billing warehousing; th
 
 ## Capabilities
 
-- Daily billing export ingestion
+- OCI billing export ingestion, AWS CUR/Data Export ingestion, and optional AWS Cost Explorer ingestion
 - Canonical multi-cloud normalization
 - Daily, weekly, and monthly precomputed dashboard summaries
 - Explainable anomaly detection using trailing baselines, percentage deviation, and optional z-score thresholds
@@ -27,7 +27,7 @@ It is operational FinOps tooling, not long-term archival billing warehousing; th
 cmd/torvix               application entrypoint
 internal/app                 bootstrap, DB wiring, migrations
 internal/adapters/postgres   pgx repository and migration runner
-internal/adapters/providers  cloud collectors, including OCI Object Storage
+internal/adapters/providers  cloud collectors, including OCI Object Storage, AWS CUR/S3, and AWS Cost Explorer
 internal/core                collection, normalization, analytics, reporting
 internal/ports               collector and repository contracts
 migrations                   PostgreSQL + Timescale SQL migrations
@@ -43,6 +43,7 @@ dashboards                   OCI Grafana dashboard JSON
 - `daily_cost_summaries`, `weekly_cost_summaries`, `monthly_cost_summaries`, `cost_anomalies`, and `cost_forecasts` are precomputed after ingestion for dashboard APIs
 - compression and retention policies are defined in migrations; raw records are retained for 90 days by default and compressed after 7 days
 - `processed_report_files` tracks incremental billing ingestion and idempotency
+- generic billing scope, project, network scope, resource, tag, and raw metadata fields keep provider records comparable while leaving room for future enrichment
 
 Production dashboard flow:
 
@@ -143,6 +144,142 @@ Ingestion status separates parsing from retained inserts. `records_parsed` is th
 
 After new records are inserted, Torvix refreshes the affected daily, weekly, and monthly dashboard summary windows, recomputes anomalies for the affected daily window, recomputes a 7-day trailing-average forecast, prunes dashboard tables outside the 90-day horizon, and then serves Grafana from those precomputed tables.
 
+## AWS Ingestion
+
+AWS defaults to CUR 2.0 / Data Export files in S3 so it follows the same architecture as OCI billing exports: bucket export -> Torvix collector -> normalized PostgreSQL records -> dashboards and reports. Cost Explorer remains available as an optional `cost_explorer` mode for quick testing, debugging, or manual fallback.
+
+AWS intentionally uses Linked Account as the billing scope instead of VPC:
+
+- OCI drilldown remains Region -> Compartment -> Service.
+- AWS v1 drilldown is Region -> Linked Account -> Service.
+- Future AWS drilldown can extend to Region -> Linked Account -> Project -> VPC -> Service -> Resource.
+
+VPC/project-level attribution is planned for a future CUR-based pass using tags, cost categories, inventory enrichment, and optional VPC-to-project mappings. Torvix does not assume every AWS charge can map to a VPC; S3, Route 53, CloudFront, IAM, Support, global data transfer, and other account/global services may need tag, cost-category, account-level, manual, or unallocated attribution.
+
+### AWS CUR/S3 Setup
+
+Create an S3 bucket for AWS billing exports, create an AWS Data Export / CUR 2.0 export, choose CSV gzip, set an export prefix, and wait for AWS to write the first report. Torvix currently supports `csv` and `csv_gzip`; Parquet support is planned.
+
+Use an IAM principal with read-only access to the billing export bucket and prefix:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TorvixReadAwsBillingExports",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::YOUR_BILLING_BUCKET",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "YOUR_CUR_PREFIX/*",
+            "YOUR_CUR_PREFIX"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "TorvixGetAwsBillingExportObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::YOUR_BILLING_BUCKET/YOUR_CUR_PREFIX/*"
+    }
+  ]
+}
+```
+
+Enable CUR/S3 mode in `configs/config.yaml` or environment variables:
+
+```yaml
+providers:
+  aws:
+    enabled: true
+    ingestion_mode: "cur_s3"
+    region: "us-east-1"
+    cur_bucket: "your-billing-bucket"
+    cur_prefix: "your-prefix/"
+    cur_region: "us-east-1"
+    cur_format: "csv_gzip"
+    cur_lookback_days: 3
+    cur_report_lag_days: 2
+```
+
+```bash
+TORVIX_AWS_ENABLED=true
+TORVIX_AWS_INGESTION_MODE=cur_s3
+AWS_ACCESS_KEY_ID=replace_with_access_key
+AWS_SECRET_ACCESS_KEY=replace_with_secret_key
+AWS_REGION=us-east-1
+TORVIX_AWS_CUR_BUCKET=your-billing-bucket
+TORVIX_AWS_CUR_PREFIX=your-prefix/
+TORVIX_AWS_CUR_REGION=us-east-1
+TORVIX_AWS_CUR_FORMAT=csv_gzip
+TORVIX_AWS_CUR_LOOKBACK_DAYS=3
+TORVIX_AWS_CUR_REPORT_LAG_DAYS=2
+```
+
+For local contributor testing without AWS access or Cost Explorer API calls, point Torvix at a sanitized local CUR CSV or gzip file:
+
+```bash
+TORVIX_AWS_ENABLED=true
+TORVIX_AWS_INGESTION_MODE=cur_s3
+TORVIX_AWS_CUR_LOCAL_PATH=./testdata/aws/cur-sample.csv.gz
+```
+
+CUR records are stored with `provider='aws'`, `billing_scope_type='linked_account'`, and `record_type='cur_line_item'`. Re-reading the same export rows uses a deterministic `source_record_hash`, so ingestion updates existing rows instead of duplicating them. General totals, reports, anomalies, and forecasts aggregate canonical CUR line items.
+
+With defaults, an ingestion on `2026-06-01` reprocesses recent billing exports covering `2026-05-29` through `2026-05-31`; AWS daily reports use a 2-day lag, so the stable report date is `2026-05-30`.
+
+### Optional Cost Explorer Mode
+
+Cost Explorer is not the default ingestion architecture. Enable it explicitly only when you want quick testing or a manual fallback:
+
+```bash
+TORVIX_AWS_ENABLED=true
+TORVIX_AWS_INGESTION_MODE=cost_explorer
+AWS_ACCESS_KEY_ID=replace_with_access_key
+AWS_SECRET_ACCESS_KEY=replace_with_secret_key
+AWS_REGION=us-east-1
+TORVIX_AWS_COST_METRIC=UnblendedCost
+```
+
+Cost Explorer mode requires:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TorvixCostExplorerReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ce:GetCostAndUsage",
+        "ce:GetDimensionValues"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Torvix calls Cost Explorer with daily granularity for total cost, service, linked account, region, linked account + service, and region + service. Cost Explorer allows at most two `GroupBy` dimensions per request, so Region + Linked Account + Service is not requested. If AWS rejects region grouping, Torvix logs a warning and continues with the other queries. Cost Explorer records use `linked_account_service` for general totals and `region_service` for region views to avoid double-counting overlapping query outputs.
+
+Validate AWS data after ingestion:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/ingest
+curl "http://localhost:8080/api/v1/dashboard/overview?provider=aws"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-region?provider=aws&from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-scope?provider=aws&from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)"
+curl "http://localhost:8080/api/v1/dashboard/drilldown?provider=aws&from=$(date -u -d '30 days ago' +%F)&to=$(date -u +%F)"
+```
+
 ## Anomaly Detection
 
 Torvix does not use AI/ML for anomaly detection today. The v1 anomaly model is deterministic and explainable:
@@ -169,13 +306,15 @@ This is intentionally debuggable operational statistics, not predictive ML. Tune
 - `GET /api/v1/analytics/summary?from=YYYY-MM-DD&to=YYYY-MM-DD&window=daily|weekly|monthly`
 - `GET /api/v1/analytics/anomalies?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/analytics/forecast?from=YYYY-MM-DD&to=YYYY-MM-DD`
-- `GET /api/v1/dashboard/overview?provider=oci`
-- `GET /api/v1/dashboard/cost-timeseries?provider=oci&from=YYYY-MM-DD&to=YYYY-MM-DD&window=daily|weekly|monthly`
-- `GET /api/v1/dashboard/cost-by-category?provider=oci&from=YYYY-MM-DD&to=YYYY-MM-DD`
-- `GET /api/v1/dashboard/cost-by-service?provider=oci&region=<region>&compartment=<compartment>&service=<service>&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=15`
-- `GET /api/v1/dashboard/cost-by-provider?provider=oci&from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /api/v1/dashboard/overview?provider=oci|aws`
+- `GET /api/v1/dashboard/cost-timeseries?provider=oci|aws&from=YYYY-MM-DD&to=YYYY-MM-DD&window=daily|weekly|monthly`
+- `GET /api/v1/dashboard/cost-by-category?provider=oci|aws&from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /api/v1/dashboard/cost-by-service?provider=oci|aws&region=<region>&scope=<scope>&service=<service>&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=15`
+- `GET /api/v1/dashboard/cost-by-provider?provider=oci|aws&from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/dashboard/cost-by-compartment?provider=oci&region=<region>&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=15`
-- `GET /api/v1/dashboard/cost-by-region?provider=oci&from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /api/v1/dashboard/cost-by-scope?provider=oci|aws&region=<region>&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=15`
+- `GET /api/v1/dashboard/cost-by-region?provider=oci|aws&from=YYYY-MM-DD&to=YYYY-MM-DD`
+- `GET /api/v1/dashboard/drilldown?provider=oci|aws&from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/dashboard/oci-cost-summary?region=<region>&compartment=<compartment>&service=<service>&from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /api/v1/dashboard/oci-cost-drivers?region=<region>&compartment=<compartment>&service=<service>&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=15`
 - `GET /api/v1/dashboard/anomalies?provider=oci&from=YYYY-MM-DD&to=YYYY-MM-DD&severity=high`

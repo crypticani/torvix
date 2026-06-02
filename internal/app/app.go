@@ -11,6 +11,7 @@ import (
 
 	"github.com/crypticani/torvix/internal/adapters/postgres"
 	metricsadapter "github.com/crypticani/torvix/internal/adapters/prometheus"
+	awsadapter "github.com/crypticani/torvix/internal/adapters/providers/aws"
 	ociadapter "github.com/crypticani/torvix/internal/adapters/providers/oci"
 	"github.com/crypticani/torvix/internal/config"
 	"github.com/crypticani/torvix/internal/core/alerting"
@@ -47,6 +48,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		Ingestion: logger,
 		DB:        logger,
 		OCI:       logger,
+		AWS:       logger,
 		Scheduler: logger,
 		Alerting:  logger,
 	})
@@ -82,6 +84,13 @@ func NewWithLoggers(cfg config.Config, loggers logging.Loggers) (*App, error) {
 		}
 		collectors = append(collectors, ociCollector)
 	}
+	if cfg.Providers.AWS.Enabled {
+		awsCollector, err := awsadapter.New(context.Background(), cfg.Providers.AWS, loggers.AWS)
+		if err != nil {
+			return nil, err
+		}
+		collectors = append(collectors, awsCollector)
+	}
 
 	reg := prom.NewRegistry()
 	metrics := metricsadapter.New(cfg.Metrics.Namespace, reg, cfg.Metrics.CostStatsEnabled)
@@ -94,9 +103,22 @@ func NewWithLoggers(cfg config.Config, loggers logging.Loggers) (*App, error) {
 	})
 	analyticsSvc := analytics.New(repo)
 	forecastingSvc := forecasting.New(repo)
+	dailyReportLagDays := cfg.Reporting.DailyReportTargetLagDays
+	if cfg.Providers.AWS.Enabled {
+		switch cfg.Providers.AWS.IngestionMode {
+		case "cur_s3":
+			if cfg.Providers.AWS.CURReportLagDays > dailyReportLagDays {
+				dailyReportLagDays = cfg.Providers.AWS.CURReportLagDays
+			}
+		case "cost_explorer":
+			if cfg.Providers.AWS.ReportLagDays > dailyReportLagDays {
+				dailyReportLagDays = cfg.Providers.AWS.ReportLagDays
+			}
+		}
+	}
 	reportingSvc := reporting.NewWithOptions(analyticsSvc, forecastingSvc, reporting.Options{
 		Timezone:                 cfg.Reporting.Timezone,
-		DailyReportTargetLagDays: cfg.Reporting.DailyReportTargetLagDays,
+		DailyReportTargetLagDays: dailyReportLagDays,
 		RequireCompleteIngestion: cfg.Reporting.RequireCompleteIngestion,
 	})
 	alertingSvc := alerting.NewWithLogger(&http.Client{Timeout: 10 * time.Second}, cfg.Reporting.Webhooks, loggers.Alerting)

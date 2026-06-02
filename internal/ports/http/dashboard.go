@@ -51,6 +51,20 @@ type dashboardBreakdownResponse struct {
 	Data []dashboardBreakdownRow `json:"data"`
 }
 
+type dashboardDrilldownRow struct {
+	Provider   domain.Provider `json:"provider"`
+	Region     string          `json:"region"`
+	Scope      string          `json:"scope"`
+	ScopeLabel string          `json:"scope_label"`
+	Service    string          `json:"service"`
+	TotalCost  float64         `json:"total_cost"`
+}
+
+type dashboardDrilldownResponse struct {
+	Meta dashboardMeta           `json:"meta"`
+	Data []dashboardDrilldownRow `json:"data"`
+}
+
 type dashboardFilterOption struct {
 	Text  string `json:"__text"`
 	Value string `json:"__value"`
@@ -134,11 +148,15 @@ func (h *Handler) dashboardCostTimeseries(w http.ResponseWriter, r *http.Request
 	}
 	totals := map[timeseriesKey]float64{}
 	filters := dashboardFiltersFromRequest(r)
+	awsCURPeriods := dashboardAWSCURPeriods(rows)
 	for _, row := range rows {
 		if hasProvider && row.Provider != provider {
 			continue
 		}
 		if !dashboardRowMatchesFilters(row, filters) {
+			continue
+		}
+		if !dashboardRowMatchesView(row, "timeseries", filters, awsCURPeriods) {
 			continue
 		}
 		k := timeseriesKey{at: row.PeriodStart, provider: row.Provider, accountID: row.AccountID}
@@ -183,18 +201,94 @@ func (h *Handler) dashboardCostByCompartment(w http.ResponseWriter, r *http.Requ
 	h.dashboardBreakdown(w, r, "compartment")
 }
 
+func (h *Handler) dashboardCostByScope(w http.ResponseWriter, r *http.Request) {
+	h.dashboardBreakdown(w, r, "scope")
+}
+
 func (h *Handler) dashboardCostByRegion(w http.ResponseWriter, r *http.Request) {
 	h.dashboardBreakdown(w, r, "region")
 }
 
-func (h *Handler) dashboardFilterOptions(w http.ResponseWriter, r *http.Request) {
-	dimension := strings.TrimSpace(r.URL.Query().Get("dimension"))
-	switch dimension {
-	case "region", "compartment", "service":
-	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dimension must be one of region, compartment, service"})
+func (h *Handler) dashboardDrilldown(w http.ResponseWriter, r *http.Request) {
+	from, to, meta, ok := h.dashboardRange(r)
+	if !ok {
+		writeJSON(w, http.StatusOK, dashboardDrilldownResponse{Meta: meta, Data: []dashboardDrilldownRow{}})
 		return
 	}
+	rows, err := h.analytics.DashboardCostSummaries(r.Context(), "daily", from, to)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	type key struct {
+		provider   domain.Provider
+		region     string
+		scope      string
+		scopeLabel string
+		service    string
+	}
+	totals := map[key]float64{}
+	provider, hasProvider := dashboardProvider(r)
+	filters := dashboardFiltersFromRequest(r)
+	awsCURPeriods := dashboardAWSCURPeriods(rows)
+	for _, row := range rows {
+		if hasProvider && row.Provider != provider {
+			continue
+		}
+		if !dashboardRowMatchesFilters(row, filters) {
+			continue
+		}
+		if !dashboardRowMatchesView(row, "drilldown", filters, awsCURPeriods) {
+			continue
+		}
+		k := key{
+			provider:   row.Provider,
+			region:     dashboardDimensionValue(row, "region"),
+			scope:      dashboardDimensionValue(row, "scope"),
+			scopeLabel: dashboardScopeLabel(row.Provider),
+			service:    dashboardDimensionValue(row, "service"),
+		}
+		totals[k] += row.TotalCost
+	}
+	out := make([]dashboardDrilldownRow, 0, len(totals))
+	for k, total := range totals {
+		out = append(out, dashboardDrilldownRow{
+			Provider:   k.provider,
+			Region:     k.region,
+			Scope:      k.scope,
+			ScopeLabel: k.scopeLabel,
+			Service:    k.service,
+			TotalCost:  total,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].TotalCost == out[j].TotalCost {
+			if out[i].Region == out[j].Region {
+				if out[i].Scope == out[j].Scope {
+					return out[i].Service < out[j].Service
+				}
+				return out[i].Scope < out[j].Scope
+			}
+			return out[i].Region < out[j].Region
+		}
+		return out[i].TotalCost > out[j].TotalCost
+	})
+	limit := grafanaLimit(r, 50)
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	writeJSON(w, http.StatusOK, dashboardDrilldownResponse{Meta: meta, Data: out})
+}
+
+func (h *Handler) dashboardFilterOptions(w http.ResponseWriter, r *http.Request) {
+	dimension := strings.TrimSpace(r.URL.Query().Get("dimension"))
+	switch dashboardCanonicalDimension(dimension) {
+	case "region", "compartment", "scope", "service":
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "dimension must be one of region, compartment, scope, service"})
+		return
+	}
+	dimension = dashboardCanonicalDimension(dimension)
 	from, to, meta, ok := h.dashboardFilterOptionsRange(r)
 	if !ok {
 		writeJSON(w, http.StatusOK, dashboardFilterOptionsResponse{Meta: meta, Data: []dashboardFilterOption{}})
@@ -212,15 +306,21 @@ func (h *Handler) dashboardFilterOptions(w http.ResponseWriter, r *http.Request)
 		filters.Region = ""
 	case "compartment":
 		filters.Compartment = ""
+	case "scope":
+		filters.Scope = ""
 	case "service":
 		filters.Service = ""
 	}
 	values := map[string]struct{}{}
+	awsCURPeriods := dashboardAWSCURPeriods(rows)
 	for _, row := range rows {
 		if hasProvider && row.Provider != provider {
 			continue
 		}
 		if !dashboardRowMatchesFilters(row, filters) {
+			continue
+		}
+		if !dashboardRowMatchesView(row, dimension, filters, awsCURPeriods) {
 			continue
 		}
 		values[dashboardDimensionValue(row, dimension)] = struct{}{}
@@ -384,8 +484,12 @@ func (h *Handler) dashboardDailyWindowHasUsableSpend(ctx context.Context, r *htt
 	}
 	provider, hasProvider := dashboardProvider(r)
 	var currentTotal, previousTotal float64
+	awsCURPeriods := dashboardAWSCURPeriods(rows)
 	for _, row := range rows {
 		if hasProvider && row.Provider != provider {
+			continue
+		}
+		if !dashboardRowMatchesView(row, "total", dashboardFilters{}, awsCURPeriods) {
 			continue
 		}
 		switch {
@@ -441,11 +545,15 @@ func (h *Handler) dashboardBreakdown(w http.ResponseWriter, r *http.Request, dim
 	totals := map[key]float64{}
 	provider, hasProvider := dashboardProvider(r)
 	filters := dashboardFiltersFromRequest(r)
+	awsCURPeriods := dashboardAWSCURPeriods(rows)
 	for _, row := range rows {
 		if hasProvider && row.Provider != provider {
 			continue
 		}
 		if !dashboardRowMatchesFilters(row, filters) {
+			continue
+		}
+		if !dashboardRowMatchesView(row, dimension, filters, awsCURPeriods) {
 			continue
 		}
 		k := key{name: row.Category}
@@ -458,6 +566,9 @@ func (h *Handler) dashboardBreakdown(w http.ResponseWriter, r *http.Request, dim
 			k.provider = row.Provider
 		case "compartment":
 			k.name = dashboardDimensionValue(row, "compartment")
+			k.provider = row.Provider
+		case "scope":
+			k.name = dashboardDimensionValue(row, "scope")
 			k.provider = row.Provider
 		case "region":
 			k.name = dashboardDimensionValue(row, "region")
@@ -476,7 +587,7 @@ func (h *Handler) dashboardBreakdown(w http.ResponseWriter, r *http.Request, dim
 		return out[i].TotalCost > out[j].TotalCost
 	})
 	limit := grafanaLimit(r, 15)
-	if dimension != "service" && dimension != "compartment" {
+	if dimension != "service" && dimension != "compartment" && dimension != "scope" {
 		limit = len(out)
 	}
 	if len(out) > limit {
@@ -668,8 +779,12 @@ func (h *Handler) dashboardOverviewForProvider(ctx context.Context, provider dom
 		return domain.DashboardOverview{}, err
 	}
 	var current, previous float64
+	awsCURPeriods := dashboardAWSCURPeriods(rows)
 	for _, row := range rows {
 		if row.Provider != provider {
+			continue
+		}
+		if !dashboardRowMatchesView(row, "total", dashboardFilters{}, awsCURPeriods) {
 			continue
 		}
 		switch {
@@ -734,13 +849,19 @@ func dashboardProvider(r *http.Request) (domain.Provider, bool) {
 type dashboardFilters struct {
 	Region      string
 	Compartment string
+	Scope       string
 	Service     string
 }
 
 func dashboardFiltersFromRequest(r *http.Request) dashboardFilters {
+	scope := dashboardNormalizeFilter(r.URL.Query().Get("scope"))
+	if scope == "" {
+		scope = dashboardNormalizeFilter(r.URL.Query().Get("billing_scope"))
+	}
 	return dashboardFilters{
 		Region:      dashboardNormalizeFilter(r.URL.Query().Get("region")),
 		Compartment: dashboardNormalizeFilter(r.URL.Query().Get("compartment")),
+		Scope:       scope,
 		Service:     dashboardNormalizeFilter(r.URL.Query().Get("service")),
 	}
 }
@@ -762,10 +883,57 @@ func dashboardRowMatchesFilters(row domain.DashboardCostSummary, filters dashboa
 	if filters.Compartment != "" && dashboardDimensionValue(row, "compartment") != filters.Compartment {
 		return false
 	}
+	if filters.Scope != "" && dashboardDimensionValue(row, "scope") != filters.Scope {
+		return false
+	}
 	if filters.Service != "" && dashboardDimensionValue(row, "service") != filters.Service {
 		return false
 	}
 	return true
+}
+
+func dashboardRowMatchesView(row domain.DashboardCostSummary, dimension string, filters dashboardFilters, awsCURPeriods map[time.Time]struct{}) bool {
+	if row.Provider != domain.ProviderAWS {
+		return true
+	}
+	recordType := strings.TrimSpace(row.RecordType)
+	if _, hasCUR := awsCURPeriods[row.PeriodStart.UTC()]; hasCUR {
+		return recordType == "cur_line_item"
+	}
+	if recordType == "cur_line_item" {
+		return true
+	}
+	regionView := recordType == "region_service"
+	canonicalView := recordType == "linked_account_service"
+	if recordType == "" {
+		scopeID := strings.TrimSpace(row.BillingScopeID)
+		if scopeID == "" {
+			scopeID = strings.TrimSpace(row.CompartmentID)
+		}
+		regionView = strings.EqualFold(scopeID, "all")
+		canonicalView = !regionView
+	}
+	switch dimension {
+	case "region", "drilldown":
+		return regionView
+	case "service", "category":
+		if filters.Region != "" && filters.Scope == "" {
+			return regionView
+		}
+		return canonicalView
+	default:
+		return canonicalView
+	}
+}
+
+func dashboardAWSCURPeriods(rows []domain.DashboardCostSummary) map[time.Time]struct{} {
+	out := map[time.Time]struct{}{}
+	for _, row := range rows {
+		if row.Provider == domain.ProviderAWS && strings.TrimSpace(row.RecordType) == "cur_line_item" {
+			out[row.PeriodStart.UTC()] = struct{}{}
+		}
+	}
+	return out
 }
 
 func dashboardDimensionValue(row domain.DashboardCostSummary, dimension string) string {
@@ -775,6 +943,20 @@ func dashboardDimensionValue(row domain.DashboardCostSummary, dimension string) 
 		value = row.Region
 	case "compartment":
 		value = row.CompartmentName
+		if strings.TrimSpace(value) == "" {
+			value = row.CompartmentID
+		}
+	case "scope":
+		value = row.BillingScopeName
+		if strings.TrimSpace(value) == "" {
+			value = row.BillingScopeID
+		}
+		if row.Provider == domain.ProviderAWS && strings.EqualFold(strings.TrimSpace(value), "all") {
+			value = "All Linked Accounts"
+		}
+		if strings.TrimSpace(value) == "" {
+			value = row.CompartmentName
+		}
 		if strings.TrimSpace(value) == "" {
 			value = row.CompartmentID
 		}
@@ -788,6 +970,26 @@ func dashboardDimensionValue(row domain.DashboardCostSummary, dimension string) 
 		return "Unknown"
 	}
 	return value
+}
+
+func dashboardCanonicalDimension(dimension string) string {
+	switch strings.TrimSpace(strings.ToLower(dimension)) {
+	case "billing_scope", "linked_account", "account":
+		return "scope"
+	default:
+		return strings.TrimSpace(strings.ToLower(dimension))
+	}
+}
+
+func dashboardScopeLabel(provider domain.Provider) string {
+	switch provider {
+	case domain.ProviderAWS:
+		return "Linked Account"
+	case domain.ProviderOCI:
+		return "Compartment"
+	default:
+		return "Scope"
+	}
 }
 
 func (h *Handler) dashboardMeta(from, to time.Time, message string) dashboardMeta {

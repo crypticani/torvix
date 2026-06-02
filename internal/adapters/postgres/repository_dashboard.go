@@ -93,8 +93,12 @@ func refreshCostSummary(ctx context.Context, tx pgx.Tx, logger *slog.Logger, tab
 				time_bucket(INTERVAL '%s', "timestamp") AS period_start,
 				cloud_provider AS provider,
 				COALESCE(account_id, '') AS account_id,
-				COALESCE(tags->>'oci_compartment_id', '') AS compartment_id,
-				COALESCE(NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', '') AS compartment_name,
+				COALESCE(NULLIF(billing_scope_type, ''), CASE WHEN cloud_provider = 'oci' THEN 'compartment' ELSE '' END) AS billing_scope_type,
+				COALESCE(NULLIF(billing_scope_id, ''), tags->>'oci_compartment_id', '') AS billing_scope_id,
+				COALESCE(NULLIF(billing_scope_name, ''), NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', '') AS billing_scope_name,
+				COALESCE(NULLIF(billing_scope_id, ''), tags->>'oci_compartment_id', '') AS compartment_id,
+				COALESCE(NULLIF(billing_scope_name, ''), NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', '') AS compartment_name,
+				COALESCE(record_type, '') AS record_type,
 				COALESCE(service, 'unknown') AS service,
 				COALESCE(category, 'uncategorized') AS category,
 				COALESCE(region, '') AS region,
@@ -102,15 +106,20 @@ func refreshCostSummary(ctx context.Context, tx pgx.Tx, logger *slog.Logger, tab
 				COALESCE(SUM(cost), 0)::double precision AS total_cost
 			FROM cost_records
 			WHERE "timestamp" >= $1 AND "timestamp" < $2
-			GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
+			  AND (cloud_provider <> 'aws' OR record_type IN ('linked_account_service', 'region_service', 'cur_line_item'))
+			GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		),
 		previous_period AS (
 			SELECT
 				time_bucket(INTERVAL '%s', "timestamp") + INTERVAL '%s' AS period_start,
 				cloud_provider AS provider,
 				COALESCE(account_id, '') AS account_id,
-				COALESCE(tags->>'oci_compartment_id', '') AS compartment_id,
-				COALESCE(NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', '') AS compartment_name,
+				COALESCE(NULLIF(billing_scope_type, ''), CASE WHEN cloud_provider = 'oci' THEN 'compartment' ELSE '' END) AS billing_scope_type,
+				COALESCE(NULLIF(billing_scope_id, ''), tags->>'oci_compartment_id', '') AS billing_scope_id,
+				COALESCE(NULLIF(billing_scope_name, ''), NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', '') AS billing_scope_name,
+				COALESCE(NULLIF(billing_scope_id, ''), tags->>'oci_compartment_id', '') AS compartment_id,
+				COALESCE(NULLIF(billing_scope_name, ''), NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', '') AS compartment_name,
+				COALESCE(record_type, '') AS record_type,
 				COALESCE(service, 'unknown') AS service,
 				COALESCE(category, 'uncategorized') AS category,
 				COALESCE(region, '') AS region,
@@ -118,10 +127,11 @@ func refreshCostSummary(ctx context.Context, tx pgx.Tx, logger *slog.Logger, tab
 				COALESCE(SUM(cost), 0)::double precision AS total_cost
 			FROM cost_records
 			WHERE "timestamp" >= $3 AND "timestamp" < $4
-			GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
+			  AND (cloud_provider <> 'aws' OR record_type IN ('linked_account_service', 'region_service', 'cur_line_item'))
+			GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 		)
 		INSERT INTO %s
-		(period_start, period_end, provider, account_id, compartment_id, compartment_name, service, category, region, currency, total_cost, previous_period_cost, absolute_change, percentage_change, updated_at)
+		(period_start, period_end, provider, account_id, compartment_id, compartment_name, billing_scope_type, billing_scope_id, billing_scope_name, record_type, service, category, region, currency, total_cost, previous_period_cost, absolute_change, percentage_change, updated_at)
 		SELECT
 			c.period_start,
 			c.period_start + INTERVAL '%s',
@@ -129,6 +139,10 @@ func refreshCostSummary(ctx context.Context, tx pgx.Tx, logger *slog.Logger, tab
 			c.account_id,
 			c.compartment_id,
 			c.compartment_name,
+			c.billing_scope_type,
+			c.billing_scope_id,
+			c.billing_scope_name,
+			c.record_type,
 			c.service,
 			c.category,
 			c.region,
@@ -149,6 +163,10 @@ func refreshCostSummary(ctx context.Context, tx pgx.Tx, logger *slog.Logger, tab
 		 AND p.account_id = c.account_id
 		 AND p.compartment_id = c.compartment_id
 		 AND p.compartment_name = c.compartment_name
+		 AND p.billing_scope_type = c.billing_scope_type
+		 AND p.billing_scope_id = c.billing_scope_id
+		 AND p.billing_scope_name = c.billing_scope_name
+		 AND p.record_type = c.record_type
 		 AND p.service = c.service
 		 AND p.category = c.category
 		 AND p.region = c.region
@@ -180,8 +198,22 @@ func refreshCostAnomalies(ctx context.Context, tx pgx.Tx, logger *slog.Logger, f
 				total_cost,
 				AVG(total_cost) OVER w AS expected_cost,
 				STDDEV_POP(total_cost) OVER w AS stddev
-			FROM daily_cost_summaries
-			WHERE period_start >= $3 AND period_start < $2
+			FROM daily_cost_summaries d
+			WHERE d.period_start >= $3 AND d.period_start < $2
+			  AND (
+				d.provider <> 'aws'
+				OR d.record_type = 'cur_line_item'
+				OR (
+					d.record_type = 'linked_account_service'
+					AND NOT EXISTS (
+						SELECT 1
+						FROM daily_cost_summaries aws_cur
+						WHERE aws_cur.provider = 'aws'
+						  AND aws_cur.record_type = 'cur_line_item'
+						  AND aws_cur.period_start = d.period_start
+					)
+				)
+			  )
 			WINDOW w AS (
 				PARTITION BY provider, account_id, service, category, region
 				ORDER BY period_start
@@ -262,9 +294,23 @@ func refreshCostForecasts(ctx context.Context, tx pgx.Tx, logger *slog.Logger, f
 					PARTITION BY provider, account_id, category, service, region
 					ORDER BY period_start DESC
 				) AS rn
-			FROM daily_cost_summaries
-			WHERE period_start >= $1
-			  AND period_start < $2
+			FROM daily_cost_summaries d
+			WHERE d.period_start >= $1
+			  AND d.period_start < $2
+			  AND (
+				d.provider <> 'aws'
+				OR d.record_type = 'cur_line_item'
+				OR (
+					d.record_type = 'linked_account_service'
+					AND NOT EXISTS (
+						SELECT 1
+						FROM daily_cost_summaries aws_cur
+						WHERE aws_cur.provider = 'aws'
+						  AND aws_cur.record_type = 'cur_line_item'
+						  AND aws_cur.period_start = d.period_start
+					)
+				)
+			  )
 		),
 		baseline AS (
 			SELECT
@@ -329,12 +375,12 @@ func previousSummaryWindow(interval string, from, to time.Time) (time.Time, time
 func (r *Repository) DashboardCostSummaries(ctx context.Context, window string, from, to time.Time) ([]domain.DashboardCostSummary, error) {
 	table := dashboardSummaryTable(window)
 	rows, err := r.db.Query(ctx, fmt.Sprintf(`
-		SELECT period_start, period_end, provider, account_id, compartment_id, compartment_name, service, category, region,
+		SELECT period_start, period_end, provider, account_id, compartment_id, compartment_name, billing_scope_type, billing_scope_id, billing_scope_name, record_type, service, category, region,
 		       total_cost::double precision, previous_period_cost::double precision,
 		       absolute_change::double precision, percentage_change::double precision, updated_at
 		FROM %s
 		WHERE period_start >= $1 AND period_start < $2
-		ORDER BY period_start ASC, provider, account_id, compartment_name, service, category, region
+		ORDER BY period_start ASC, provider, account_id, billing_scope_name, record_type, service, category, region
 	`, table), from.UTC(), to.UTC())
 	if err != nil {
 		return nil, err
@@ -344,7 +390,7 @@ func (r *Repository) DashboardCostSummaries(ctx context.Context, window string, 
 	out := make([]domain.DashboardCostSummary, 0)
 	for rows.Next() {
 		var row domain.DashboardCostSummary
-		if err := rows.Scan(&row.PeriodStart, &row.PeriodEnd, &row.Provider, &row.AccountID, &row.CompartmentID, &row.CompartmentName, &row.Service, &row.Category, &row.Region, &row.TotalCost, &row.PreviousPeriodCost, &row.AbsoluteChange, &row.PercentageChange, &row.UpdatedAt); err != nil {
+		if err := rows.Scan(&row.PeriodStart, &row.PeriodEnd, &row.Provider, &row.AccountID, &row.CompartmentID, &row.CompartmentName, &row.BillingScopeType, &row.BillingScopeID, &row.BillingScopeName, &row.RecordType, &row.Service, &row.Category, &row.Region, &row.TotalCost, &row.PreviousPeriodCost, &row.AbsoluteChange, &row.PercentageChange, &row.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, row)
@@ -389,13 +435,41 @@ func (r *Repository) DashboardOverview(ctx context.Context, currentFrom, current
 	err := r.db.QueryRow(ctx, `
 		WITH current_spend AS (
 			SELECT COALESCE(SUM(total_cost), 0)::double precision AS total
-			FROM daily_cost_summaries
-			WHERE period_start >= $1 AND period_start < $2
+			FROM daily_cost_summaries d
+			WHERE d.period_start >= $1 AND d.period_start < $2
+			  AND (
+				d.provider <> 'aws'
+				OR d.record_type = 'cur_line_item'
+				OR (
+					d.record_type = 'linked_account_service'
+					AND NOT EXISTS (
+						SELECT 1
+						FROM daily_cost_summaries aws_cur
+						WHERE aws_cur.provider = 'aws'
+						  AND aws_cur.record_type = 'cur_line_item'
+						  AND aws_cur.period_start = d.period_start
+					)
+				)
+			  )
 		),
 		previous_spend AS (
 			SELECT COALESCE(SUM(total_cost), 0)::double precision AS total
-			FROM daily_cost_summaries
-			WHERE period_start >= $3 AND period_start < $4
+			FROM daily_cost_summaries d
+			WHERE d.period_start >= $3 AND d.period_start < $4
+			  AND (
+				d.provider <> 'aws'
+				OR d.record_type = 'cur_line_item'
+				OR (
+					d.record_type = 'linked_account_service'
+					AND NOT EXISTS (
+						SELECT 1
+						FROM daily_cost_summaries aws_cur
+						WHERE aws_cur.provider = 'aws'
+						  AND aws_cur.record_type = 'cur_line_item'
+						  AND aws_cur.period_start = d.period_start
+					)
+				)
+			  )
 		),
 		anomalies AS (
 			SELECT COUNT(*)::bigint AS total

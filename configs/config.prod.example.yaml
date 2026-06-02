@@ -44,6 +44,20 @@ providers:
     lookback_days: 30
     max_object_scan: 10000
     max_zero_yield_files: 25
+  aws:
+    enabled: false
+    ingestion_mode: "cur_s3"
+    region: "us-east-1"
+    cost_metric: "UnblendedCost"
+    lookback_days: 3
+    report_lag_days: 2
+    cur_bucket: ""
+    cur_prefix: ""
+    cur_region: "us-east-1"
+    cur_format: "csv_gzip"
+    cur_lookback_days: 3
+    cur_report_lag_days: 2
+    cur_local_path: ""
 
 scheduler:
   enabled: true

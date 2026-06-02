@@ -12,7 +12,17 @@ CREATE TABLE IF NOT EXISTS cost_records
     account_id TEXT,
     service TEXT NOT NULL,
     category TEXT NOT NULL,
+    billing_scope_type TEXT NOT NULL DEFAULT '',
+    billing_scope_id TEXT NOT NULL DEFAULT '',
+    billing_scope_name TEXT NOT NULL DEFAULT '',
+    project_id TEXT NOT NULL DEFAULT '',
+    project_name TEXT NOT NULL DEFAULT '',
+    project_source TEXT NOT NULL DEFAULT '',
+    network_scope_type TEXT NOT NULL DEFAULT '',
+    network_scope_id TEXT NOT NULL DEFAULT '',
+    network_scope_name TEXT NOT NULL DEFAULT '',
     resource_id TEXT,
+    resource_type TEXT NOT NULL DEFAULT '',
     region TEXT,
     usage_quantity DOUBLE PRECISION,
     usage_unit TEXT,
@@ -20,8 +30,14 @@ CREATE TABLE IF NOT EXISTS cost_records
     currency TEXT,
     tags JSONB NOT NULL DEFAULT '{}'::jsonb,
     raw_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    raw_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     source_object TEXT NOT NULL DEFAULT '',
     meter TEXT NOT NULL DEFAULT '',
+    record_type TEXT NOT NULL DEFAULT '',
+    source_file_key TEXT NOT NULL DEFAULT '',
+    source_file_etag TEXT NOT NULL DEFAULT '',
+    source_line_number BIGINT NOT NULL DEFAULT 0,
+    source_record_hash TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -48,6 +64,9 @@ CREATE INDEX IF NOT EXISTS idx_cost_records_region_time
 CREATE INDEX IF NOT EXISTS idx_cost_records_account_time
     ON cost_records (account_id, "timestamp" DESC);
 
+CREATE INDEX IF NOT EXISTS idx_cost_records_billing_scope_time
+    ON cost_records (billing_scope_type, billing_scope_id, "timestamp" DESC);
+
 CREATE INDEX IF NOT EXISTS idx_cost_records_source_object_time
     ON cost_records (cloud_provider, source_object, "timestamp" DESC);
 
@@ -56,6 +75,17 @@ CREATE INDEX IF NOT EXISTS idx_cost_records_tags_gin
 
 CREATE INDEX IF NOT EXISTS idx_cost_records_raw_json_gin
     ON cost_records USING GIN (raw_json jsonb_path_ops);
+
+CREATE INDEX IF NOT EXISTS idx_cost_records_raw_metadata_gin
+    ON cost_records USING GIN (raw_metadata jsonb_path_ops);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cost_records_aws_idempotency
+    ON cost_records ("timestamp", cloud_provider, region, billing_scope_type, billing_scope_id, service, record_type)
+    WHERE cloud_provider = 'aws';
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cost_records_aws_cur_record_hash
+    ON cost_records ("timestamp", cloud_provider, record_type, source_record_hash)
+    WHERE cloud_provider = 'aws' AND record_type = 'cur_line_item' AND source_record_hash <> '';
 
 ALTER TABLE cost_records SET (
     timescaledb.compress,

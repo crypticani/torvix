@@ -333,23 +333,99 @@ func storeCostRecordsTx(ctx context.Context, tx pgx.Tx, records []domain.Canonic
 	if len(records) == 0 {
 		return nil
 	}
-	const insertSQL = `
+	const insertPrefix = `
 		INSERT INTO cost_records
-		(timestamp, cloud_provider, account_id, service, category, resource_id, region, usage_quantity, usage_unit, cost, currency, tags, raw_json, source_object, meter)
+		(timestamp, cloud_provider, account_id, service, category, billing_scope_type, billing_scope_id, billing_scope_name, project_id, project_name, project_source, network_scope_type, network_scope_id, network_scope_name, resource_id, resource_type, region, usage_quantity, usage_unit, cost, currency, tags, raw_json, raw_metadata, source_object, meter, record_type, source_file_key, source_file_etag, source_line_number, source_record_hash)
 		VALUES
-		($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14, $15)
+		($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23::jsonb, $24::jsonb, $25, $26, $27, $28, $29, $30, $31)
+	`
+	const curUpsertSQL = insertPrefix + `
+		ON CONFLICT ("timestamp", cloud_provider, record_type, source_record_hash)
+		WHERE cloud_provider = 'aws' AND record_type = 'cur_line_item' AND source_record_hash <> ''
+		DO UPDATE SET
+			account_id = EXCLUDED.account_id,
+			service = EXCLUDED.service,
+			category = EXCLUDED.category,
+			billing_scope_type = EXCLUDED.billing_scope_type,
+			billing_scope_id = EXCLUDED.billing_scope_id,
+			billing_scope_name = EXCLUDED.billing_scope_name,
+			project_id = EXCLUDED.project_id,
+			project_name = EXCLUDED.project_name,
+			project_source = EXCLUDED.project_source,
+			network_scope_type = EXCLUDED.network_scope_type,
+			network_scope_id = EXCLUDED.network_scope_id,
+			network_scope_name = EXCLUDED.network_scope_name,
+			resource_id = EXCLUDED.resource_id,
+			resource_type = EXCLUDED.resource_type,
+			region = EXCLUDED.region,
+			usage_quantity = EXCLUDED.usage_quantity,
+			usage_unit = EXCLUDED.usage_unit,
+			cost = EXCLUDED.cost,
+			currency = EXCLUDED.currency,
+			tags = EXCLUDED.tags,
+			raw_json = EXCLUDED.raw_json,
+			raw_metadata = EXCLUDED.raw_metadata,
+			source_object = EXCLUDED.source_object,
+			meter = EXCLUDED.meter,
+			source_file_key = EXCLUDED.source_file_key,
+			source_file_etag = EXCLUDED.source_file_etag,
+			source_line_number = EXCLUDED.source_line_number
+	`
+	const insertSQL = insertPrefix + `
+		ON CONFLICT ("timestamp", cloud_provider, region, billing_scope_type, billing_scope_id, service, record_type)
+		WHERE cloud_provider = 'aws'
+		DO UPDATE SET
+			account_id = EXCLUDED.account_id,
+			category = EXCLUDED.category,
+			billing_scope_name = EXCLUDED.billing_scope_name,
+			project_id = EXCLUDED.project_id,
+			project_name = EXCLUDED.project_name,
+			project_source = EXCLUDED.project_source,
+			network_scope_type = EXCLUDED.network_scope_type,
+			network_scope_id = EXCLUDED.network_scope_id,
+			network_scope_name = EXCLUDED.network_scope_name,
+			resource_id = EXCLUDED.resource_id,
+			resource_type = EXCLUDED.resource_type,
+			usage_quantity = EXCLUDED.usage_quantity,
+			usage_unit = EXCLUDED.usage_unit,
+			cost = EXCLUDED.cost,
+			currency = EXCLUDED.currency,
+			tags = EXCLUDED.tags,
+			raw_json = EXCLUDED.raw_json,
+			raw_metadata = EXCLUDED.raw_metadata,
+			source_object = EXCLUDED.source_object,
+			meter = EXCLUDED.meter,
+			source_file_key = EXCLUDED.source_file_key,
+			source_file_etag = EXCLUDED.source_file_etag,
+			source_line_number = EXCLUDED.source_line_number,
+			source_record_hash = EXCLUDED.source_record_hash
 	`
 	batch := &pgx.Batch{}
 	for _, record := range records {
 		tags, _ := json.Marshal(record.Tags)
-		raw, _ := json.Marshal(defaultRawJSON(record))
-		batch.Queue(insertSQL,
+		rawValue := defaultRawJSON(record)
+		raw, _ := json.Marshal(rawValue)
+		sql := insertSQL
+		if record.Provider == domain.ProviderAWS && record.RecordType == "cur_line_item" {
+			sql = curUpsertSQL
+		}
+		batch.Queue(sql,
 			record.Timestamp.UTC(),
 			record.Provider,
 			record.AccountID,
 			record.Service,
 			record.Category,
+			record.BillingScopeType,
+			record.BillingScopeID,
+			record.BillingScopeName,
+			record.ProjectID,
+			record.ProjectName,
+			record.ProjectSource,
+			record.NetworkScopeType,
+			record.NetworkScopeID,
+			record.NetworkScopeName,
 			record.ResourceID,
+			record.ResourceType,
 			record.Region,
 			record.UsageAmount,
 			record.UsageUnit,
@@ -357,8 +433,14 @@ func storeCostRecordsTx(ctx context.Context, tx pgx.Tx, records []domain.Canonic
 			record.Currency,
 			string(tags),
 			string(raw),
+			string(raw),
 			record.SourceObject,
 			record.Meter,
+			record.RecordType,
+			record.SourceFileKey,
+			record.SourceFileETag,
+			record.SourceLineNumber,
+			record.SourceRecordHash,
 		)
 	}
 	results := tx.SendBatch(ctx, batch)
@@ -400,8 +482,23 @@ func (r *Repository) AggregateCosts(ctx context.Context, from, to time.Time, win
 			COALESCE(account_id, '') AS account_id,
 			service,
 			COALESCE(SUM(cost), 0)::double precision AS total_cost
-		FROM cost_records
-		WHERE "timestamp" >= $1 AND "timestamp" < $2
+		FROM cost_records cr
+		WHERE cr."timestamp" >= $1 AND cr."timestamp" < $2
+		  AND (
+			cr.cloud_provider <> 'aws'
+			OR cr.record_type = 'cur_line_item'
+			OR (
+				cr.record_type = 'linked_account_service'
+				AND NOT EXISTS (
+					SELECT 1
+					FROM cost_records aws_cur
+					WHERE aws_cur.cloud_provider = 'aws'
+					  AND aws_cur.record_type = 'cur_line_item'
+					  AND aws_cur."timestamp" >= date_trunc('day', cr."timestamp")
+					  AND aws_cur."timestamp" < date_trunc('day', cr."timestamp") + INTERVAL '1 day'
+				)
+			)
+		  )
 		GROUP BY 1, 2, 3, 4
 		ORDER BY 1 ASC, 2, 3, 4
 	`, bucket)
@@ -433,11 +530,26 @@ func (r *Repository) CompareCostVariance(ctx context.Context, period string, cur
 				cloud_provider,
 				COALESCE(account_id, '') AS account_id,
 				service,
-				COALESCE(tags->>'oci_compartment_id', '') AS compartment_id,
-				COALESCE(NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', 'unknown') AS compartment_name,
+				COALESCE(NULLIF(billing_scope_id, ''), tags->>'oci_compartment_id', '') AS compartment_id,
+				COALESCE(NULLIF(billing_scope_name, ''), NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', 'unknown') AS compartment_name,
 				COALESCE(SUM(cost), 0)::double precision AS total_cost
-			FROM cost_records
-			WHERE "timestamp" >= $1 AND "timestamp" < $2
+			FROM cost_records cr
+			WHERE cr."timestamp" >= $1 AND cr."timestamp" < $2
+			  AND (
+				cr.cloud_provider <> 'aws'
+				OR cr.record_type = 'cur_line_item'
+				OR (
+					cr.record_type = 'linked_account_service'
+					AND NOT EXISTS (
+						SELECT 1
+						FROM cost_records aws_cur
+						WHERE aws_cur.cloud_provider = 'aws'
+						  AND aws_cur.record_type = 'cur_line_item'
+						  AND aws_cur."timestamp" >= date_trunc('day', cr."timestamp")
+						  AND aws_cur."timestamp" < date_trunc('day', cr."timestamp") + INTERVAL '1 day'
+					)
+				)
+			  )
 			GROUP BY 1, 2, 3, 4, 5
 		),
 		previous_window AS (
@@ -445,11 +557,26 @@ func (r *Repository) CompareCostVariance(ctx context.Context, period string, cur
 				cloud_provider,
 				COALESCE(account_id, '') AS account_id,
 				service,
-				COALESCE(tags->>'oci_compartment_id', '') AS compartment_id,
-				COALESCE(NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', 'unknown') AS compartment_name,
+				COALESCE(NULLIF(billing_scope_id, ''), tags->>'oci_compartment_id', '') AS compartment_id,
+				COALESCE(NULLIF(billing_scope_name, ''), NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', 'unknown') AS compartment_name,
 				COALESCE(SUM(cost), 0)::double precision AS total_cost
-			FROM cost_records
-			WHERE "timestamp" >= $3 AND "timestamp" < $4
+			FROM cost_records cr
+			WHERE cr."timestamp" >= $3 AND cr."timestamp" < $4
+			  AND (
+				cr.cloud_provider <> 'aws'
+				OR cr.record_type = 'cur_line_item'
+				OR (
+					cr.record_type = 'linked_account_service'
+					AND NOT EXISTS (
+						SELECT 1
+						FROM cost_records aws_cur
+						WHERE aws_cur.cloud_provider = 'aws'
+						  AND aws_cur.record_type = 'cur_line_item'
+						  AND aws_cur."timestamp" >= date_trunc('day', cr."timestamp")
+						  AND aws_cur."timestamp" < date_trunc('day', cr."timestamp") + INTERVAL '1 day'
+					)
+				)
+			  )
 			GROUP BY 1, 2, 3, 4, 5
 		),
 		joined AS (
@@ -530,9 +657,23 @@ func (r *Repository) DetectAnomalies(ctx context.Context, from, to time.Time) ([
 				COALESCE(compartment_name, '') AS compartment_name,
 				COALESCE(region, '') AS region,
 				COALESCE(SUM(total_cost), 0)::double precision AS total_cost
-			FROM daily_cost_summaries
-			WHERE period_start >= $1::timestamptz - INTERVAL '7 days'
-			  AND period_start < $2
+			FROM daily_cost_summaries d
+			WHERE d.period_start >= $1::timestamptz - INTERVAL '7 days'
+			  AND d.period_start < $2
+			  AND (
+				d.provider <> 'aws'
+				OR d.record_type = 'cur_line_item'
+				OR (
+					d.record_type = 'linked_account_service'
+					AND NOT EXISTS (
+						SELECT 1
+						FROM daily_cost_summaries aws_cur
+						WHERE aws_cur.provider = 'aws'
+						  AND aws_cur.record_type = 'cur_line_item'
+						  AND aws_cur.period_start = d.period_start
+					)
+				)
+			  )
 			GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
 		),
 		series AS (
@@ -609,8 +750,23 @@ func (r *Repository) ForecastCosts(ctx context.Context, from, to time.Time, hori
 				COALESCE(account_id, '') AS account_id,
 				service,
 				COALESCE(SUM(cost), 0)::double precision AS total_cost
-			FROM cost_records
-			WHERE "timestamp" >= $1 AND "timestamp" < $2
+			FROM cost_records cr
+			WHERE cr."timestamp" >= $1 AND cr."timestamp" < $2
+			  AND (
+				cr.cloud_provider <> 'aws'
+				OR cr.record_type = 'cur_line_item'
+				OR (
+					cr.record_type = 'linked_account_service'
+					AND NOT EXISTS (
+						SELECT 1
+						FROM cost_records aws_cur
+						WHERE aws_cur.cloud_provider = 'aws'
+						  AND aws_cur.record_type = 'cur_line_item'
+						  AND aws_cur."timestamp" >= date_trunc('day', cr."timestamp")
+						  AND aws_cur."timestamp" < date_trunc('day', cr."timestamp") + INTERVAL '1 day'
+					)
+				)
+			  )
 			GROUP BY 1, 2, 3, 4
 		),
 		ranked AS (

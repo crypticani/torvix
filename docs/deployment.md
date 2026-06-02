@@ -17,7 +17,7 @@ The development setup is self-contained and starts all dependencies.
    cp configs/config.example.yaml configs/config.yaml
    ```
 
-2. Update `configs/config.yaml` with local OCI credentials and provider settings.
+2. Update `configs/config.yaml` with local provider settings. OCI uses an OCI config file; AWS uses the standard AWS SDK credential chain and can read `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` from the environment.
 
 3. Start the stack:
 
@@ -97,7 +97,7 @@ Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are 
      dsn: "postgres://torvix:replace_with_password@host.docker.internal:5432/torvix?sslmode=disable"
    ```
 
-3. Set production OCI provider credentials in `configs/config.prod.yaml`.
+3. Set production provider credentials in `configs/config.prod.yaml` and/or environment variables. OCI uses `providers.oci`; AWS uses `providers.aws` plus the AWS SDK credential environment.
 
 4. Configure any alerting targets under `reporting.webhooks`.
    The production example includes disabled placeholders for Slack, Microsoft Teams, Telegram, Discord, and SMTP email. Keep only the targets you use, replace placeholder secrets, set the correct `currency`, and set `enabled: true`.
@@ -168,7 +168,7 @@ The production Compose healthcheck checks `http://127.0.0.1:${TORVIX_HTTP_PORT:-
 
 If you change only `http.address` in `configs/config.prod.yaml`, also set `TORVIX_HTTP_PORT` to the same port or update the healthcheck command in `docker-compose.prod.yml`. Compose cannot read the mounted YAML value into its healthcheck automatically.
 
-Torvix writes file-only JSON logs and does not emit normal application logs to stdout. Logs are split by subsystem into `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `scheduler.log`, and `alerting.log`. The bundled Compose files mount `./logs` to `/app/logs`; set `TORVIX_LOG_DIR=/app/logs` or keep `logging.dir: logs` while the container runs from `/app`.
+Torvix writes file-only JSON logs and does not emit normal application logs to stdout. Logs are split by subsystem into `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `aws.log`, `scheduler.log`, and `alerting.log`. The bundled Compose files mount `./logs` to `/app/logs`; set `TORVIX_LOG_DIR=/app/logs` or keep `logging.dir: logs` while the container runs from `/app`.
 
 Logging runtime controls:
 
@@ -179,6 +179,154 @@ TORVIX_LOG_DIR=/app/logs
 ```
 
 Torvix deletes `.log` files in the configured log directory whose modification time is older than the retention window.
+
+## Configure AWS
+
+AWS defaults to CUR 2.0 / Data Export files in S3. This matches OCI's bucket-based billing export model and avoids Cost Explorer API request costs. Cost Explorer remains available as an explicit `cost_explorer` mode for quick testing, debugging, or manual fallback.
+
+Torvix groups AWS costs by Region, Linked Account, and Service; Linked Account is the AWS billing scope equivalent for v1. VPC is intentionally not used as the base scope because many AWS charges are global, account-level, support-level, service-level, or otherwise not tied to a VPC.
+
+### CUR/S3 Mode
+
+Create an S3 bucket for billing exports, create an AWS Data Export / CUR 2.0 export, choose CSV gzip, set a prefix, and wait for AWS to write the first report. Torvix currently supports `csv` and `csv_gzip`; Parquet support is planned.
+
+Add the minimum S3 read-only policy to the AWS principal used by Torvix:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TorvixReadAwsBillingExports",
+      "Effect": "Allow",
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Resource": "arn:aws:s3:::YOUR_BILLING_BUCKET",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "YOUR_CUR_PREFIX/*",
+            "YOUR_CUR_PREFIX"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "TorvixGetAwsBillingExportObjects",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::YOUR_BILLING_BUCKET/YOUR_CUR_PREFIX/*"
+    }
+  ]
+}
+```
+
+Enable AWS in YAML:
+
+```yaml
+providers:
+  aws:
+    enabled: true
+    ingestion_mode: "cur_s3"
+    region: "us-east-1"
+    cur_bucket: "your-billing-bucket"
+    cur_prefix: "your-prefix/"
+    cur_region: "us-east-1"
+    cur_format: "csv_gzip"
+    cur_lookback_days: 3
+    cur_report_lag_days: 2
+```
+
+Or enable it through environment variables:
+
+```bash
+TORVIX_AWS_ENABLED=true
+TORVIX_AWS_INGESTION_MODE=cur_s3
+AWS_ACCESS_KEY_ID=replace_with_access_key
+AWS_SECRET_ACCESS_KEY=replace_with_secret_key
+AWS_REGION=us-east-1
+TORVIX_AWS_CUR_BUCKET=your-billing-bucket
+TORVIX_AWS_CUR_PREFIX=your-prefix/
+TORVIX_AWS_CUR_REGION=us-east-1
+TORVIX_AWS_CUR_FORMAT=csv_gzip
+TORVIX_AWS_CUR_LOOKBACK_DAYS=3
+TORVIX_AWS_CUR_REPORT_LAG_DAYS=2
+```
+
+Defaults:
+
+- `TORVIX_AWS_ENABLED=false`
+- `TORVIX_AWS_INGESTION_MODE=cur_s3`
+- `AWS_REGION=us-east-1`
+- `TORVIX_AWS_CUR_REGION` defaults to `AWS_REGION`
+- `TORVIX_AWS_CUR_FORMAT=csv_gzip`
+- `TORVIX_AWS_CUR_LOOKBACK_DAYS=3`
+- `TORVIX_AWS_CUR_REPORT_LAG_DAYS=2`
+
+For local contributor testing without AWS access, use a sanitized local CUR CSV or gzip file:
+
+```bash
+TORVIX_AWS_ENABLED=true
+TORVIX_AWS_INGESTION_MODE=cur_s3
+TORVIX_AWS_CUR_LOCAL_PATH=./testdata/aws/cur-sample.csv.gz
+```
+
+CUR records are stored with `provider='aws'`, `billing_scope_type='linked_account'`, and `record_type='cur_line_item'`. Re-reading the same export rows uses a deterministic `source_record_hash`, so ingestion updates existing rows instead of duplicating them. With the default lookback, an ingestion on `2026-06-01` reprocesses recent billing exports covering `2026-05-29`, `2026-05-30`, and `2026-05-31`. With the default AWS CUR report lag, the stable AWS daily report date on `2026-06-01` is `2026-05-30`.
+
+### Optional Cost Explorer Mode
+
+Cost Explorer mode is optional and must be selected explicitly:
+
+```bash
+TORVIX_AWS_ENABLED=true
+TORVIX_AWS_INGESTION_MODE=cost_explorer
+AWS_ACCESS_KEY_ID=replace_with_access_key
+AWS_SECRET_ACCESS_KEY=replace_with_secret_key
+AWS_REGION=us-east-1
+TORVIX_AWS_COST_METRIC=UnblendedCost
+```
+
+Cost Explorer mode requires:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TorvixCostExplorerReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ce:GetCostAndUsage",
+        "ce:GetDimensionValues"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Cost Explorer defaults:
+
+- `AWS_REGION=us-east-1`
+- `TORVIX_AWS_COST_METRIC=UnblendedCost`
+- `TORVIX_AWS_LOOKBACK_DAYS=3`
+- `TORVIX_AWS_REPORT_LAG_DAYS=2`
+
+AWS Cost Explorer can mark recent data as estimated. Torvix stores that estimated flag in `raw_metadata`. Cost Explorer mode stores overlapping AWS query results separately and uses `linked_account_service` for general totals while using `region_service` for region views to avoid double-counting.
+
+Useful AWS dashboard checks:
+
+```bash
+curl "http://localhost:8080/api/v1/dashboard/overview?provider=aws"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-region?provider=aws"
+curl "http://localhost:8080/api/v1/dashboard/cost-by-scope?provider=aws"
+curl "http://localhost:8080/api/v1/dashboard/drilldown?provider=aws"
+```
+
+Future AWS cost attribution should use CUR resource IDs where available, inventory enrichment, tags, cost categories, account mappings, and optional VPC-to-project mapping. Do not assume all AWS costs can map to VPC. A one-project-one-VPC model can be useful for project attribution where it exists, but services such as S3, Route 53, CloudFront, IAM, Support, and some data transfer need tag, cost-category, account-level, manual, or unallocated handling.
 
 Resource limits can be tuned with:
 
