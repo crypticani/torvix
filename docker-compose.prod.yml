@@ -2,7 +2,7 @@ name: torvix
 
 services:
   torvix:
-    image: ${TORVIX_IMAGE:-torvix:latest}
+    image: ${TORVIX_IMAGE:-crypticani/torvix:latest}
     build:
       context: .
       dockerfile: Dockerfile
@@ -39,6 +39,17 @@ services:
       - TORVIX_AWS_COST_METRIC
       - TORVIX_AWS_LOOKBACK_DAYS
       - TORVIX_AWS_REPORT_LAG_DAYS
+      - TORVIX_WASTE_DETECTION_ENABLED
+      - TORVIX_WASTE_PROVIDER
+      - TORVIX_WASTE_SCAN_INTERVAL_HOURS
+      - TORVIX_WASTE_MIN_RESOURCE_AGE_DAYS
+      - TORVIX_WASTE_STOPPED_INSTANCE_MIN_DAYS
+      - TORVIX_WASTE_OLD_BACKUP_DAYS
+      - TORVIX_WASTE_MIN_COST_THRESHOLD
+      - TORVIX_WASTE_HIGH_MONTHLY_THRESHOLD
+      - TORVIX_WASTE_CURRENCY
+      - TORVIX_WASTE_ENABLE_TAG_EXCLUSIONS
+      - TORVIX_WASTE_EXCLUSION_TAG_KEYS
     volumes:
       - ./configs:/app/configs:ro
       - ./logs:/app/logs

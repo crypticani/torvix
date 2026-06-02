@@ -20,9 +20,12 @@ import (
 	"github.com/crypticani/torvix/internal/core/forecasting"
 	"github.com/crypticani/torvix/internal/core/normalize"
 	"github.com/crypticani/torvix/internal/core/reporting"
+	"github.com/crypticani/torvix/internal/domain"
 	"github.com/crypticani/torvix/internal/logging"
 	httpapi "github.com/crypticani/torvix/internal/ports/http"
 	"github.com/crypticani/torvix/internal/ports/providers"
+	"github.com/crypticani/torvix/internal/waste"
+	wasteengine "github.com/crypticani/torvix/internal/waste/engine"
 )
 
 type App struct {
@@ -31,8 +34,10 @@ type App struct {
 	alerting        *alerting.Service
 	reporting       *reporting.Service
 	collector       *collect.Service
+	wasteDetector   waste.Detector
 	schedulerCfg    config.Scheduler
 	reportingCfg    config.Reporting
+	wasteCfg        config.Waste
 	logger          *slog.Logger
 	schedulerLogger *slog.Logger
 	stop            chan struct{}
@@ -51,6 +56,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		AWS:       logger,
 		Scheduler: logger,
 		Alerting:  logger,
+		Waste:     logger,
 	})
 }
 
@@ -122,6 +128,31 @@ func NewWithLoggers(cfg config.Config, loggers logging.Loggers) (*App, error) {
 		RequireCompleteIngestion: cfg.Reporting.RequireCompleteIngestion,
 	})
 	alertingSvc := alerting.NewWithLogger(&http.Client{Timeout: 10 * time.Second}, cfg.Reporting.Webhooks, loggers.Alerting)
+	var wasteProviders []waste.InventoryProvider
+	if cfg.Providers.OCI.Enabled {
+		ociInventory, err := ociadapter.NewInventoryCollector(cfg.Providers.OCI, repo, loggers.Waste)
+		if err != nil {
+			loggers.Waste.Warn("OCI waste inventory collector disabled", "error", err)
+		} else {
+			wasteProviders = append(wasteProviders, ociInventory)
+		}
+	}
+	if cfg.Providers.AWS.Enabled {
+		wasteProviders = append(wasteProviders, awsadapter.NewWasteStub(loggers.Waste))
+	}
+	wasteSvc := wasteengine.NewService(waste.Config{
+		Enabled:                cfg.Waste.DetectionEnabled,
+		Provider:               domainProvider(cfg.Waste.Provider),
+		ScanIntervalHours:      cfg.Waste.ScanIntervalHours,
+		MinResourceAgeDays:     cfg.Waste.MinResourceAgeDays,
+		StoppedInstanceMinDays: cfg.Waste.StoppedInstanceMinDays,
+		OldBackupDays:          cfg.Waste.OldBackupDays,
+		MinCostThreshold:       cfg.Waste.MinCostThreshold,
+		HighMonthlyThreshold:   cfg.Waste.HighMonthlyThreshold,
+		Currency:               cfg.Waste.Currency,
+		EnableTagExclusions:    cfg.Waste.EnableTagExclusions,
+		ExclusionTagKeys:       cfg.Waste.ExclusionTagKeys,
+	}, repo, wasteProviders, loggers.Waste)
 	handler := httpapi.NewWithOptions(collectorSvc, analyticsSvc, forecastingSvc, reportingSvc, alertingSvc, reg, httpapi.HandlerOptions{
 		LookbackDays:       cfg.Ingestion.LookbackDays,
 		RetentionDays:      cfg.Ingestion.RetentionDays,
@@ -129,6 +160,7 @@ func NewWithLoggers(cfg config.Config, loggers logging.Loggers) (*App, error) {
 		GrafanaAuthToken:   cfg.Grafana.APIAuth.BearerToken,
 		GrafanaMetrics:     metrics,
 		Logger:             loggers.HTTP,
+		Waste:              wasteSvc,
 	})
 
 	schedulerCtx, cancelScheduler := context.WithCancel(context.Background())
@@ -142,8 +174,10 @@ func NewWithLoggers(cfg config.Config, loggers logging.Loggers) (*App, error) {
 		alerting:        alertingSvc,
 		reporting:       reportingSvc,
 		collector:       collectorSvc,
+		wasteDetector:   wasteSvc,
 		schedulerCfg:    cfg.Scheduler,
 		reportingCfg:    cfg.Reporting,
+		wasteCfg:        cfg.Waste,
 		logger:          loggers.App,
 		schedulerLogger: loggers.Scheduler,
 		stop:            make(chan struct{}),
@@ -156,6 +190,7 @@ func (a *App) Start() error {
 	if a.schedulerCfg.Enabled {
 		go a.runIngestionScheduler()
 		go a.runReportScheduler()
+		go a.runWasteScheduler()
 	}
 	return a.server.ListenAndServe()
 }
@@ -225,6 +260,30 @@ func (a *App) runReportScheduler() {
 	}
 }
 
+func (a *App) runWasteScheduler() {
+	if a.wasteDetector == nil || !a.wasteCfg.DetectionEnabled {
+		return
+	}
+	interval := time.Duration(a.wasteCfg.ScanIntervalHours) * time.Hour
+	if interval <= 0 {
+		interval = 24 * time.Hour
+	}
+	a.schedulerLogger.Info("starting waste detection scheduler", "provider", a.wasteCfg.Provider, "interval", interval.String())
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			a.schedulerLogger.Info("scheduler triggered waste detection", "provider", a.wasteCfg.Provider)
+			if _, err := a.wasteDetector.Run(a.schedulerCtx); err != nil && err != wasteengine.ErrRunAlreadyActive {
+				a.schedulerLogger.Error("scheduled waste detection failed", "provider", a.wasteCfg.Provider, "error", err)
+			}
+		case <-a.stop:
+			return
+		}
+	}
+}
+
 func (a *App) deliverScheduledReport(ctx context.Context, period string, now time.Time) {
 	if a.reporting == nil || a.alerting == nil {
 		return
@@ -246,6 +305,10 @@ func earliest(a, b time.Time) time.Time {
 		return a
 	}
 	return b
+}
+
+func domainProvider(provider string) domain.Provider {
+	return domain.Provider(provider)
 }
 
 func (a *App) Shutdown(ctx context.Context) error {

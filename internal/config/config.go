@@ -35,12 +35,34 @@ const (
 	EnvAWSCURLookbackDays             = "TORVIX_AWS_CUR_LOOKBACK_DAYS"
 	EnvAWSCURReportLagDays            = "TORVIX_AWS_CUR_REPORT_LAG_DAYS"
 	EnvAWSCURLocalPath                = "TORVIX_AWS_CUR_LOCAL_PATH"
+	EnvWasteDetectionEnabled          = "TORVIX_WASTE_DETECTION_ENABLED"
+	EnvWasteProvider                  = "TORVIX_WASTE_PROVIDER"
+	EnvWasteScanIntervalHours         = "TORVIX_WASTE_SCAN_INTERVAL_HOURS"
+	EnvWasteMinResourceAgeDays        = "TORVIX_WASTE_MIN_RESOURCE_AGE_DAYS"
+	EnvWasteStoppedInstanceMinDays    = "TORVIX_WASTE_STOPPED_INSTANCE_MIN_DAYS"
+	EnvWasteOldBackupDays             = "TORVIX_WASTE_OLD_BACKUP_DAYS"
+	EnvWasteMinCostThreshold          = "TORVIX_WASTE_MIN_COST_THRESHOLD"
+	EnvWasteHighMonthlyThreshold      = "TORVIX_WASTE_HIGH_MONTHLY_THRESHOLD"
+	EnvWasteCurrency                  = "TORVIX_WASTE_CURRENCY"
+	EnvWasteEnableTagExclusions       = "TORVIX_WASTE_ENABLE_TAG_EXCLUSIONS"
+	EnvWasteExclusionTagKeys          = "TORVIX_WASTE_EXCLUSION_TAG_KEYS"
 
 	LegacyEnvReportTimezone                 = "CLOUDPULSE_REPORT_TIMEZONE"
 	LegacyEnvDailyReportCron                = "CLOUDPULSE_DAILY_REPORT_CRON"
 	LegacyEnvWeeklyReportCron               = "CLOUDPULSE_WEEKLY_REPORT_CRON"
 	LegacyEnvReportRequireCompleteIngestion = "CLOUDPULSE_REPORT_REQUIRE_COMPLETE_INGESTION"
 	LegacyEnvDailyReportTargetLagDays       = "CLOUDPULSE_DAILY_REPORT_TARGET_LAG_DAYS"
+	LegacyEnvWasteDetectionEnabled          = "CLOUDPULSE_WASTE_DETECTION_ENABLED"
+	LegacyEnvWasteProvider                  = "CLOUDPULSE_WASTE_PROVIDER"
+	LegacyEnvWasteScanIntervalHours         = "CLOUDPULSE_WASTE_SCAN_INTERVAL_HOURS"
+	LegacyEnvWasteMinResourceAgeDays        = "CLOUDPULSE_WASTE_MIN_RESOURCE_AGE_DAYS"
+	LegacyEnvWasteStoppedInstanceMinDays    = "CLOUDPULSE_WASTE_STOPPED_INSTANCE_MIN_DAYS"
+	LegacyEnvWasteOldBackupDays             = "CLOUDPULSE_WASTE_OLD_BACKUP_DAYS"
+	LegacyEnvWasteMinCostThreshold          = "CLOUDPULSE_WASTE_MIN_COST_THRESHOLD"
+	LegacyEnvWasteHighMonthlyThreshold      = "CLOUDPULSE_WASTE_HIGH_MONTHLY_THRESHOLD"
+	LegacyEnvWasteCurrency                  = "CLOUDPULSE_WASTE_CURRENCY"
+	LegacyEnvWasteEnableTagExclusions       = "CLOUDPULSE_WASTE_ENABLE_TAG_EXCLUSIONS"
+	LegacyEnvWasteExclusionTagKeys          = "CLOUDPULSE_WASTE_EXCLUSION_TAG_KEYS"
 )
 
 type Config struct {
@@ -57,6 +79,7 @@ type Config struct {
 	Reporting Reporting `yaml:"reporting"`
 	Metrics   Metrics   `yaml:"metrics"`
 	Grafana   Grafana   `yaml:"grafana"`
+	Waste     Waste     `yaml:"waste"`
 }
 
 type Logging struct {
@@ -114,6 +137,20 @@ type AWSProvider struct {
 	CURLookbackDays  int    `yaml:"cur_lookback_days"`
 	CURReportLagDays int    `yaml:"cur_report_lag_days"`
 	CURLocalPath     string `yaml:"cur_local_path"`
+}
+
+type Waste struct {
+	DetectionEnabled       bool     `yaml:"detection_enabled"`
+	Provider               string   `yaml:"provider"`
+	ScanIntervalHours      int      `yaml:"scan_interval_hours"`
+	MinResourceAgeDays     int      `yaml:"min_resource_age_days"`
+	StoppedInstanceMinDays int      `yaml:"stopped_instance_min_days"`
+	OldBackupDays          int      `yaml:"old_backup_days"`
+	MinCostThreshold       float64  `yaml:"min_cost_threshold"`
+	HighMonthlyThreshold   float64  `yaml:"high_monthly_threshold"`
+	Currency               string   `yaml:"currency"`
+	EnableTagExclusions    bool     `yaml:"enable_tag_exclusions"`
+	ExclusionTagKeys       []string `yaml:"exclusion_tag_keys"`
 }
 
 type Ingestion struct {
@@ -181,7 +218,10 @@ type GrafanaAPIAuth struct {
 }
 
 func Load(path string) (Config, error) {
-	cfg := Config{Reporting: Reporting{RequireCompleteIngestion: true}}
+	cfg := Config{
+		Reporting: Reporting{RequireCompleteIngestion: true},
+		Waste:     Waste{DetectionEnabled: true, EnableTagExclusions: true},
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return cfg, fmt.Errorf("read config: %w", err)
@@ -202,6 +242,7 @@ func Load(path string) (Config, error) {
 	cfg.Scheduler = cfg.Scheduler.WithDefaults()
 	cfg.Reporting = cfg.Reporting.WithDefaults()
 	cfg.Providers.AWS = cfg.Providers.AWS.WithDefaults()
+	cfg.Waste = cfg.Waste.WithDefaults()
 	return cfg, nil
 }
 
@@ -294,6 +335,55 @@ func applyEnvOverrides(cfg *Config) {
 	if localPath := envValue(EnvAWSCURLocalPath); localPath != "" {
 		cfg.Providers.AWS.CURLocalPath = localPath
 	}
+	if enabled := envValue(EnvWasteDetectionEnabled, LegacyEnvWasteDetectionEnabled); enabled != "" {
+		if parsed, err := strconv.ParseBool(enabled); err == nil {
+			cfg.Waste.DetectionEnabled = parsed
+		}
+	}
+	if provider := envValue(EnvWasteProvider, LegacyEnvWasteProvider); provider != "" {
+		cfg.Waste.Provider = provider
+	}
+	if hours := envValue(EnvWasteScanIntervalHours, LegacyEnvWasteScanIntervalHours); hours != "" {
+		if parsed, err := strconv.Atoi(hours); err == nil {
+			cfg.Waste.ScanIntervalHours = parsed
+		}
+	}
+	if days := envValue(EnvWasteMinResourceAgeDays, LegacyEnvWasteMinResourceAgeDays); days != "" {
+		if parsed, err := strconv.Atoi(days); err == nil {
+			cfg.Waste.MinResourceAgeDays = parsed
+		}
+	}
+	if days := envValue(EnvWasteStoppedInstanceMinDays, LegacyEnvWasteStoppedInstanceMinDays); days != "" {
+		if parsed, err := strconv.Atoi(days); err == nil {
+			cfg.Waste.StoppedInstanceMinDays = parsed
+		}
+	}
+	if days := envValue(EnvWasteOldBackupDays, LegacyEnvWasteOldBackupDays); days != "" {
+		if parsed, err := strconv.Atoi(days); err == nil {
+			cfg.Waste.OldBackupDays = parsed
+		}
+	}
+	if threshold := envValue(EnvWasteMinCostThreshold, LegacyEnvWasteMinCostThreshold); threshold != "" {
+		if parsed, err := strconv.ParseFloat(threshold, 64); err == nil {
+			cfg.Waste.MinCostThreshold = parsed
+		}
+	}
+	if threshold := envValue(EnvWasteHighMonthlyThreshold, LegacyEnvWasteHighMonthlyThreshold); threshold != "" {
+		if parsed, err := strconv.ParseFloat(threshold, 64); err == nil {
+			cfg.Waste.HighMonthlyThreshold = parsed
+		}
+	}
+	if currency := envValue(EnvWasteCurrency, LegacyEnvWasteCurrency); currency != "" {
+		cfg.Waste.Currency = currency
+	}
+	if enabled := envValue(EnvWasteEnableTagExclusions, LegacyEnvWasteEnableTagExclusions); enabled != "" {
+		if parsed, err := strconv.ParseBool(enabled); err == nil {
+			cfg.Waste.EnableTagExclusions = parsed
+		}
+	}
+	if keys := envValue(EnvWasteExclusionTagKeys, LegacyEnvWasteExclusionTagKeys); keys != "" {
+		cfg.Waste.ExclusionTagKeys = splitCSV(keys)
+	}
 }
 
 func envValue(names ...string) string {
@@ -310,6 +400,17 @@ func normalizeHTTPPort(port string) string {
 		return port
 	}
 	return ":" + port
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 func (s Scheduler) WithDefaults() Scheduler {
@@ -369,6 +470,35 @@ func (a AWSProvider) WithDefaults() AWSProvider {
 		a.CURReportLagDays = 2
 	}
 	return a
+}
+
+func (w Waste) WithDefaults() Waste {
+	w.Provider = strings.TrimSpace(strings.ToLower(w.Provider))
+	if w.Provider == "" {
+		w.Provider = "oci"
+	}
+	if w.ScanIntervalHours <= 0 {
+		w.ScanIntervalHours = 24
+	}
+	if w.MinResourceAgeDays <= 0 {
+		w.MinResourceAgeDays = 7
+	}
+	if w.StoppedInstanceMinDays <= 0 {
+		w.StoppedInstanceMinDays = 3
+	}
+	if w.OldBackupDays <= 0 {
+		w.OldBackupDays = 30
+	}
+	if w.HighMonthlyThreshold <= 0 {
+		w.HighMonthlyThreshold = 50
+	}
+	if w.Currency == "" {
+		w.Currency = "USD"
+	}
+	if len(w.ExclusionTagKeys) == 0 {
+		w.ExclusionTagKeys = []string{"torvix:ignore", "torvix:waste-ignore", "finops:ignore", "keep", "retain", "do-not-delete"}
+	}
+	return w
 }
 
 func (l Logging) WithDefaults(legacyLevel string) Logging {

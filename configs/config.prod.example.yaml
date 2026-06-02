@@ -105,6 +105,25 @@ reporting:
       currency: INR
       enabled: false
 
+waste:
+  detection_enabled: true
+  provider: "oci"
+  scan_interval_hours: 24
+  min_resource_age_days: 7
+  stopped_instance_min_days: 3
+  old_backup_days: 30
+  min_cost_threshold: 0
+  high_monthly_threshold: 50
+  currency: USD
+  enable_tag_exclusions: true
+  exclusion_tag_keys:
+    - "torvix:ignore"
+    - "torvix:waste-ignore"
+    - "finops:ignore"
+    - "keep"
+    - "retain"
+    - "do-not-delete"
+
 metrics:
   # The legacy torvix namespace remains the compatibility default for existing dashboards.
   namespace: torvix
