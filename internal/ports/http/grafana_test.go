@@ -34,7 +34,9 @@ func (g *grafanaRepo) DashboardCostSummaries(context.Context, string, time.Time,
 		{PeriodStart: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderOCI, AccountID: "tenancy-a", CompartmentID: "ocid1.compartment.oc1..data", CompartmentName: "data-prod", Service: "Object Storage", Category: "storage", Region: "ap-mumbai-1", TotalCost: 7.5},
 		{PeriodStart: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderOCI, AccountID: "tenancy-a", CompartmentID: "ocid1.compartment.oc1..app", CompartmentName: "app-prod", Service: "Database", Category: "database", Region: "us-ashburn-1", TotalCost: 5},
 		{PeriodStart: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderOCI, AccountID: "tenancy-a", Region: "us-ashburn-1", TotalCost: 2},
-		{PeriodStart: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderAWS, AccountID: "acct-b", Service: "EC2", Category: "compute", Region: "us-east-1", TotalCost: 100},
+		{PeriodStart: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderAWS, AccountID: "123456789012", BillingScopeType: "linked_account", BillingScopeID: "123456789012", BillingScopeName: "prod-account", RecordType: "linked_account_service", Service: "EC2", Category: "compute", Region: "us-east-1", TotalCost: 100},
+		{PeriodStart: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderAWS, AccountID: "all", BillingScopeType: "linked_account", BillingScopeID: "all", RecordType: "region_service", Service: "EC2", Category: "compute", Region: "us-east-1", TotalCost: 100},
+		{PeriodStart: time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC), PeriodEnd: time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC), Provider: domain.ProviderAWS, AccountID: "123456789012", BillingScopeType: "linked_account", BillingScopeID: "123456789012", BillingScopeName: "prod-account", RecordType: "cur_line_item", Service: "EC2", Category: "compute", Region: "us-east-1", TotalCost: 80},
 	}, nil
 }
 
@@ -134,6 +136,27 @@ func TestDashboardCostTimeseriesShape(t *testing.T) {
 	}
 }
 
+func TestDashboardCostTimeseriesDoesNotDoubleCountAWSQueryViews(t *testing.T) {
+	handler := NewWithOptions(nil, analytics.New(&grafanaRepo{}), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cost-timeseries?provider=aws&from=2026-05-01&to=2026-05-03", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d", rr.Code)
+	}
+	var got dashboardTimeseriesResponse
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode timeseries: %v", err)
+	}
+	if len(got.Data) != 1 {
+		t.Fatalf("expected one canonical AWS point, got %d: %+v", len(got.Data), got.Data)
+	}
+	if got.Data[0].Value != 80 {
+		t.Fatalf("expected AWS spend 80 from CUR without Cost Explorer duplicates, got %+v", got.Data[0])
+	}
+}
+
 func TestDashboardOverviewCanBeProviderScoped(t *testing.T) {
 	handler := NewWithOptions(nil, analytics.New(&grafanaRepo{}), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
 
@@ -199,6 +222,49 @@ func TestDashboardBreakdownSupportsOCICompartmentAndRegion(t *testing.T) {
 				t.Fatalf("unexpected top breakdown row: %+v", got.Data[0])
 			}
 		})
+	}
+}
+
+func TestDashboardBreakdownSupportsAWSScope(t *testing.T) {
+	handler := NewWithOptions(nil, analytics.New(&grafanaRepo{}), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/cost-by-scope?provider=aws&from=2026-05-01&to=2026-05-03", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d", rr.Code)
+	}
+	var got dashboardBreakdownResponse
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode breakdown: %v", err)
+	}
+	if len(got.Data) != 1 {
+		t.Fatalf("expected one AWS scope row, got %d: %+v", len(got.Data), got.Data)
+	}
+	if got.Data[0].Name != "prod-account" || got.Data[0].TotalCost != 80 {
+		t.Fatalf("unexpected AWS scope row: %+v", got.Data[0])
+	}
+}
+
+func TestDashboardDrilldownUsesProviderScopeLabel(t *testing.T) {
+	handler := NewWithOptions(nil, analytics.New(&grafanaRepo{}), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/drilldown?provider=aws&from=2026-05-01&to=2026-05-03", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d", rr.Code)
+	}
+	var got dashboardDrilldownResponse
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode drilldown: %v", err)
+	}
+	if len(got.Data) != 1 {
+		t.Fatalf("expected one AWS drilldown row, got %d: %+v", len(got.Data), got.Data)
+	}
+	row := got.Data[0]
+	if row.Region != "us-east-1" || row.Scope != "prod-account" || row.ScopeLabel != "Linked Account" || row.Service != "EC2" || row.TotalCost != 80 {
+		t.Fatalf("unexpected AWS drilldown row: %+v", row)
 	}
 }
 

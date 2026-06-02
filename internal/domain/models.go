@@ -12,41 +12,71 @@ const (
 )
 
 type RawBillingRecord struct {
-	Provider     Provider
-	AccountID    string
-	UsageStart   time.Time
-	UsageEnd     time.Time
-	Service      string
-	Category     string
-	SKU          string
-	Region       string
-	ResourceID   string
-	Currency     string
-	Cost         float64
-	UsageAmount  float64
-	UsageUnit    string
-	Tags         map[string]string
-	Meter        string
-	RawData      map[string]any
-	SourceObject string
+	Provider         Provider
+	AccountID        string
+	UsageStart       time.Time
+	UsageEnd         time.Time
+	Service          string
+	Category         string
+	SKU              string
+	Region           string
+	BillingScopeType string
+	BillingScopeID   string
+	BillingScopeName string
+	ProjectID        string
+	ProjectName      string
+	ProjectSource    string
+	NetworkScopeType string
+	NetworkScopeID   string
+	NetworkScopeName string
+	ResourceID       string
+	ResourceType     string
+	Currency         string
+	Cost             float64
+	UsageAmount      float64
+	UsageUnit        string
+	Tags             map[string]string
+	Meter            string
+	RecordType       string
+	SourceFileKey    string
+	SourceFileETag   string
+	SourceLineNumber int64
+	SourceRecordHash string
+	RawData          map[string]any
+	SourceObject     string
 }
 
 type CanonicalCostRecord struct {
-	Timestamp    time.Time
-	Provider     Provider
-	AccountID    string
-	Service      string
-	Category     string
-	Region       string
-	ResourceID   string
-	Currency     string
-	Cost         float64
-	UsageAmount  float64
-	UsageUnit    string
-	Tags         map[string]string
-	Meter        string
-	RawData      map[string]any
-	SourceObject string
+	Timestamp        time.Time
+	Provider         Provider
+	AccountID        string
+	Service          string
+	Category         string
+	Region           string
+	BillingScopeType string
+	BillingScopeID   string
+	BillingScopeName string
+	ProjectID        string
+	ProjectName      string
+	ProjectSource    string
+	NetworkScopeType string
+	NetworkScopeID   string
+	NetworkScopeName string
+	ResourceID       string
+	ResourceType     string
+	Currency         string
+	Cost             float64
+	UsageAmount      float64
+	UsageUnit        string
+	Tags             map[string]string
+	Meter            string
+	RecordType       string
+	SourceFileKey    string
+	SourceFileETag   string
+	SourceLineNumber int64
+	SourceRecordHash string
+	RawData          map[string]any
+	SourceObject     string
 }
 
 type ProcessedReportFile struct {
@@ -73,6 +103,10 @@ type DashboardCostSummary struct {
 	AccountID          string    `json:"account_id"`
 	CompartmentID      string    `json:"compartment_id"`
 	CompartmentName    string    `json:"compartment_name"`
+	BillingScopeType   string    `json:"billing_scope_type"`
+	BillingScopeID     string    `json:"billing_scope_id"`
+	BillingScopeName   string    `json:"billing_scope_name"`
+	RecordType         string    `json:"record_type"`
 	Service            string    `json:"service"`
 	Category           string    `json:"category"`
 	Region             string    `json:"region"`

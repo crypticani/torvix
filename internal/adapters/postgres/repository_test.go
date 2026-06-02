@@ -174,6 +174,44 @@ func TestAnomalySQLUsesPrecomputedSummariesWithCompartmentAndRegionDimensions(t 
 	}
 }
 
+func TestAWSCostRecordsUseIdempotentUpsertKey(t *testing.T) {
+	b, err := os.ReadFile("repository.go")
+	if err != nil {
+		t.Fatalf("read repository.go: %v", err)
+	}
+	sql := string(b)
+	for _, want := range []string{
+		`ON CONFLICT ("timestamp", cloud_provider, region, billing_scope_type, billing_scope_id, service, record_type)`,
+		`ON CONFLICT ("timestamp", cloud_provider, record_type, source_record_hash)`,
+		`record_type = 'cur_line_item'`,
+		`WHERE cloud_provider = 'aws'`,
+		`raw_metadata = EXCLUDED.raw_metadata`,
+	} {
+		if !strings.Contains(sql, want) {
+			t.Fatalf("AWS cost record upsert SQL must contain %q", want)
+		}
+	}
+}
+
+func TestAWSAnalyticsQueriesPreferCURWhenPresent(t *testing.T) {
+	for _, path := range []string{"repository.go", "repository_dashboard.go"} {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		sql := string(b)
+		for _, want := range []string{
+			`record_type = 'cur_line_item'`,
+			`record_type = 'linked_account_service'`,
+			`NOT EXISTS`,
+		} {
+			if !strings.Contains(sql, want) {
+				t.Fatalf("%s must contain canonical AWS source filter %q", path, want)
+			}
+		}
+	}
+}
+
 func TestDashboardCostTimeseriesReadsPrecomputedDailySummaries(t *testing.T) {
 	mock, err := pgxmock.NewPool()
 	if err != nil {
@@ -183,8 +221,8 @@ func TestDashboardCostTimeseriesReadsPrecomputedDailySummaries(t *testing.T) {
 
 	from := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC)
-	rows := pgxmock.NewRows([]string{"period_start", "period_end", "provider", "account_id", "compartment_id", "compartment_name", "service", "category", "region", "total_cost", "previous_period_cost", "absolute_change", "percentage_change", "updated_at"}).
-		AddRow(from, from.AddDate(0, 0, 1), "oci", "acct", "ocid1.compartment.oc1..app", "app-prod", "Compute", "compute", "us-ashburn-1", 12.5, 10.0, 2.5, 25.0, time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC))
+	rows := pgxmock.NewRows([]string{"period_start", "period_end", "provider", "account_id", "compartment_id", "compartment_name", "billing_scope_type", "billing_scope_id", "billing_scope_name", "record_type", "service", "category", "region", "total_cost", "previous_period_cost", "absolute_change", "percentage_change", "updated_at"}).
+		AddRow(from, from.AddDate(0, 0, 1), "oci", "acct", "ocid1.compartment.oc1..app", "app-prod", "compartment", "ocid1.compartment.oc1..app", "app-prod", "", "Compute", "compute", "us-ashburn-1", 12.5, 10.0, 2.5, 25.0, time.Date(2026, 5, 3, 0, 0, 0, 0, time.UTC))
 	mock.ExpectQuery("FROM daily_cost_summaries").
 		WithArgs(from, to).
 		WillReturnRows(rows)

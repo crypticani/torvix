@@ -19,6 +19,7 @@ const (
 	SubsystemIngestion Subsystem = "ingestion"
 	SubsystemDB        Subsystem = "db"
 	SubsystemOCI       Subsystem = "oci"
+	SubsystemAWS       Subsystem = "aws"
 	SubsystemScheduler Subsystem = "scheduler"
 	SubsystemAlerting  Subsystem = "alerting"
 )
@@ -35,6 +36,7 @@ type Loggers struct {
 	Ingestion *slog.Logger
 	DB        *slog.Logger
 	OCI       *slog.Logger
+	AWS       *slog.Logger
 	Scheduler *slog.Logger
 	Alerting  *slog.Logger
 }
@@ -58,6 +60,9 @@ func (l Loggers) WithDefaults() Loggers {
 	}
 	if l.OCI == nil {
 		l.OCI = fallback
+	}
+	if l.AWS == nil {
+		l.AWS = fallback
 	}
 	if l.Scheduler == nil {
 		l.Scheduler = fallback
@@ -99,7 +104,7 @@ func NewManager(cfg Config) (*Manager, error) {
 		files:         make(map[Subsystem]*os.File),
 		loggers:       make(map[Subsystem]*slog.Logger),
 	}
-	for _, subsystem := range []Subsystem{SubsystemApp, SubsystemHTTP, SubsystemIngestion, SubsystemDB, SubsystemOCI, SubsystemScheduler, SubsystemAlerting} {
+	for _, subsystem := range []Subsystem{SubsystemApp, SubsystemHTTP, SubsystemIngestion, SubsystemDB, SubsystemOCI, SubsystemAWS, SubsystemScheduler, SubsystemAlerting} {
 		file, err := os.OpenFile(filepath.Join(dir, string(subsystem)+".log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 		if err != nil {
 			_ = m.Close()
@@ -125,6 +130,7 @@ func (m *Manager) Loggers() Loggers {
 		Ingestion: m.Logger(SubsystemIngestion),
 		DB:        m.Logger(SubsystemDB),
 		OCI:       m.Logger(SubsystemOCI),
+		AWS:       m.Logger(SubsystemAWS),
 		Scheduler: m.Logger(SubsystemScheduler),
 		Alerting:  m.Logger(SubsystemAlerting),
 	}

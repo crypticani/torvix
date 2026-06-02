@@ -50,6 +50,20 @@ providers:
     max_runtime: "10m"
     dry_run: false
     sample_mode: true
+  aws:
+    enabled: false
+    ingestion_mode: "cur_s3"
+    region: "us-east-1"
+    cost_metric: "UnblendedCost"
+    lookback_days: 3
+    report_lag_days: 2
+    cur_bucket: ""
+    cur_prefix: ""
+    cur_region: "us-east-1"
+    cur_format: "csv_gzip"
+    cur_lookback_days: 3
+    cur_report_lag_days: 2
+    cur_local_path: ""
 
 reporting:
   timezone: "Asia/Kolkata"
