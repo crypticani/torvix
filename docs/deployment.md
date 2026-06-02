@@ -11,13 +11,14 @@ Do not put real OCI credentials, database passwords, alert webhooks, or SMTP pas
 
 The development setup is self-contained and starts all dependencies.
 
-1. Create the local config:
+1. Create the local config and Compose env file:
 
    ```bash
    cp configs/config.example.yaml configs/config.yaml
+   cp .env.example .env
    ```
 
-2. Update `configs/config.yaml` with local provider settings. OCI uses an OCI config file; AWS uses the standard AWS SDK credential chain and can read `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` from the environment.
+2. Update `configs/config.yaml` with local provider settings, and update `.env` with any Compose/container environment variables such as AWS credentials or port overrides. The Compose files load `.env` into the Torvix container with `env_file`; if `.env` is absent, YAML defaults still apply.
 
 3. Start the stack:
 
@@ -77,10 +78,11 @@ Object-level selection and `processed_report_files` dedupe reduce unnecessary OC
 
 Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are managed outside the Torvix Compose stack.
 
-1. Create the production config:
+1. Create the production config and Compose env file:
 
    ```bash
    cp configs/config.prod.example.yaml configs/config.prod.yaml
+   cp .env.example .env
    ```
 
 2. Set the production PostgreSQL/TimescaleDB DSN:
@@ -97,7 +99,7 @@ Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are 
      dsn: "postgres://torvix:replace_with_password@host.docker.internal:5432/torvix?sslmode=disable"
    ```
 
-3. Set production provider credentials in `configs/config.prod.yaml` and/or environment variables. OCI uses `providers.oci`; AWS uses `providers.aws` plus the AWS SDK credential environment.
+3. Set production provider credentials in `configs/config.prod.yaml` and/or `.env`. OCI uses `providers.oci`; AWS uses `providers.aws` plus the AWS SDK credential environment. The production Compose file loads `.env` into the Torvix container with `env_file`; if `.env` is absent, only YAML/default values are used.
 
 4. Configure any alerting targets under `reporting.webhooks`.
    The production example includes disabled placeholders for Slack, Microsoft Teams, Telegram, Discord, and SMTP email. Keep only the targets you use, replace placeholder secrets, set the correct `currency`, and set `enabled: true`.
