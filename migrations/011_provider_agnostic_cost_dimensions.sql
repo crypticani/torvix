@@ -1,3 +1,5 @@
+SET LOCAL timescaledb.max_tuples_decompressed_per_dml_transaction = 0;
+
 ALTER TABLE cost_records
     ADD COLUMN IF NOT EXISTS billing_scope_type TEXT,
     ADD COLUMN IF NOT EXISTS billing_scope_id TEXT,

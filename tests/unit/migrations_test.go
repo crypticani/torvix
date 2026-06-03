@@ -130,6 +130,7 @@ func TestProviderAgnosticCostDimensionsUsesSafeHypertableColumnAdds(t *testing.T
 	}
 
 	for _, required := range []string{
+		"SET LOCAL timescaledb.max_tuples_decompressed_per_dml_transaction = 0",
 		"ADD COLUMN IF NOT EXISTS billing_scope_type TEXT",
 		"ADD COLUMN IF NOT EXISTS raw_metadata JSONB",
 		"ADD COLUMN IF NOT EXISTS source_line_number BIGINT",
