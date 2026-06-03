@@ -87,3 +87,86 @@ func TestDashboardCompartmentBackfillMigrationRebuildsSummariesFromRawTags(t *te
 		}
 	}
 }
+
+func TestProviderAgnosticCostDimensionsUsesSafeHypertableColumnAdds(t *testing.T) {
+	b, err := os.ReadFile("../../migrations/011_provider_agnostic_cost_dimensions.sql")
+	if err != nil {
+		t.Fatalf("read provider agnostic migration: %v", err)
+	}
+	migration := string(b)
+	indexStart := strings.Index(migration, "CREATE INDEX IF NOT EXISTS idx_cost_records_billing_scope_time")
+	if indexStart < 0 {
+		t.Fatal("provider agnostic migration is missing cost_records index section")
+	}
+	costRecordsBlock := migration[:indexStart]
+	if strings.Contains(costRecordsBlock, "NOT NULL") {
+		t.Fatal("cost_records migration must not add or set NOT NULL constraints")
+	}
+
+	for _, forbidden := range []string{
+		"ADD COLUMN IF NOT EXISTS billing_scope_type TEXT NOT NULL DEFAULT",
+		"ADD COLUMN IF NOT EXISTS billing_scope_id TEXT NOT NULL DEFAULT",
+		"ADD COLUMN IF NOT EXISTS billing_scope_name TEXT NOT NULL DEFAULT",
+		"ADD COLUMN IF NOT EXISTS project_id TEXT NOT NULL DEFAULT",
+		"ADD COLUMN IF NOT EXISTS project_name TEXT NOT NULL DEFAULT",
+		"ADD COLUMN IF NOT EXISTS project_source TEXT NOT NULL DEFAULT",
+		"ADD COLUMN IF NOT EXISTS network_scope_type TEXT NOT NULL DEFAULT",
+		"ADD COLUMN IF NOT EXISTS network_scope_id TEXT NOT NULL DEFAULT",
+		"ADD COLUMN IF NOT EXISTS network_scope_name TEXT NOT NULL DEFAULT",
+		"ADD COLUMN IF NOT EXISTS resource_type TEXT NOT NULL DEFAULT",
+		"ADD COLUMN IF NOT EXISTS raw_metadata JSONB NOT NULL DEFAULT",
+		"ADD COLUMN IF NOT EXISTS record_type TEXT NOT NULL DEFAULT",
+		"ADD COLUMN IF NOT EXISTS source_file_key TEXT NOT NULL DEFAULT",
+		"ADD COLUMN IF NOT EXISTS source_file_etag TEXT NOT NULL DEFAULT",
+		"ADD COLUMN IF NOT EXISTS source_line_number BIGINT NOT NULL DEFAULT",
+		"ADD COLUMN IF NOT EXISTS source_record_hash TEXT NOT NULL DEFAULT",
+		"ALTER COLUMN billing_scope_type SET NOT NULL",
+		"ALTER COLUMN raw_metadata SET NOT NULL",
+		"ALTER COLUMN source_line_number SET NOT NULL",
+	} {
+		if strings.Contains(costRecordsBlock, forbidden) {
+			t.Fatalf("cost_records migration must not use unsafe hypertable pattern %q", forbidden)
+		}
+	}
+
+	for _, required := range []string{
+		"ADD COLUMN IF NOT EXISTS billing_scope_type TEXT",
+		"ADD COLUMN IF NOT EXISTS raw_metadata JSONB",
+		"ADD COLUMN IF NOT EXISTS source_line_number BIGINT",
+		"billing_scope_type = COALESCE(billing_scope_type, '')",
+		"raw_metadata = COALESCE(raw_metadata, '{}'::jsonb)",
+		"source_line_number = COALESCE(source_line_number, 0)",
+		"WHERE billing_scope_type IS NULL",
+		"OR raw_metadata IS NULL",
+		"OR source_line_number IS NULL",
+		"ALTER COLUMN billing_scope_type SET DEFAULT ''",
+		"ALTER COLUMN raw_metadata SET DEFAULT '{}'::jsonb",
+		"ALTER COLUMN source_line_number SET DEFAULT 0",
+	} {
+		if !strings.Contains(costRecordsBlock, required) {
+			t.Fatalf("cost_records migration must contain safe hypertable step %q", required)
+		}
+	}
+}
+
+func TestProviderAgnosticMigrationKeepsOCIBackfillAndAWSIndexes(t *testing.T) {
+	b, err := os.ReadFile("../../migrations/011_provider_agnostic_cost_dimensions.sql")
+	if err != nil {
+		t.Fatalf("read provider agnostic migration: %v", err)
+	}
+	migration := string(b)
+	for _, required := range []string{
+		"billing_scope_type = 'compartment'",
+		"billing_scope_id = COALESCE(NULLIF(tags->>'oci_compartment_id', ''), billing_scope_id, '')",
+		"billing_scope_name = COALESCE(NULLIF(tags->>'oci_compartment_name', ''), tags->>'oci_compartment_id', billing_scope_name, '')",
+		"WHERE cloud_provider = 'oci'",
+		"AND COALESCE(billing_scope_type, '') = ''",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_cost_records_aws_idempotency",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_cost_records_aws_cur_record_hash",
+		"WHERE cloud_provider = 'aws' AND record_type = 'cur_line_item' AND source_record_hash <> ''",
+	} {
+		if !strings.Contains(migration, required) {
+			t.Fatalf("expected provider agnostic migration to contain %q", required)
+		}
+	}
+}

@@ -74,6 +74,10 @@ Raw `cost_records` older than 90 days are removed by TimescaleDB retention and l
 
 Object-level selection and `processed_report_files` dedupe reduce unnecessary OCI downloads. For broad prefixes such as `reports/`, Torvix narrows OCI proprietary cost report selection to `reports/cost-csv/`, seeks near the recent Object Storage metadata window, and processes the bounded candidate set newest-first. OCI numeric suffixes are not authoritative billing-period recency signals, and record-level filtering is still required because a recently modified billing export can contain historical usage rows. Torvix filters each parsed record by `ingestion.lookback_days` before insertion, so old rows are reported as `records_skipped_old` and never rely on retention cleanup to disappear. If selected reports produce zero rows inside the lookback window, `max_zero_yield_files` stops the run before it can spend minutes parsing historical data.
 
+## Known Upgrade Issue
+
+The latest release may fail during migration 011 on existing TimescaleDB deployments where `cost_records` has columnstore/compression enabled. A patch is implemented and currently under verification. Existing users with compressed/columnstore hypertables should avoid upgrading until the patch release is published.
+
 ## Production Setup
 
 Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are managed outside the Torvix Compose stack.
