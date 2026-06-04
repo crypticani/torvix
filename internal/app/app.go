@@ -219,7 +219,7 @@ func (a *App) runIngestionScheduler() {
 }
 
 func (a *App) runReportScheduler() {
-	location, err := time.LoadLocation(a.reportingCfg.Timezone)
+	location, err := reporting.LoadLocation(a.reportingCfg.Timezone)
 	if err != nil {
 		a.schedulerLogger.Error("invalid report timezone", "timezone", a.reportingCfg.Timezone, "error", err)
 		return
