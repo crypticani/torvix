@@ -1,0 +1,382 @@
+{
+  "title": "Torvix Waste Detection",
+  "uid": "torvix-waste-detection",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Open Findings",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/waste/summary?provider=${provider}&region=${region}&service=${service}",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "",
+          "root_is_not_array": true,
+          "columns": [
+            {
+              "selector": "TotalOpenFindings",
+              "text": "open_findings",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Estimated Monthly Waste",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/waste/summary?provider=${provider}&region=${region}&service=${service}",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "",
+          "root_is_not_array": true,
+          "columns": [
+            {
+              "selector": "EstimatedMonthlyWaste",
+              "text": "estimated_monthly_waste",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Top Open Findings",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/waste/findings?provider=${provider}&status=${status}&region=${region}&service=${service}&limit=50",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "ID",
+              "text": "id",
+              "type": "number"
+            },
+            {
+              "selector": "Severity",
+              "text": "severity",
+              "type": "string"
+            },
+            {
+              "selector": "RuleID",
+              "text": "rule",
+              "type": "string"
+            },
+            {
+              "selector": "Region",
+              "text": "region",
+              "type": "string"
+            },
+            {
+              "selector": "ScopeName",
+              "text": "scope",
+              "type": "string"
+            },
+            {
+              "selector": "Service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "ResourceName",
+              "text": "resource",
+              "type": "string"
+            },
+            {
+              "selector": "ResourceType",
+              "text": "type",
+              "type": "string"
+            },
+            {
+              "selector": "EstimatedMonthlyWaste",
+              "text": "monthly_waste",
+              "type": "number"
+            },
+            {
+              "selector": "Currency",
+              "text": "currency",
+              "type": "string"
+            },
+            {
+              "selector": "Summary",
+              "text": "summary",
+              "type": "string"
+            },
+            {
+              "selector": "Recommendation",
+              "text": "recommendation",
+              "type": "string"
+            },
+            {
+              "selector": "LastSeenAt",
+              "text": "last_seen_at",
+              "type": "timestamp"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "monthly_waste"
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Detection Rules",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/waste/rules",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "",
+          "columns": [
+            {
+              "selector": "rule_id",
+              "text": "rule",
+              "type": "string"
+            },
+            {
+              "selector": "provider",
+              "text": "provider",
+              "type": "string"
+            },
+            {
+              "selector": "resource_type",
+              "text": "resource_type",
+              "type": "string"
+            },
+            {
+              "selector": "severity_basis",
+              "text": "severity_basis",
+              "type": "string"
+            },
+            {
+              "selector": "description",
+              "text": "description",
+              "type": "string"
+            },
+            {
+              "selector": "recommendation",
+              "text": "recommendation",
+              "type": "string"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "options": {
+        "showHeader": true
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "type": "custom",
+        "name": "provider",
+        "label": "Provider",
+        "query": "oci,aws",
+        "current": {
+          "selected": true,
+          "text": "oci",
+          "value": "oci"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "oci",
+            "value": "oci"
+          },
+          {
+            "selected": false,
+            "text": "aws",
+            "value": "aws"
+          }
+        ]
+      },
+      {
+        "type": "textbox",
+        "name": "region",
+        "label": "Region",
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        }
+      },
+      {
+        "type": "textbox",
+        "name": "service",
+        "label": "Service",
+        "current": {
+          "selected": false,
+          "text": "",
+          "value": ""
+        }
+      },
+      {
+        "type": "custom",
+        "name": "status",
+        "label": "Status",
+        "query": "open,accepted,ignored,false_positive,fixed,resolved",
+        "current": {
+          "selected": true,
+          "text": "open",
+          "value": "open"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "open",
+            "value": "open"
+          },
+          {
+            "selected": false,
+            "text": "accepted",
+            "value": "accepted"
+          },
+          {
+            "selected": false,
+            "text": "ignored",
+            "value": "ignored"
+          },
+          {
+            "selected": false,
+            "text": "false_positive",
+            "value": "false_positive"
+          },
+          {
+            "selected": false,
+            "text": "fixed",
+            "value": "fixed"
+          },
+          {
+            "selected": false,
+            "text": "resolved",
+            "value": "resolved"
+          }
+        ]
+      }
+    ]
+  }
+}

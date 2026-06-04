@@ -99,17 +99,14 @@ curl -X PATCH http://localhost:8080/api/v1/waste/findings/42/status \
 
 When Grafana/API bearer auth is enabled, all `/api/v1/waste/*` endpoints require the same bearer token as dashboard API endpoints.
 
-## Grafana Panels
+## Grafana Dashboard
 
-The waste APIs are Grafana-compatible through the Torvix API datasource. Recommended panels:
+Torvix ships `dashboards/torvix-waste-dashboard.json`, which reads waste data through the Torvix API datasource. It includes:
 
 - Open waste findings count from `/api/v1/waste/summary`
 - Estimated monthly waste from open findings in `/api/v1/waste/summary`
-- Waste by severity from `findings_by_severity`
-- Waste by service from `findings_by_service`
-- Waste by region from `findings_by_region`
-- Waste by compartment/scope from `findings_by_scope`
 - Top waste findings table from `/api/v1/waste/findings?status=open`
+- Detection rule metadata from `/api/v1/waste/rules`
 
 Recommended top findings columns:
 

@@ -411,20 +411,22 @@ These metrics only use a low-cardinality `window` label. Do not add service, acc
 
 ## Import Dashboard Into Production Grafana
 
-Torvix ships one OCI-specific Grafana dashboard JSON:
+Torvix ships Grafana dashboard JSON files for provider cost views and waste findings:
 
 - `dashboards/torvix-oci-finops-dashboard.json`
+- `dashboards/torvix-aws-finops-dashboard.json`
+- `dashboards/torvix-waste-dashboard.json`
 
-The file can be pasted directly into a separate production Grafana import flow after the required datasources are configured. Local development and production both use this same dashboard JSON. The local PostgreSQL datasource is provisioned only for direct developer inspection.
+The files can be pasted directly into a separate production Grafana import flow after the required datasources are configured. Local development and production both use these same dashboard JSON files. The local PostgreSQL datasource is provisioned only for direct developer inspection.
 
 PostgreSQL must remain private in production. Do not expose the TimescaleDB port to Grafana users or public networks, and do not provision a production PostgreSQL datasource for dashboards. Production Grafana should read only from Torvix API endpoints and Prometheus.
 
-The OCI dashboard expects these Grafana datasource UIDs:
+The dashboards expect these Grafana datasource UIDs:
 
 - `Prometheus`: your production Prometheus datasource.
 - `TorvixAPI`: an Infinity datasource that points at the Torvix API.
 
-The production API endpoints are:
+The OCI dashboard production API endpoints are:
 
 ```text
 GET /api/v1/dashboard/overview?provider=oci
@@ -440,7 +442,27 @@ GET /api/v1/dashboard/anomalies?provider=oci
 GET /api/v1/dashboard/ingestion-status
 ```
 
-The range endpoints accept `from=YYYY-MM-DD` or RFC3339 timestamps and `to=YYYY-MM-DD` or RFC3339 timestamps. Cost time series accepts `window=daily|weekly|monthly`. Service and compartment breakdowns accept `limit=15`. The OCI dashboard uses Region -> Compartment -> Service drill-down variables; `All` means the matching filter is not applied. `Top OCI Cost Drivers` returns Region, Compartment, Service, Total Cost, and percent of the filtered total. Anomalies accepts `severity=low|medium|high`.
+The AWS dashboard production API endpoints are:
+
+```text
+GET /api/v1/dashboard/overview?provider=aws
+GET /api/v1/dashboard/cost-timeseries?provider=aws
+GET /api/v1/dashboard/cost-by-region?provider=aws
+GET /api/v1/dashboard/cost-by-scope?provider=aws
+GET /api/v1/dashboard/cost-by-service?provider=aws
+GET /api/v1/dashboard/drilldown?provider=aws
+GET /api/v1/dashboard/anomalies?provider=aws
+```
+
+The waste dashboard production API endpoints are:
+
+```text
+GET /api/v1/waste/summary
+GET /api/v1/waste/findings
+GET /api/v1/waste/rules
+```
+
+The range endpoints accept `from=YYYY-MM-DD` or RFC3339 timestamps and `to=YYYY-MM-DD` or RFC3339 timestamps. Cost time series accepts `window=daily|weekly|monthly`. Service, region, scope, and compartment breakdowns accept `limit=15`. The OCI dashboard uses Region -> Compartment -> Service drill-down variables. The AWS dashboard uses Region -> Account/Scope -> Service drill-down variables. `All` means the matching filter is not applied. `Top OCI Cost Drivers` returns Region, Compartment, Service, Total Cost, and percent of the filtered total. Anomalies accepts `severity=low|medium|high`. The waste dashboard shows provider-selectable open findings, estimated monthly waste, top findings, and rule metadata.
 
 Dashboard APIs read precomputed tables and return metadata with `retention_days`, `source: "precomputed"`, and an empty `data` array plus a clear message when the requested range is outside the retained 90-day window.
 
@@ -479,7 +501,7 @@ The bundled dashboard variables use Infinity backend JSON queries. If the dataso
 
 1. In Grafana, go to **Dashboards -> New -> Import**.
 2. Confirm the Infinity datasource plugin is installed and that a datasource with UID `TorvixAPI` exists.
-3. Upload or paste `dashboards/torvix-oci-finops-dashboard.json`.
+3. Upload or paste the dashboard JSON file you want to import from `dashboards/`.
 4. If Grafana asks for datasources, map:
    - `Prometheus` to your production Prometheus datasource.
    - `TorvixAPI` to your Torvix API datasource.
@@ -488,7 +510,7 @@ If your existing datasource UIDs are different and Grafana does not prompt for m
 
 ### Option 2: Grafana Provisioning
 
-Copy `dashboards/torvix-oci-finops-dashboard.json` to your Grafana dashboard provisioning path and configure a provider similar to:
+Copy the dashboard JSON files from `dashboards/` to your Grafana dashboard provisioning path and configure a provider similar to:
 
 ```yaml
 apiVersion: 1
