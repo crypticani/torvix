@@ -4,7 +4,7 @@
 
 `cmd/torvix` contains the application entrypoint. `internal/app` wires configuration, migrations, lifecycle policies, collectors, services, HTTP routes, and scheduler startup. Core behavior lives under `internal/core` for collection, normalization, analytics, forecasting, reporting, and alerting. Shared models, config, and logging live in `internal/domain`, `internal/config`, and `internal/logging`.
 
-Infrastructure code belongs in `internal/adapters`: PostgreSQL/TimescaleDB persistence in `internal/adapters/postgres`, Prometheus metrics in `internal/adapters/prometheus`, and cloud collectors in `internal/adapters/providers`. HTTP handlers and API response contracts are in `internal/ports/http`; provider/storage interfaces live under `internal/ports`. SQL migrations are in `migrations`. Runtime assets are in `configs`, `deploy`, `docker`, and `dashboards`. Generated API docs live in `docs`. Cross-package tests live in `tests/unit`, with focused package tests beside the code they cover.
+Infrastructure code belongs in `internal/adapters`: PostgreSQL/TimescaleDB persistence in `internal/adapters/postgres`, Prometheus metrics in `internal/adapters/prometheus`, and cloud collectors in `internal/adapters/providers`. HTTP handlers and API response contracts are in `internal/ports/http`; provider/storage interfaces live under `internal/ports`. SQL migrations are in `migrations`. Runtime assets are in `configs`, `deploy`, `docker`, and `dashboards`, including OCI, AWS, and waste Grafana dashboard JSON files. Generated API docs live in `docs`. Cross-package tests live in `tests/unit`, with focused package tests beside the code they cover.
 
 ## Current Architecture Rules
 
@@ -49,7 +49,7 @@ env GOCACHE=/tmp/torvix-go-build GOMODCACHE=/tmp/torvix-go-mod go test ./...
 
 Use standard Go formatting and keep code `gofmt` clean. Prefer small packages with explicit responsibilities and constructor-style `New(...)` functions. Exported identifiers use `CamelCase`; unexported helpers use `camelCase`. Keep interfaces in `internal/ports` and concrete implementations in `internal/adapters`.
 
-Use structured logging through `log/slog`, especially around provider discovery, download, parsing, normalization, insertion, dashboard refresh, retention, and query execution boundaries. Keep YAML keys `snake_case`, and preserve environment override behavior for `TORVIX_HTTP_ADDRESS`, `TORVIX_HTTP_PORT`, and `TORVIX_GRAFANA_API_BEARER_TOKEN`.
+Use structured logging through `log/slog`, especially around bootstrap migrations, provider discovery, download, parsing, normalization, insertion, dashboard refresh, retention, and query execution boundaries. At `info` level, long-running migrations should show progress instead of going silent until errors. Keep YAML keys `snake_case`, and preserve environment override behavior for `TORVIX_HTTP_ADDRESS`, `TORVIX_HTTP_PORT`, and `TORVIX_GRAFANA_API_BEARER_TOKEN`.
 
 ## Ingestion Contract
 
@@ -65,16 +65,29 @@ Dashboard APIs under `/api/v1/dashboard/*` should serve precomputed tables such 
 
 Provider-scoped dashboard endpoints are part of the public contract, especially:
 
-- `/api/v1/dashboard/overview?provider=oci`
-- `/api/v1/dashboard/cost-timeseries?window=daily&provider=oci`
-- `/api/v1/dashboard/cost-by-category?provider=oci`
-- `/api/v1/dashboard/cost-by-service?provider=oci`
-- `/api/v1/dashboard/cost-by-provider?provider=oci`
+- `/api/v1/dashboard/overview?provider=oci|aws`
+- `/api/v1/dashboard/cost-timeseries?window=daily|weekly|monthly&provider=oci|aws`
+- `/api/v1/dashboard/cost-by-category?provider=oci|aws`
+- `/api/v1/dashboard/cost-by-service?provider=oci|aws`
+- `/api/v1/dashboard/cost-by-provider?provider=oci|aws`
 - `/api/v1/dashboard/cost-by-compartment?provider=oci`
-- `/api/v1/dashboard/cost-by-region?provider=oci`
+- `/api/v1/dashboard/cost-by-scope?provider=oci|aws`
+- `/api/v1/dashboard/cost-by-region?provider=oci|aws`
+- `/api/v1/dashboard/drilldown?provider=oci|aws`
 - `/api/v1/dashboard/cost-increases?provider=oci`
-- `/api/v1/dashboard/anomalies?provider=oci`
+- `/api/v1/dashboard/anomalies?provider=oci|aws`
+- `/api/v1/dashboard/filter-options?dimension=region|compartment|scope|service&provider=oci|aws`
 - `/api/v1/dashboard/ingestion-status`
+
+Waste APIs are also part of the public dashboard/API contract:
+
+- `/api/v1/waste/summary`
+- `/api/v1/waste/findings`
+- `/api/v1/waste/findings/{id}`
+- `/api/v1/waste/rules`
+- `/api/v1/waste/findings/{id}/status`
+
+When dashboard API bearer auth is enabled, all `/api/v1/dashboard/*` and `/api/v1/waste/*` routes, including finding detail and PATCH status mutation routes, must require the same auth model.
 
 When changing Grafana dashboards or provisioning, validate that the running dashboard actually calls the Torvix APIs on load. Curling endpoints or editing a panel manually is not enough. Inspect the live provisioned dashboard if behavior differs from JSON on disk.
 
