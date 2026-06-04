@@ -68,7 +68,7 @@ func New(a *analytics.Service, f *forecasting.Service) *Service {
 func NewWithOptions(a *analytics.Service, f *forecasting.Service, opts Options) *Service {
 	location := opts.Location
 	if location == nil && opts.Timezone != "" {
-		if loaded, err := time.LoadLocation(opts.Timezone); err == nil {
+		if loaded, err := LoadLocation(opts.Timezone); err == nil {
 			location = loaded
 		}
 	}
