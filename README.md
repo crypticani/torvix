@@ -34,7 +34,7 @@ internal/ports               collector and repository contracts
 migrations                   PostgreSQL + Timescale SQL migrations
 configs                      YAML configuration
 deploy                       Prometheus and cron examples
-dashboards                   OCI Grafana dashboard JSON
+dashboards                   OCI, AWS, and waste Grafana dashboard JSON
 ```
 
 ## Storage Design
@@ -395,7 +395,7 @@ Torvix has two Docker Compose entry points:
 - **Grafana:** `http://localhost:3000` (Torvix API, Prometheus, and local PostgreSQL datasources are automatically provisioned; the dev container installs the Infinity datasource with `GF_PLUGINS_PREINSTALL_SYNC`)
 - **Prometheus:** `http://localhost:9090`
 
-The bundled Grafana dashboard reads from the Torvix API and Prometheus. The local PostgreSQL datasource is only for direct development inspection; production Grafana should keep PostgreSQL private.
+The bundled Grafana dashboards read from the Torvix API and Prometheus. The local PostgreSQL datasource is only for direct development inspection; production Grafana should keep PostgreSQL private.
 
 Torvix listens on `http.address` from config by default. Override the actual app listener at runtime with `TORVIX_HTTP_ADDRESS`, `TORVIX_HTTP_PORT`, or `TORVIX_API_PORT`, which is useful when using host networking.
 

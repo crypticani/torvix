@@ -1,0 +1,725 @@
+{
+  "title": "Torvix AWS FinOps Dashboard",
+  "uid": "torvix-aws-finops-dashboard",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Current 30 Day Spend",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/overview?provider=aws",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "root_is_not_array": true,
+          "columns": [
+            {
+              "selector": "current_30_day_spend",
+              "text": "current_30_day_spend",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Previous 30 Day Spend",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/overview?provider=aws",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "root_is_not_array": true,
+          "columns": [
+            {
+              "selector": "previous_30_day_spend",
+              "text": "previous_30_day_spend",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Spend Change",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/overview?provider=aws",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "root_is_not_array": true,
+          "columns": [
+            {
+              "selector": "percentage_change",
+              "text": "percentage_change",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Anomalies",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/overview?provider=aws",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "root_is_not_array": true,
+          "columns": [
+            {
+              "selector": "anomaly_count",
+              "text": "anomaly_count",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "AWS Cost Timeseries",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-timeseries?provider=aws&window=${window}&region=${region}&scope=${scope}&service=${service}&from=${__from:date:iso}&to=${__to:date:iso}",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "time",
+              "text": "time",
+              "type": "timestamp"
+            },
+            {
+              "selector": "metric",
+              "text": "metric",
+              "type": "string"
+            },
+            {
+              "selector": "value",
+              "text": "value",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "barchart",
+      "title": "Cost By Region",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-by-region?provider=aws&from=${__from:date:iso}&to=${__to:date:iso}&service=${service}&scope=${scope}&limit=15",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "name",
+              "text": "region",
+              "type": "string"
+            },
+            {
+              "selector": "total_cost",
+              "text": "total_cost",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "always"
+      }
+    },
+    {
+      "id": 7,
+      "type": "barchart",
+      "title": "Cost By Account/Scope",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-by-scope?provider=aws&from=${__from:date:iso}&to=${__to:date:iso}&region=${region}&service=${service}&limit=15",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "name",
+              "text": "scope",
+              "type": "string"
+            },
+            {
+              "selector": "total_cost",
+              "text": "total_cost",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "always"
+      }
+    },
+    {
+      "id": 8,
+      "type": "barchart",
+      "title": "Cost By Service",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-by-service?provider=aws&from=${__from:date:iso}&to=${__to:date:iso}&region=${region}&scope=${scope}&limit=15",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "name",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "total_cost",
+              "text": "total_cost",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD"
+        }
+      },
+      "options": {
+        "orientation": "horizontal",
+        "showValue": "always"
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "AWS Region / Account / Service Drilldown",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/drilldown?provider=aws&from=${__from:date:iso}&to=${__to:date:iso}&region=${region}&scope=${scope}&service=${service}&limit=50",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "region",
+              "text": "region",
+              "type": "string"
+            },
+            {
+              "selector": "scope",
+              "text": "account",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "total_cost",
+              "text": "total_cost",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 21
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "total_cost"
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "AWS Anomalies",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/anomalies?provider=aws&from=${__from:date:iso}&to=${__to:date:iso}",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "period_start",
+              "text": "period_start",
+              "type": "timestamp"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "region",
+              "text": "region",
+              "type": "string"
+            },
+            {
+              "selector": "observed_cost",
+              "text": "observed_cost",
+              "type": "number"
+            },
+            {
+              "selector": "expected_cost",
+              "text": "expected_cost",
+              "type": "number"
+            },
+            {
+              "selector": "percentage_delta",
+              "text": "percentage_delta",
+              "type": "number"
+            },
+            {
+              "selector": "severity",
+              "text": "severity",
+              "type": "string"
+            },
+            {
+              "selector": "explanation",
+              "text": "explanation",
+              "type": "string"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 21
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "period_start"
+          }
+        ]
+      }
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "region",
+        "label": "Region",
+        "refresh": 1,
+        "sort": 1,
+        "multi": false,
+        "includeAll": true,
+        "allValue": "All",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "All"
+        },
+        "datasource": {
+          "type": "yesoreyeram-infinity-datasource",
+          "uid": "TorvixAPI"
+        },
+        "definition": "/api/v1/dashboard/filter-options?dimension=region&provider=aws&format=values",
+        "query": {
+          "refId": "variable",
+          "queryType": "infinity",
+          "infinityQuery": {
+            "type": "json",
+            "source": "url",
+            "parser": "backend",
+            "url": "/api/v1/dashboard/filter-options?dimension=region&provider=aws&format=values",
+            "url_options": {
+              "data": "",
+              "method": "GET"
+            },
+            "root_selector": "",
+            "columns": []
+          }
+        }
+      },
+      {
+        "type": "query",
+        "name": "scope",
+        "label": "Account",
+        "refresh": 1,
+        "sort": 1,
+        "multi": false,
+        "includeAll": true,
+        "allValue": "All",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "All"
+        },
+        "datasource": {
+          "type": "yesoreyeram-infinity-datasource",
+          "uid": "TorvixAPI"
+        },
+        "definition": "/api/v1/dashboard/filter-options?dimension=scope&provider=aws&region=${region}&format=values",
+        "query": {
+          "refId": "variable",
+          "queryType": "infinity",
+          "infinityQuery": {
+            "type": "json",
+            "source": "url",
+            "parser": "backend",
+            "url": "/api/v1/dashboard/filter-options?dimension=scope&provider=aws&region=${region}&format=values",
+            "url_options": {
+              "data": "",
+              "method": "GET"
+            },
+            "root_selector": "",
+            "columns": []
+          }
+        }
+      },
+      {
+        "type": "query",
+        "name": "service",
+        "label": "Service",
+        "refresh": 1,
+        "sort": 1,
+        "multi": false,
+        "includeAll": true,
+        "allValue": "All",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "All"
+        },
+        "datasource": {
+          "type": "yesoreyeram-infinity-datasource",
+          "uid": "TorvixAPI"
+        },
+        "definition": "/api/v1/dashboard/filter-options?dimension=service&provider=aws&region=${region}&scope=${scope}&format=values",
+        "query": {
+          "refId": "variable",
+          "queryType": "infinity",
+          "infinityQuery": {
+            "type": "json",
+            "source": "url",
+            "parser": "backend",
+            "url": "/api/v1/dashboard/filter-options?dimension=service&provider=aws&region=${region}&scope=${scope}&format=values",
+            "url_options": {
+              "data": "",
+              "method": "GET"
+            },
+            "root_selector": "",
+            "columns": []
+          }
+        }
+      },
+      {
+        "type": "custom",
+        "name": "window",
+        "label": "Window",
+        "query": "daily,weekly,monthly",
+        "current": {
+          "selected": true,
+          "text": "daily",
+          "value": "daily"
+        },
+        "options": [
+          {
+            "selected": true,
+            "text": "daily",
+            "value": "daily"
+          },
+          {
+            "selected": false,
+            "text": "weekly",
+            "value": "weekly"
+          },
+          {
+            "selected": false,
+            "text": "monthly",
+            "value": "monthly"
+          }
+        ]
+      }
+    ]
+  }
+}
