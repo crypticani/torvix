@@ -71,7 +71,7 @@ func NewWithLoggers(cfg config.Config, loggers logging.Loggers) (*App, error) {
 	}
 	migrationCtx, cancelMigration := context.WithTimeout(context.Background(), time.Hour)
 	defer cancelMigration()
-	if err := postgres.NewMigrator(repo.Pool(), "migrations").Run(migrationCtx); err != nil {
+	if err := postgres.NewMigratorWithLogger(repo.Pool(), "migrations", loggers.App).Run(migrationCtx); err != nil {
 		repo.Close()
 		return nil, err
 	}
