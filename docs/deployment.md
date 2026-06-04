@@ -552,7 +552,7 @@ datasources:
 
 Restart or reload Grafana provisioning after copying the files.
 
-Enable the Torvix Grafana API auth placeholder in production config:
+Enable the Torvix API auth placeholder in production config:
 
 ```yaml
 grafana:
@@ -561,7 +561,7 @@ grafana:
     bearer_token: "replace_with_long_random_token"
 ```
 
-The same value can be supplied with `TORVIX_GRAFANA_API_BEARER_TOKEN`. When auth is enabled, production Grafana must send `Authorization: Bearer <token>` to `/api/v1/dashboard/*`.
+The same value can be supplied with `TORVIX_GRAFANA_API_BEARER_TOKEN`. When auth is enabled, every Torvix endpoint except `/healthz` and `/swagger/*` requires `Authorization: Bearer <token>`. Configure production Grafana's Infinity datasource to send this header for dashboard and waste API calls.
 
 ## Verify Dashboard Data After Ingestion
 

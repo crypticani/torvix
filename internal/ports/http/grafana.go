@@ -52,11 +52,11 @@ type grafanaSummaryStat struct {
 
 func (h *Handler) withGrafanaAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
+		if !h.authorizeGrafanaAPI(w, r) {
 			return
 		}
-		if !h.authorizeGrafanaAPI(w, r) {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		next(w, r)
@@ -70,6 +70,15 @@ func (h *Handler) withGrafanaAPIAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+func (h *Handler) withGrafanaAPIAuthHandler(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !h.authorizeGrafanaAPI(w, r) {
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (h *Handler) authorizeGrafanaAPI(w http.ResponseWriter, r *http.Request) bool {

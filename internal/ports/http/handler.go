@@ -105,12 +105,12 @@ func NewWithOptions(collector *collect.Service, analytics *analytics.Service, fo
 
 func (h *Handler) routes() {
 	h.mux.HandleFunc("/healthz", h.health)
-	h.mux.HandleFunc("/api/v1/ingest", h.ingest)
-	h.mux.HandleFunc("/api/v1/ingest/status/", h.ingestStatus)
-	h.mux.HandleFunc("/api/v1/analytics/summary", h.summary)
-	h.mux.HandleFunc("/api/v1/analytics/variance", h.variance)
-	h.mux.HandleFunc("/api/v1/analytics/anomalies", h.anomalies)
-	h.mux.HandleFunc("/api/v1/analytics/forecast", h.forecast)
+	h.mux.HandleFunc("/api/v1/ingest", h.withGrafanaAPIAuth(h.ingest))
+	h.mux.HandleFunc("/api/v1/ingest/status/", h.withGrafanaAPIAuth(h.ingestStatus))
+	h.mux.HandleFunc("/api/v1/analytics/summary", h.withGrafanaAPIAuth(h.summary))
+	h.mux.HandleFunc("/api/v1/analytics/variance", h.withGrafanaAPIAuth(h.variance))
+	h.mux.HandleFunc("/api/v1/analytics/anomalies", h.withGrafanaAPIAuth(h.anomalies))
+	h.mux.HandleFunc("/api/v1/analytics/forecast", h.withGrafanaAPIAuth(h.forecast))
 	h.mux.HandleFunc("/api/v1/dashboard/overview", h.withGrafanaAuth(h.dashboardOverview))
 	h.mux.HandleFunc("/api/v1/dashboard/cost-timeseries", h.withGrafanaAuth(h.dashboardCostTimeseries))
 	h.mux.HandleFunc("/api/v1/dashboard/cost-by-category", h.withGrafanaAuth(h.dashboardCostByCategory))
@@ -135,10 +135,10 @@ func (h *Handler) routes() {
 	h.mux.HandleFunc("/api/v1/grafana/table/top-services", h.withGrafanaAuth(h.grafanaTopServices))
 	h.mux.HandleFunc("/api/v1/grafana/table/anomalies", h.withGrafanaAuth(h.grafanaAnomalies))
 	h.mux.HandleFunc("/api/v1/grafana/stat/summary", h.withGrafanaAuth(h.grafanaSummary))
-	h.mux.HandleFunc("/api/v1/reports/daily", h.dailyReport)
-	h.mux.HandleFunc("/api/v1/reports/weekly", h.weeklyReport)
-	h.mux.HandleFunc("/api/v1/reports/monthly", h.monthlyReport)
-	h.mux.Handle("/metrics", h.metrics)
+	h.mux.HandleFunc("/api/v1/reports/daily", h.withGrafanaAPIAuth(h.dailyReport))
+	h.mux.HandleFunc("/api/v1/reports/weekly", h.withGrafanaAPIAuth(h.weeklyReport))
+	h.mux.HandleFunc("/api/v1/reports/monthly", h.withGrafanaAPIAuth(h.monthlyReport))
+	h.mux.Handle("/metrics", h.withGrafanaAPIAuthHandler(h.metrics))
 	h.mux.Handle("/swagger/", httpSwagger.WrapHandler)
 }
 
