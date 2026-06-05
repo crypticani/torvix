@@ -78,9 +78,9 @@ func (g *grafanaRepo) DetectAnomalies(context.Context, time.Time, time.Time) ([]
 
 func TestGrafanaEndpointsRequireBearerWhenConfigured(t *testing.T) {
 	handler := NewWithOptions(nil, analytics.New(&grafanaRepo{}), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{
-		LookbackDays:       30,
-		GrafanaAuthEnabled: true,
-		GrafanaAuthToken:   "secret",
+		LookbackDays:   30,
+		APIAuthEnabled: true,
+		APIAuthToken:   "secret",
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/overview?from=2026-05-01&to=2026-05-03", nil)

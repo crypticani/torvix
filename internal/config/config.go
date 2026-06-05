@@ -14,7 +14,7 @@ const (
 	EnvHTTPAddress                    = "TORVIX_HTTP_ADDRESS"
 	EnvHTTPPort                       = "TORVIX_HTTP_PORT"
 	EnvAPIPort                        = "TORVIX_API_PORT"
-	EnvGrafanaAPIBearerToken          = "TORVIX_GRAFANA_API_BEARER_TOKEN"
+	EnvAPIBearerToken                 = "TORVIX_API_BEARER_TOKEN"
 	EnvLogLevel                       = "TORVIX_LOG_LEVEL"
 	EnvLogDir                         = "TORVIX_LOG_DIR"
 	EnvLogRetentionDays               = "TORVIX_LOG_RETENTION_DAYS"
@@ -69,6 +69,7 @@ type Config struct {
 	LogLevel  string  `yaml:"log_level"`
 	Logging   Logging `yaml:"logging"`
 	HTTP      HTTP    `yaml:"http"`
+	API       API     `yaml:"api"`
 	DB        DB      `yaml:"db"`
 	Providers struct {
 		OCI Provider    `yaml:"oci"`
@@ -78,7 +79,6 @@ type Config struct {
 	Scheduler Scheduler `yaml:"scheduler"`
 	Reporting Reporting `yaml:"reporting"`
 	Metrics   Metrics   `yaml:"metrics"`
-	Grafana   Grafana   `yaml:"grafana"`
 	Waste     Waste     `yaml:"waste"`
 }
 
@@ -95,6 +95,10 @@ type Scheduler struct {
 
 type HTTP struct {
 	Address string `yaml:"address"`
+}
+
+type API struct {
+	Auth APIAuth `yaml:"auth"`
 }
 
 type DB struct {
@@ -208,11 +212,7 @@ type Metrics struct {
 	CostStatsEnabled bool   `yaml:"cost_stats_enabled"`
 }
 
-type Grafana struct {
-	APIAuth GrafanaAPIAuth `yaml:"api_auth"`
-}
-
-type GrafanaAPIAuth struct {
+type APIAuth struct {
 	Enabled     bool   `yaml:"enabled"`
 	BearerToken string `yaml:"bearer_token"`
 }
@@ -252,9 +252,9 @@ func applyEnvOverrides(cfg *Config) {
 	} else if port := envValue(EnvHTTPPort, EnvAPIPort); port != "" {
 		cfg.HTTP.Address = normalizeHTTPPort(port)
 	}
-	if token := envValue(EnvGrafanaAPIBearerToken); token != "" {
-		cfg.Grafana.APIAuth.Enabled = true
-		cfg.Grafana.APIAuth.BearerToken = token
+	if token := envValue(EnvAPIBearerToken); token != "" {
+		cfg.API.Auth.Enabled = true
+		cfg.API.Auth.BearerToken = token
 	}
 	if level := envValue(EnvLogLevel); level != "" {
 		cfg.Logging.Level = level

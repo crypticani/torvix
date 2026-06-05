@@ -49,7 +49,7 @@ env GOCACHE=/tmp/torvix-go-build GOMODCACHE=/tmp/torvix-go-mod go test ./...
 
 Use standard Go formatting and keep code `gofmt` clean. Prefer small packages with explicit responsibilities and constructor-style `New(...)` functions. Exported identifiers use `CamelCase`; unexported helpers use `camelCase`. Keep interfaces in `internal/ports` and concrete implementations in `internal/adapters`.
 
-Use structured logging through `log/slog`, especially around bootstrap migrations, provider discovery, download, parsing, normalization, insertion, dashboard refresh, retention, and query execution boundaries. At `info` level, long-running migrations should show progress instead of going silent until errors. Keep YAML keys `snake_case`, and preserve environment override behavior for `TORVIX_HTTP_ADDRESS`, `TORVIX_HTTP_PORT`, and `TORVIX_GRAFANA_API_BEARER_TOKEN`.
+Use structured logging through `log/slog`, especially around bootstrap migrations, provider discovery, download, parsing, normalization, insertion, dashboard refresh, retention, and query execution boundaries. At `info` level, long-running migrations should show progress instead of going silent until errors. Keep YAML keys `snake_case`, and preserve environment override behavior for `TORVIX_HTTP_ADDRESS`, `TORVIX_HTTP_PORT`, and `TORVIX_API_BEARER_TOKEN`.
 
 ## Ingestion Contract
 
@@ -87,7 +87,7 @@ Waste APIs are also part of the public dashboard/API contract:
 - `/api/v1/waste/rules`
 - `/api/v1/waste/findings/{id}/status`
 
-When dashboard API bearer auth is enabled, all `/api/v1/dashboard/*` and `/api/v1/waste/*` routes, including finding detail and PATCH status mutation routes, must require the same auth model.
+When dashboard/API bearer auth is enabled, every endpoint except `/healthz` and `/swagger/*` must require the same bearer token. This includes ingestion, analytics, reports, metrics, dashboard APIs, waste detail routes, and PATCH status mutation routes.
 
 When changing Grafana dashboards or provisioning, validate that the running dashboard actually calls the Torvix APIs on load. Curling endpoints or editing a panel manually is not enough. Inspect the live provisioned dashboard if behavior differs from JSON on disk.
 

@@ -73,9 +73,9 @@ func TestWasteFindingStatusPatch(t *testing.T) {
 func TestWasteEndpointsRequireBearerWhenConfigured(t *testing.T) {
 	detector := &fakeWasteDetector{finding: waste.Finding{ID: 42, Status: waste.StatusOpen}}
 	handler := NewWithOptions(nil, nil, nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{
-		Waste:              detector,
-		GrafanaAuthEnabled: true,
-		GrafanaAuthToken:   "secret",
+		Waste:          detector,
+		APIAuthEnabled: true,
+		APIAuthToken:   "secret",
 	})
 
 	for _, tc := range []struct {

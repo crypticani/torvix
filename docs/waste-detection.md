@@ -97,7 +97,7 @@ curl -X PATCH http://localhost:8080/api/v1/waste/findings/42/status \
   -d '{"status":"ignored"}'
 ```
 
-When Grafana/API bearer auth is enabled, all `/api/v1/waste/*` endpoints require the same bearer token as dashboard API endpoints.
+When Grafana/API bearer auth is enabled, all Torvix endpoints except `/healthz` and `/swagger/*` require the same bearer token. Configure Grafana's Infinity datasource to send `Authorization: Bearer <token>` for waste dashboard calls.
 
 ## Grafana Dashboard
 
