@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.x"
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Check formatting
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build packages
+        run: go build ./cmd/... ./internal/...
+
+      - name: Validate Compose files
+        run: |
+          make compose-dev-config
+          make compose-prod-config
+
+      - name: Validate Swagger JSON
+        run: jq empty docs/swagger.json
+
+      - name: Check diff whitespace
+        run: git diff --check
+
+      - name: Run vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
