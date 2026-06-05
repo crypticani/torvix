@@ -5,10 +5,8 @@ import "time"
 type Provider string
 
 const (
-	ProviderAWS   Provider = "aws"
-	ProviderAzure Provider = "azure"
-	ProviderGCP   Provider = "gcp"
-	ProviderOCI   Provider = "oci"
+	ProviderAWS Provider = "aws"
+	ProviderOCI Provider = "oci"
 )
 
 type RawBillingRecord struct {

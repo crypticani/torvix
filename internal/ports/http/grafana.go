@@ -279,14 +279,3 @@ func grafanaLimit(r *http.Request, fallback int) int {
 	}
 	return fallback
 }
-
-func grafanaMetric(row domain.AggregatedCost) string {
-	service := row.Service
-	if service == "" {
-		service = "unknown"
-	}
-	if row.AccountID == "" {
-		return string(row.Provider) + "/" + service
-	}
-	return string(row.Provider) + "/" + row.AccountID + "/" + service
-}

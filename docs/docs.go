@@ -723,14 +723,10 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "aws",
-                "azure",
-                "gcp",
                 "oci"
             ],
             "x-enum-varnames": [
                 "ProviderAWS",
-                "ProviderAzure",
-                "ProviderGCP",
                 "ProviderOCI"
             ]
         },
