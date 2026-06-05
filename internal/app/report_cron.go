@@ -52,6 +52,12 @@ func (c reportCron) Next(after time.Time) time.Time {
 	return candidate
 }
 
+func (c reportCron) DueAtOrBefore(now time.Time) bool {
+	local := now.In(c.location)
+	candidate := time.Date(local.Year(), local.Month(), local.Day(), c.hour, c.minute, 0, 0, c.location)
+	return !candidate.After(local) && c.matchesWeekday(candidate.Weekday())
+}
+
 func (c reportCron) matchesWeekday(day time.Weekday) bool {
 	if len(c.weekdays) == 0 {
 		return true

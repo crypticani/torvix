@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -33,7 +35,7 @@ type App struct {
 	repo            *postgres.Repository
 	alerting        *alerting.Service
 	reporting       *reporting.Service
-	collector       *collect.Service
+	collector       ingestionRunner
 	wasteDetector   waste.Detector
 	schedulerCfg    config.Scheduler
 	reportingCfg    config.Reporting
@@ -44,6 +46,10 @@ type App struct {
 	stopOnce        sync.Once
 	schedulerCtx    context.Context
 	cancelScheduler context.CancelFunc
+}
+
+type ingestionRunner interface {
+	Run(context.Context, time.Time) ([]collect.ProviderResult, error)
 }
 
 func New(cfg config.Config, logger *slog.Logger) (*App, error) {
@@ -208,10 +214,7 @@ func (a *App) runIngestionScheduler() {
 		select {
 		case <-ticker.C:
 			a.schedulerLogger.Info("scheduler triggered ingestion")
-			_, err := a.collector.Run(a.schedulerCtx, time.Time{})
-			if err != nil {
-				a.schedulerLogger.Error("scheduled ingestion failed", "error", err)
-			}
+			a.runScheduledIngestion(a.schedulerCtx, time.Now)
 		case <-a.stop:
 			return
 		}
@@ -237,6 +240,7 @@ func (a *App) runReportScheduler() {
 	a.schedulerLogger.Info("starting report scheduler", "timezone", location.String(), "daily_cron", a.reportingCfg.DailyReportCron, "weekly_cron", a.reportingCfg.WeeklyReportCron)
 
 	now := time.Now()
+	a.deliverDueScheduledReportsWithCrons(a.schedulerCtx, now, daily, weekly)
 	nextDaily := daily.Next(now)
 	nextWeekly := weekly.Next(now)
 	for {
@@ -284,19 +288,173 @@ func (a *App) runWasteScheduler() {
 	}
 }
 
+func (a *App) runScheduledIngestion(ctx context.Context, now func() time.Time) {
+	if a.collector == nil {
+		a.schedulerLogger.Error("scheduled ingestion skipped because collector is not configured")
+		return
+	}
+	if now == nil {
+		now = time.Now
+	}
+	started := now()
+	results, err := a.collector.Run(ctx, time.Time{})
+	completedAt := now()
+	duration := completedAt.Sub(started)
+	status := scheduledIngestionStatus(results, err)
+	if err != nil {
+		a.schedulerLogger.Error("scheduled ingestion failed", "status", status, "error", err, "duration", duration.String())
+	} else {
+		a.schedulerLogger.Info("scheduled ingestion completed", "status", status, "duration", duration.String())
+	}
+	a.notifyScheduledIngestionComplete(ctx, scheduledIngestionRun{
+		Status:          status,
+		Results:         results,
+		Error:           err,
+		DurationSeconds: duration.Seconds(),
+	})
+	a.deliverDueScheduledReports(ctx, completedAt)
+}
+
 func (a *App) deliverScheduledReport(ctx context.Context, period string, now time.Time) {
 	if a.reporting == nil || a.alerting == nil {
+		return
+	}
+	if len(a.alerting.ReportDestinations()) == 0 {
+		logger := a.schedulerLogger
+		if logger == nil {
+			logger = a.logger
+		}
+		if logger != nil {
+			logger.Info("scheduled report delivery skipped", "reason", "no enabled alert destinations", "period", period)
+		}
 		return
 	}
 	reportCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	for _, result := range a.reporting.DeliverScheduledReport(reportCtx, a.alerting, period, now, reporting.DeliverOptions{}) {
-		if result.Skipped && result.SkipReason != "" && a.logger != nil {
-			a.logger.Info(result.SkipReason, "period", result.Period, "from", result.From, "to", result.To, "destination", result.Destination)
+		logger := a.schedulerLogger
+		if logger == nil {
+			logger = a.logger
 		}
-		if result.Error != nil && a.logger != nil {
-			a.logger.Error("failed to deliver scheduled report", "period", result.Period, "from", result.From, "to", result.To, "error", result.Error)
+		if result.Skipped && result.SkipReason != "" && logger != nil {
+			logger.Info("scheduled report delivery skipped", "reason", result.SkipReason, "period", result.Period, "from", result.From, "to", result.To, "destination", result.Destination)
 		}
+		if result.Error != nil && logger != nil {
+			logger.Error("failed to deliver scheduled report", "period", result.Period, "from", result.From, "to", result.To, "destination", result.Destination, "error", result.Error)
+		}
+		if !result.Skipped && result.Error == nil && logger != nil {
+			logger.Info("scheduled report delivered", "period", result.Period, "from", result.From, "to", result.To, "destination", result.Destination)
+		}
+	}
+}
+
+func (a *App) deliverDueScheduledReports(ctx context.Context, now time.Time) {
+	location, err := reporting.LoadLocation(a.reportingCfg.Timezone)
+	if err != nil {
+		a.schedulerLogger.Error("invalid report timezone", "timezone", a.reportingCfg.Timezone, "error", err)
+		return
+	}
+	daily, err := parseReportCron(a.reportingCfg.DailyReportCron, location)
+	if err != nil {
+		a.schedulerLogger.Error("invalid daily report cron", "cron", a.reportingCfg.DailyReportCron, "error", err)
+		return
+	}
+	weekly, err := parseReportCron(a.reportingCfg.WeeklyReportCron, location)
+	if err != nil {
+		a.schedulerLogger.Error("invalid weekly report cron", "cron", a.reportingCfg.WeeklyReportCron, "error", err)
+		return
+	}
+	a.deliverDueScheduledReportsWithCrons(ctx, now, daily, weekly)
+}
+
+func (a *App) deliverDueScheduledReportsWithCrons(ctx context.Context, now time.Time, daily, weekly reportCron) {
+	if daily.DueAtOrBefore(now) {
+		a.schedulerLogger.Info("delivering due daily report", "run_at", now)
+		a.deliverScheduledReport(ctx, "daily", now)
+	}
+	if weekly.DueAtOrBefore(now) {
+		a.schedulerLogger.Info("delivering due weekly report", "run_at", now)
+		a.deliverScheduledReport(ctx, "weekly", now)
+	}
+}
+
+type scheduledIngestionRun struct {
+	Status          string
+	Results         []collect.ProviderResult
+	Error           error
+	DurationSeconds float64
+}
+
+func scheduledIngestionStatus(results []collect.ProviderResult, err error) string {
+	if err == nil {
+		return "success"
+	}
+	if len(results) > 0 {
+		return "partial_failure"
+	}
+	return "failed"
+}
+
+func (a *App) notifyScheduledIngestionComplete(ctx context.Context, run scheduledIngestionRun) {
+	if a.alerting == nil {
+		return
+	}
+	alertCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	if err := a.alerting.SendNotification(alertCtx, scheduledIngestionNotification(run)); err != nil {
+		a.schedulerLogger.Error("failed to deliver scheduled ingestion completion alert", "status", run.Status, "error", err)
+	}
+}
+
+func scheduledIngestionNotification(run scheduledIngestionRun) alerting.Notification {
+	filesProcessed, filesSkipped, skippedOld, recordsParsed, recordsWithinLookback, recordsSkippedOld, recordsInserted := 0, 0, 0, 0, 0, 0, 0
+	for _, result := range run.Results {
+		filesProcessed += result.FilesProcessed
+		filesSkipped += result.FilesSkipped
+		skippedOld += result.SkippedOldFiles
+		recordsParsed += result.RecordsParsed
+		recordsWithinLookback += result.RecordsWithinLookback
+		recordsSkippedOld += result.RecordsSkippedOld
+		recordsInserted += result.RecordsInserted
+	}
+	severity := "success"
+	switch run.Status {
+	case "partial_failure":
+		severity = "warning"
+	case "failed":
+		severity = "error"
+	}
+	message := fmt.Sprintf("Scheduled ingestion finished with status %s.", run.Status)
+	if run.Error != nil {
+		message += " Error: " + run.Error.Error()
+	}
+	return alerting.Notification{
+		Title:    "Torvix Scheduled Ingestion " + titleForScheduledIngestion(run.Status),
+		Severity: severity,
+		Message:  message,
+		Fields: []alerting.NotificationField{
+			{Name: "Files processed", Value: strconv.Itoa(filesProcessed)},
+			{Name: "Files skipped", Value: strconv.Itoa(filesSkipped)},
+			{Name: "Old files skipped", Value: strconv.Itoa(skippedOld)},
+			{Name: "Records parsed", Value: strconv.Itoa(recordsParsed)},
+			{Name: "Records within lookback", Value: strconv.Itoa(recordsWithinLookback)},
+			{Name: "Old records skipped", Value: strconv.Itoa(recordsSkippedOld)},
+			{Name: "Records inserted", Value: strconv.Itoa(recordsInserted)},
+			{Name: "Duration", Value: fmt.Sprintf("%.1fs", run.DurationSeconds)},
+		},
+	}
+}
+
+func titleForScheduledIngestion(status string) string {
+	switch status {
+	case "success":
+		return "Succeeded"
+	case "partial_failure":
+		return "Partially Failed"
+	case "failed":
+		return "Failed"
+	default:
+		return status
 	}
 }
 

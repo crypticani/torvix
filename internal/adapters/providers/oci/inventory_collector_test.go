@@ -1,6 +1,10 @@
 package oci
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/crypticani/torvix/internal/config"
+)
 
 func TestOCITagsIncludeDefinedNamespaceKeys(t *testing.T) {
 	tags := ociTags(
@@ -17,5 +21,26 @@ func TestOCITagsIncludeDefinedNamespaceKeys(t *testing.T) {
 	}
 	if tags["keep"] != "false" {
 		t.Fatalf("expected freeform tag to be preserved, got %q", tags["keep"])
+	}
+}
+
+func TestInventoryCollectorRootCompartmentPrefersTenancyOCID(t *testing.T) {
+	const tenancyOCID = "ocid1.tenancy.oc1..aaaaexample"
+	c := &InventoryCollector{
+		cfg:       config.Provider{Account: "kocharsoft"},
+		tenancyID: tenancyOCID,
+	}
+
+	if got := c.rootCompartmentID(); got != tenancyOCID {
+		t.Fatalf("rootCompartmentID() = %q, want tenancy OCID %q", got, tenancyOCID)
+	}
+}
+
+func TestInventoryCollectorRootCompartmentFallsBackToAccountOCID(t *testing.T) {
+	const accountOCID = "ocid1.tenancy.oc1..bbbbexample"
+	c := &InventoryCollector{cfg: config.Provider{Account: accountOCID}}
+
+	if got := c.rootCompartmentID(); got != accountOCID {
+		t.Fatalf("rootCompartmentID() = %q, want configured account OCID %q", got, accountOCID)
 	}
 }

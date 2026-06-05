@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
@@ -25,6 +26,7 @@ type InventoryCollector struct {
 	blockstorage ocicore.BlockstorageClient
 	network      ocicore.VirtualNetworkClient
 	region       string
+	tenancyID    string
 }
 
 func NewInventoryCollector(cfg config.Provider, repo waste.Repository, logger *slog.Logger) (*InventoryCollector, error) {
@@ -49,6 +51,8 @@ func NewInventoryCollector(cfg config.Provider, repo waste.Repository, logger *s
 		return nil, fmt.Errorf("create OCI network client: %w", err)
 	}
 	region, _ := provider.Region()
+	tenancyID, _ := provider.TenancyOCID()
+	tenancyID = strings.TrimSpace(tenancyID)
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -61,6 +65,7 @@ func NewInventoryCollector(cfg config.Provider, repo waste.Repository, logger *s
 		blockstorage: blockstorageClient,
 		network:      networkClient,
 		region:       region,
+		tenancyID:    tenancyID,
 	}, nil
 }
 
@@ -73,21 +78,22 @@ func (c *InventoryCollector) Sync(ctx context.Context) (waste.InventoryResult, e
 	if c.repo == nil {
 		return waste.InventoryResult{Provider: domain.ProviderOCI, Skipped: true, Message: "waste repository is not configured"}, nil
 	}
-	if c.cfg.Account == "" {
+	rootCompartmentID := c.rootCompartmentID()
+	if rootCompartmentID == "" {
 		return waste.InventoryResult{Provider: domain.ProviderOCI, Skipped: true, Message: "OCI tenancy/account OCID is not configured"}, nil
 	}
-	c.logger.Info("OCI waste inventory sync started", "provider", "oci")
+	c.logger.Info("OCI waste inventory sync started", "provider", "oci", "root_compartment_id", rootCompartmentID)
 	runID, err := c.repo.StartCloudInventoryRun(ctx, waste.InventoryRun{
 		Provider: domain.ProviderOCI,
 		Region:   c.region,
-		ScopeID:  c.cfg.Account,
+		ScopeID:  rootCompartmentID,
 		Status:   "running",
 		Metadata: map[string]any{"source": "oci_waste_inventory"},
 	})
 	if err != nil {
 		return waste.InventoryResult{Provider: domain.ProviderOCI}, err
 	}
-	scopes, err := c.compartments(ctx)
+	scopes, err := c.compartments(ctx, rootCompartmentID)
 	if err != nil {
 		_ = c.repo.CompleteCloudInventoryRun(ctx, runID, "failed", err.Error())
 		return waste.InventoryResult{Provider: domain.ProviderOCI}, err
@@ -178,12 +184,23 @@ type compartmentScope struct {
 	name string
 }
 
-func (c *InventoryCollector) compartments(ctx context.Context) ([]compartmentScope, error) {
-	scopes := []compartmentScope{{id: c.cfg.Account, name: "root"}}
+func (c *InventoryCollector) rootCompartmentID() string {
+	if strings.TrimSpace(c.tenancyID) != "" {
+		return strings.TrimSpace(c.tenancyID)
+	}
+	account := strings.TrimSpace(c.cfg.Account)
+	if strings.HasPrefix(account, "ocid1.tenancy.") {
+		return account
+	}
+	return ""
+}
+
+func (c *InventoryCollector) compartments(ctx context.Context, rootCompartmentID string) ([]compartmentScope, error) {
+	scopes := []compartmentScope{{id: rootCompartmentID, name: "root"}}
 	var page *string
 	for {
 		resp, err := c.identity.ListCompartments(ctx, identity.ListCompartmentsRequest{
-			CompartmentId:          common.String(c.cfg.Account),
+			CompartmentId:          common.String(rootCompartmentID),
 			CompartmentIdInSubtree: common.Bool(true),
 			AccessLevel:            identity.ListCompartmentsAccessLevelAccessible,
 			LifecycleState:         identity.CompartmentLifecycleStateActive,

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -12,6 +13,7 @@ import (
 	"github.com/crypticani/torvix/internal/config"
 	"github.com/crypticani/torvix/internal/core/alerting"
 	"github.com/crypticani/torvix/internal/core/analytics"
+	"github.com/crypticani/torvix/internal/core/collect"
 	"github.com/crypticani/torvix/internal/core/forecasting"
 	"github.com/crypticani/torvix/internal/core/reporting"
 	"github.com/crypticani/torvix/internal/domain"
@@ -87,10 +89,64 @@ func TestDeliverScheduledReportSendsOnlyRequestedPeriod(t *testing.T) {
 	}
 }
 
+func TestScheduledIngestionSendsCompletionAlertAndCatchesUpDueDailyReport(t *testing.T) {
+	loc := mustLocation(t, "Asia/Kolkata")
+	targetStart := time.Date(2026, 6, 1, 0, 0, 0, 0, loc).UTC()
+	repo := &scheduledReportRepo{aggregateByDay: map[time.Time][]domain.AggregatedCost{
+		targetStart: {{WindowStart: targetStart, WindowEnd: targetStart.AddDate(0, 0, 1), Provider: domain.ProviderOCI, Service: "Object Storage", TotalCost: 10}},
+	}}
+	reportingSvc := reporting.NewWithOptions(analytics.New(repo), forecasting.New(repo), reporting.Options{
+		Location:                 loc,
+		DailyReportTargetLagDays: 1,
+		RequireCompleteIngestion: true,
+	})
+	var posts atomic.Int32
+	alertingSvc := alerting.New(&http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		posts.Add(1)
+		return &http.Response{
+			StatusCode: http.StatusNoContent,
+			Status:     "204 No Content",
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+		}, nil
+	})}, []config.Webhook{{Name: "discord-finops", Type: "discord", URL: "https://example.test/webhook", Enabled: true}})
+	a := &App{
+		collector: fakeIngestionRunner{results: []collect.ProviderResult{{
+			Provider:              "oci",
+			FilesProcessed:        1,
+			RecordsParsed:         100,
+			RecordsWithinLookback: 100,
+			RecordsInserted:       100,
+			Duration:              time.Second,
+		}}},
+		reporting:       reportingSvc,
+		alerting:        alertingSvc,
+		reportingCfg:    config.Reporting{Timezone: "Asia/Kolkata", DailyReportCron: "0 14 * * *", WeeklyReportCron: "0 15 * * 1"},
+		logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		schedulerLogger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	now := time.Date(2026, 6, 2, 16, 0, 0, 0, loc)
+	a.runScheduledIngestion(context.Background(), func() time.Time { return now })
+
+	if posts.Load() != 2 {
+		t.Fatalf("expected scheduled ingestion alert and due daily report delivery, got %d webhook posts", posts.Load())
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
+}
+
+type fakeIngestionRunner struct {
+	results []collect.ProviderResult
+	err     error
+}
+
+func (r fakeIngestionRunner) Run(context.Context, time.Time) ([]collect.ProviderResult, error) {
+	return r.results, r.err
 }
 
 type scheduledReportRepo struct {
