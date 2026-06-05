@@ -5,7 +5,7 @@ Torvix has two Compose entry points:
 - `docker-compose.dev.yml`: full laptop/dev stack with Torvix, TimescaleDB, Prometheus, and Grafana.
 - `docker-compose.prod.yml`: Torvix application only. Use this when production already has PostgreSQL/TimescaleDB, Prometheus, and Grafana.
 
-Do not put real OCI credentials, database passwords, alert webhooks, or SMTP passwords in tracked files. Use local ignored config files under `configs/`.
+Do not put real AWS or OCI credentials, database passwords, alert webhooks, or SMTP passwords in tracked files. Use local ignored config files under `configs/`.
 
 ## Development Setup
 
@@ -105,7 +105,7 @@ Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are 
      dsn: "postgres://torvix:replace_with_password@host.docker.internal:5432/torvix?sslmode=disable"
    ```
 
-3. Set production provider credentials in `configs/config.prod.yaml` and/or `.env`. OCI uses `providers.oci`; AWS uses `providers.aws` plus the AWS SDK credential environment. The production Compose file loads `.env` into the Torvix container with `env_file`; if `.env` is absent, only YAML/default values are used.
+3. Set production provider credentials in `configs/config.prod.yaml` and/or `.env`. AWS uses `providers.aws` plus the AWS SDK credential environment; OCI uses `providers.oci`. The production Compose file loads `.env` into the Torvix container with `env_file`; if `.env` is absent, only YAML/default values are used.
 
 4. Configure any alerting targets under `reporting.webhooks`.
    The production example includes disabled placeholders for Slack, Microsoft Teams, Telegram, Discord, and SMTP email. Keep only the targets you use, replace placeholder secrets, set the correct `currency`, and set `enabled: true`.
@@ -415,8 +415,8 @@ These metrics only use a low-cardinality `window` label. Do not add service, acc
 
 Torvix ships Grafana dashboard JSON files for provider cost views and waste findings:
 
-- `dashboards/torvix-oci-finops-dashboard.json`
 - `dashboards/torvix-aws-finops-dashboard.json`
+- `dashboards/torvix-oci-finops-dashboard.json`
 - `dashboards/torvix-waste-dashboard.json`
 
 The files can be pasted directly into a separate production Grafana import flow after the required datasources are configured. Local development and production both use these same dashboard JSON files. The local PostgreSQL datasource is provisioned only for direct developer inspection.
@@ -427,6 +427,18 @@ The dashboards expect these Grafana datasource UIDs:
 
 - `Prometheus`: your production Prometheus datasource.
 - `TorvixAPI`: an Infinity datasource that points at the Torvix API.
+
+The AWS dashboard production API endpoints are:
+
+```text
+GET /api/v1/dashboard/overview?provider=aws
+GET /api/v1/dashboard/cost-timeseries?provider=aws
+GET /api/v1/dashboard/cost-by-region?provider=aws
+GET /api/v1/dashboard/cost-by-scope?provider=aws
+GET /api/v1/dashboard/cost-by-service?provider=aws
+GET /api/v1/dashboard/drilldown?provider=aws
+GET /api/v1/dashboard/anomalies?provider=aws
+```
 
 The OCI dashboard production API endpoints are:
 
@@ -444,18 +456,6 @@ GET /api/v1/dashboard/anomalies?provider=oci
 GET /api/v1/dashboard/ingestion-status
 ```
 
-The AWS dashboard production API endpoints are:
-
-```text
-GET /api/v1/dashboard/overview?provider=aws
-GET /api/v1/dashboard/cost-timeseries?provider=aws
-GET /api/v1/dashboard/cost-by-region?provider=aws
-GET /api/v1/dashboard/cost-by-scope?provider=aws
-GET /api/v1/dashboard/cost-by-service?provider=aws
-GET /api/v1/dashboard/drilldown?provider=aws
-GET /api/v1/dashboard/anomalies?provider=aws
-```
-
 The waste dashboard production API endpoints are:
 
 ```text
@@ -464,7 +464,7 @@ GET /api/v1/waste/findings
 GET /api/v1/waste/rules
 ```
 
-The range endpoints accept `from=YYYY-MM-DD` or RFC3339 timestamps and `to=YYYY-MM-DD` or RFC3339 timestamps. Cost time series accepts `window=daily|weekly|monthly`. Service, region, scope, and compartment breakdowns accept `limit=15`. The OCI dashboard uses Region -> Compartment -> Service drill-down variables. The AWS dashboard uses Region -> Account/Scope -> Service drill-down variables. `All` means the matching filter is not applied. `Top OCI Cost Drivers` returns Region, Compartment, Service, Total Cost, and percent of the filtered total. Anomalies accepts `severity=low|medium|high`. The waste dashboard shows provider-selectable open findings, estimated monthly waste, top findings, and rule metadata.
+The range endpoints accept `from=YYYY-MM-DD` or RFC3339 timestamps and `to=YYYY-MM-DD` or RFC3339 timestamps. Cost time series accepts `window=daily|weekly|monthly`. Service, region, scope, and compartment breakdowns accept `limit=15`. The AWS dashboard uses Region -> Account/Scope -> Service drill-down variables. The OCI dashboard uses Region -> Compartment -> Service drill-down variables. `All` means the matching filter is not applied. `Top OCI Cost Drivers` returns Region, Compartment, Service, Total Cost, and percent of the filtered total. Anomalies accepts `severity=low|medium|high`. The waste dashboard shows provider-selectable open findings, estimated monthly waste, top findings, and rule metadata.
 
 Dashboard APIs read precomputed tables and return metadata with `retention_days`, `source: "precomputed"`, and an empty `data` array plus a clear message when the requested range is outside the retained 90-day window.
 

@@ -4,7 +4,7 @@
 
 `cmd/torvix` contains the application entrypoint. `internal/app` wires configuration, migrations, lifecycle policies, collectors, services, HTTP routes, and scheduler startup. Core behavior lives under `internal/core` for collection, normalization, analytics, forecasting, reporting, and alerting. Shared models, config, and logging live in `internal/domain`, `internal/config`, and `internal/logging`.
 
-Infrastructure code belongs in `internal/adapters`: PostgreSQL/TimescaleDB persistence in `internal/adapters/postgres`, Prometheus metrics in `internal/adapters/prometheus`, and cloud collectors in `internal/adapters/providers`. HTTP handlers and API response contracts are in `internal/ports/http`; provider/storage interfaces live under `internal/ports`. SQL migrations are in `migrations`. Runtime assets are in `configs`, `deploy`, `docker`, and `dashboards`, including OCI, AWS, and waste Grafana dashboard JSON files. Generated API docs live in `docs`. Cross-package tests live in `tests/unit`, with focused package tests beside the code they cover.
+Infrastructure code belongs in `internal/adapters`: PostgreSQL/TimescaleDB persistence in `internal/adapters/postgres`, Prometheus metrics in `internal/adapters/prometheus`, and cloud collectors in `internal/adapters/providers`. HTTP handlers and API response contracts are in `internal/ports/http`; provider/storage interfaces live under `internal/ports`. SQL migrations are in `migrations`. Runtime assets are in `configs`, `deploy`, `docker`, and `dashboards`, including AWS, OCI, and waste Grafana dashboard JSON files. Generated API docs live in `docs`. Cross-package tests live in `tests/unit`, with focused package tests beside the code they cover.
 
 ## Current Architecture Rules
 
@@ -12,7 +12,7 @@ Torvix permanently uses PostgreSQL with the TimescaleDB extension. Do not add Cl
 
 The project is operational FinOps tooling, not archival billing warehousing. Keep `ingestion.retention_days` at 90 days by default and `compression_after_days` at 7 days unless a task explicitly changes the lifecycle. Raw `cost_records`, dashboard summaries, anomalies, and forecasts should stay aligned to that operational horizon.
 
-OCI is a first-class provider. The current runtime only wires collectors for enabled providers; if only OCI is enabled, AWS, Azure, and GCP collectors must not run. Keep provider-specific parsing, mapping, and Object Storage behavior in `internal/adapters/providers/oci`, behind the provider interfaces in `internal/ports/providers`.
+AWS and OCI are first-class providers. In general user-facing docs, list providers by common usage and adoption, with AWS before OCI unless the page or section is explicitly provider-specific. The current runtime only wires collectors for enabled providers; if only AWS is enabled, OCI, Azure, and GCP collectors must not run, and if only OCI is enabled, AWS, Azure, and GCP collectors must not run. Keep provider-specific parsing, mapping, and object storage behavior in the matching package under `internal/adapters/providers`, behind the provider interfaces in `internal/ports/providers`.
 
 Dashboard cost panels must read Torvix HTTP APIs backed by precomputed PostgreSQL/TimescaleDB summary tables. Production Grafana must not query PostgreSQL directly. Keep Prometheus focused on operational metrics; do not push high-cardinality billing dimensions into Prometheus labels.
 
@@ -57,6 +57,8 @@ Use structured logging through `log/slog`, especially around bootstrap migration
 
 Provider results should keep the explicit counters used by docs and dashboards: `files_processed`, `files_skipped`, `skipped_old_files`, `records_parsed`, `records_within_lookback`, `records_skipped_old`, `records_inserted`, and `duration_seconds`. Completion notifications should go through alerting targets when configured.
 
+AWS ingestion must default to CUR/S3 or Data Export files, use SDK credential resolution, preserve source object metadata, and keep deterministic source hashes as the idempotency boundary for CUR rows.
+
 OCI ingestion must use official OCI SDK config-file auth, list and stream Object Storage cost reports, tolerate CSV header drift, handle gzip, preserve source object metadata, and use `processed_report_files` as the idempotency boundary. Store batch data and processed-file markers transactionally when possible. Record-level lookback filtering is the correctness boundary; do not rely on object timestamps or retention cleanup to hide old rows.
 
 ## Dashboard And API Guidelines
@@ -65,18 +67,18 @@ Dashboard APIs under `/api/v1/dashboard/*` should serve precomputed tables such 
 
 Provider-scoped dashboard endpoints are part of the public contract, especially:
 
-- `/api/v1/dashboard/overview?provider=oci|aws`
-- `/api/v1/dashboard/cost-timeseries?window=daily|weekly|monthly&provider=oci|aws`
-- `/api/v1/dashboard/cost-by-category?provider=oci|aws`
-- `/api/v1/dashboard/cost-by-service?provider=oci|aws`
-- `/api/v1/dashboard/cost-by-provider?provider=oci|aws`
+- `/api/v1/dashboard/overview?provider=aws|oci`
+- `/api/v1/dashboard/cost-timeseries?window=daily|weekly|monthly&provider=aws|oci`
+- `/api/v1/dashboard/cost-by-category?provider=aws|oci`
+- `/api/v1/dashboard/cost-by-service?provider=aws|oci`
+- `/api/v1/dashboard/cost-by-provider?provider=aws|oci`
 - `/api/v1/dashboard/cost-by-compartment?provider=oci`
-- `/api/v1/dashboard/cost-by-scope?provider=oci|aws`
-- `/api/v1/dashboard/cost-by-region?provider=oci|aws`
-- `/api/v1/dashboard/drilldown?provider=oci|aws`
+- `/api/v1/dashboard/cost-by-scope?provider=aws|oci`
+- `/api/v1/dashboard/cost-by-region?provider=aws|oci`
+- `/api/v1/dashboard/drilldown?provider=aws|oci`
 - `/api/v1/dashboard/cost-increases?provider=oci`
-- `/api/v1/dashboard/anomalies?provider=oci|aws`
-- `/api/v1/dashboard/filter-options?dimension=region|compartment|scope|service&provider=oci|aws`
+- `/api/v1/dashboard/anomalies?provider=aws|oci`
+- `/api/v1/dashboard/filter-options?dimension=region|compartment|scope|service&provider=aws|oci`
 - `/api/v1/dashboard/ingestion-status`
 
 Waste APIs are also part of the public dashboard/API contract:
@@ -103,6 +105,6 @@ Use concise imperative commit messages, for example `fix dashboard date range ma
 
 ## Security & Configuration Tips
 
-Do not commit real cloud credentials, database passwords, webhook URLs, SMTP credentials, billing exports, or OCI config files. Start from `configs/config.example.yaml` or `configs/config.prod.example.yaml` and keep real environment files ignored.
+Do not commit real cloud credentials, including AWS keys or OCI config files, database passwords, webhook URLs, SMTP credentials, or billing exports. Start from `configs/config.example.yaml` or `configs/config.prod.example.yaml` and keep real environment files ignored.
 
 Treat cloud collectors and billing exports as external-input boundaries: validate file formats, sanitize parsed fields, tolerate schema drift, and preserve bucket, object name, ETag, and provider metadata for traceability. In production, keep PostgreSQL private to Torvix and database administration paths; Grafana should access cost data only through Torvix API endpoints and Prometheus.
