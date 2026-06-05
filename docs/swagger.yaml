@@ -99,14 +99,10 @@ definitions:
   github_com_crypticani_torvix_internal_domain.Provider:
     enum:
     - aws
-    - azure
-    - gcp
     - oci
     type: string
     x-enum-varnames:
     - ProviderAWS
-    - ProviderAzure
-    - ProviderGCP
     - ProviderOCI
   github_com_crypticani_torvix_internal_domain.Report:
     properties:
