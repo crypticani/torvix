@@ -49,7 +49,7 @@ env GOCACHE=/tmp/torvix-go-build GOMODCACHE=/tmp/torvix-go-mod go test ./...
 
 Use standard Go formatting and keep code `gofmt` clean. Prefer small packages with explicit responsibilities and constructor-style `New(...)` functions. Exported identifiers use `CamelCase`; unexported helpers use `camelCase`. Keep interfaces in `internal/ports` and concrete implementations in `internal/adapters`.
 
-Use structured logging through `log/slog`, especially around bootstrap migrations, provider discovery, download, parsing, normalization, insertion, dashboard refresh, retention, and query execution boundaries. At `info` level, long-running migrations should show progress instead of going silent until errors. Keep YAML keys `snake_case`, and preserve environment override behavior for `TORVIX_HTTP_ADDRESS`, `TORVIX_HTTP_PORT`, and `TORVIX_GRAFANA_API_BEARER_TOKEN`.
+Use structured logging through `log/slog`, especially around bootstrap migrations, provider discovery, download, parsing, normalization, insertion, dashboard refresh, retention, and query execution boundaries. At `info` level, long-running migrations should show progress instead of going silent until errors. Keep YAML keys `snake_case`, and preserve environment override behavior for `TORVIX_HTTP_ADDRESS`, `TORVIX_HTTP_PORT`, and `TORVIX_API_BEARER_TOKEN`.
 
 ## Ingestion Contract
 

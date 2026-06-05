@@ -50,9 +50,9 @@ type grafanaSummaryStat struct {
 	GeneratedAt   time.Time `json:"generated_at"`
 }
 
-func (h *Handler) withGrafanaAuth(next http.HandlerFunc) http.HandlerFunc {
+func (h *Handler) withAPIGetAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !h.authorizeGrafanaAPI(w, r) {
+		if !h.authorizeAPI(w, r) {
 			return
 		}
 		if r.Method != http.MethodGet {
@@ -63,34 +63,34 @@ func (h *Handler) withGrafanaAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func (h *Handler) withGrafanaAPIAuth(next http.HandlerFunc) http.HandlerFunc {
+func (h *Handler) withAPIAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !h.authorizeGrafanaAPI(w, r) {
+		if !h.authorizeAPI(w, r) {
 			return
 		}
 		next(w, r)
 	}
 }
 
-func (h *Handler) withGrafanaAPIAuthHandler(next http.Handler) http.Handler {
+func (h *Handler) withAPIAuthHandler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !h.authorizeGrafanaAPI(w, r) {
+		if !h.authorizeAPI(w, r) {
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-func (h *Handler) authorizeGrafanaAPI(w http.ResponseWriter, r *http.Request) bool {
+func (h *Handler) authorizeAPI(w http.ResponseWriter, r *http.Request) bool {
 	if !h.grafana.authEnabled {
 		return true
 	}
 	if h.grafana.authToken == "" {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "grafana api auth is enabled but no bearer token is configured"})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "api auth is enabled but no bearer token is configured"})
 		return false
 	}
 	if bearerToken(r.Header.Get("Authorization")) != h.grafana.authToken {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "grafana api authorization failed"})
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "api authorization failed"})
 		return false
 	}
 	return true

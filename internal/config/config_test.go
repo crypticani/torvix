@@ -78,6 +78,30 @@ func TestLoadHTTPAddressEnvOverride(t *testing.T) {
 	}
 }
 
+func TestAPIAuthConfigUsesNeutralName(t *testing.T) {
+	cfg := loadTestConfig(t, "api:\n  auth:\n    enabled: true\n    bearer_token: api-secret\n")
+
+	if !cfg.API.Auth.Enabled {
+		t.Fatal("expected api auth enabled")
+	}
+	if cfg.API.Auth.BearerToken != "api-secret" {
+		t.Fatalf("expected api bearer token, got %q", cfg.API.Auth.BearerToken)
+	}
+}
+
+func TestAPIAuthEnvOverridePrefersNeutralName(t *testing.T) {
+	t.Setenv(EnvAPIBearerToken, "api-secret")
+
+	cfg := loadTestConfig(t, "{}\n")
+
+	if !cfg.API.Auth.Enabled {
+		t.Fatal("expected api auth enabled")
+	}
+	if cfg.API.Auth.BearerToken != "api-secret" {
+		t.Fatalf("expected %s override, got %q", EnvAPIBearerToken, cfg.API.Auth.BearerToken)
+	}
+}
+
 func TestIngestionDefaultsUseNinetyDayOperationalHorizon(t *testing.T) {
 	cfg := loadTestConfig(t, "log_level: debug\n")
 

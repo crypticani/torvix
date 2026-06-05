@@ -40,13 +40,13 @@ type Handler struct {
 }
 
 type HandlerOptions struct {
-	LookbackDays       int
-	RetentionDays      int
-	GrafanaAuthEnabled bool
-	GrafanaAuthToken   string
-	GrafanaMetrics     GrafanaMetricsRecorder
-	Logger             *slog.Logger
-	Waste              waste.Detector
+	LookbackDays   int
+	RetentionDays  int
+	APIAuthEnabled bool
+	APIAuthToken   string
+	GrafanaMetrics GrafanaMetricsRecorder
+	Logger         *slog.Logger
+	Waste          waste.Detector
 }
 
 type GrafanaMetricsRecorder interface {
@@ -94,8 +94,8 @@ func NewWithOptions(collector *collect.Service, analytics *analytics.Service, fo
 		ingestions:    newIngestionJobStore(),
 		logger:        logger,
 		grafana: grafanaOptions{
-			authEnabled: opts.GrafanaAuthEnabled,
-			authToken:   strings.TrimSpace(opts.GrafanaAuthToken),
+			authEnabled: opts.APIAuthEnabled,
+			authToken:   strings.TrimSpace(opts.APIAuthToken),
 			metrics:     opts.GrafanaMetrics,
 		},
 	}
@@ -105,40 +105,40 @@ func NewWithOptions(collector *collect.Service, analytics *analytics.Service, fo
 
 func (h *Handler) routes() {
 	h.mux.HandleFunc("/healthz", h.health)
-	h.mux.HandleFunc("/api/v1/ingest", h.withGrafanaAPIAuth(h.ingest))
-	h.mux.HandleFunc("/api/v1/ingest/status/", h.withGrafanaAPIAuth(h.ingestStatus))
-	h.mux.HandleFunc("/api/v1/analytics/summary", h.withGrafanaAPIAuth(h.summary))
-	h.mux.HandleFunc("/api/v1/analytics/variance", h.withGrafanaAPIAuth(h.variance))
-	h.mux.HandleFunc("/api/v1/analytics/anomalies", h.withGrafanaAPIAuth(h.anomalies))
-	h.mux.HandleFunc("/api/v1/analytics/forecast", h.withGrafanaAPIAuth(h.forecast))
-	h.mux.HandleFunc("/api/v1/dashboard/overview", h.withGrafanaAuth(h.dashboardOverview))
-	h.mux.HandleFunc("/api/v1/dashboard/cost-timeseries", h.withGrafanaAuth(h.dashboardCostTimeseries))
-	h.mux.HandleFunc("/api/v1/dashboard/cost-by-category", h.withGrafanaAuth(h.dashboardCostByCategory))
-	h.mux.HandleFunc("/api/v1/dashboard/cost-by-service", h.withGrafanaAuth(h.dashboardCostByService))
-	h.mux.HandleFunc("/api/v1/dashboard/cost-by-provider", h.withGrafanaAuth(h.dashboardCostByProvider))
-	h.mux.HandleFunc("/api/v1/dashboard/cost-by-compartment", h.withGrafanaAuth(h.dashboardCostByCompartment))
-	h.mux.HandleFunc("/api/v1/dashboard/cost-by-scope", h.withGrafanaAuth(h.dashboardCostByScope))
-	h.mux.HandleFunc("/api/v1/dashboard/cost-by-region", h.withGrafanaAuth(h.dashboardCostByRegion))
-	h.mux.HandleFunc("/api/v1/dashboard/drilldown", h.withGrafanaAuth(h.dashboardDrilldown))
-	h.mux.HandleFunc("/api/v1/dashboard/filter-options", h.withGrafanaAuth(h.dashboardFilterOptions))
-	h.mux.HandleFunc("/api/v1/dashboard/oci-cost-summary", h.withGrafanaAuth(h.dashboardOCICostSummary))
-	h.mux.HandleFunc("/api/v1/dashboard/oci-cost-drivers", h.withGrafanaAuth(h.dashboardOCICostDrivers))
-	h.mux.HandleFunc("/api/v1/dashboard/cost-increases", h.withGrafanaAuth(h.dashboardCostIncreases))
-	h.mux.HandleFunc("/api/v1/dashboard/cost-decreases", h.withGrafanaAuth(h.dashboardCostDecreases))
-	h.mux.HandleFunc("/api/v1/dashboard/anomalies", h.withGrafanaAuth(h.dashboardAnomalies))
-	h.mux.HandleFunc("/api/v1/dashboard/ingestion-status", h.withGrafanaAuth(h.dashboardIngestionStatus))
-	h.mux.HandleFunc("/api/v1/waste/summary", h.withGrafanaAPIAuth(h.wasteSummary))
-	h.mux.HandleFunc("/api/v1/waste/findings", h.withGrafanaAPIAuth(h.wasteFindings))
-	h.mux.HandleFunc("/api/v1/waste/findings/", h.withGrafanaAPIAuth(h.wasteFindingByID))
-	h.mux.HandleFunc("/api/v1/waste/rules", h.withGrafanaAPIAuth(h.wasteRules))
-	h.mux.HandleFunc("/api/v1/grafana/timeseries/cost", h.withGrafanaAuth(h.grafanaCostTimeseries))
-	h.mux.HandleFunc("/api/v1/grafana/table/top-services", h.withGrafanaAuth(h.grafanaTopServices))
-	h.mux.HandleFunc("/api/v1/grafana/table/anomalies", h.withGrafanaAuth(h.grafanaAnomalies))
-	h.mux.HandleFunc("/api/v1/grafana/stat/summary", h.withGrafanaAuth(h.grafanaSummary))
-	h.mux.HandleFunc("/api/v1/reports/daily", h.withGrafanaAPIAuth(h.dailyReport))
-	h.mux.HandleFunc("/api/v1/reports/weekly", h.withGrafanaAPIAuth(h.weeklyReport))
-	h.mux.HandleFunc("/api/v1/reports/monthly", h.withGrafanaAPIAuth(h.monthlyReport))
-	h.mux.Handle("/metrics", h.withGrafanaAPIAuthHandler(h.metrics))
+	h.mux.HandleFunc("/api/v1/ingest", h.withAPIAuth(h.ingest))
+	h.mux.HandleFunc("/api/v1/ingest/status/", h.withAPIAuth(h.ingestStatus))
+	h.mux.HandleFunc("/api/v1/analytics/summary", h.withAPIAuth(h.summary))
+	h.mux.HandleFunc("/api/v1/analytics/variance", h.withAPIAuth(h.variance))
+	h.mux.HandleFunc("/api/v1/analytics/anomalies", h.withAPIAuth(h.anomalies))
+	h.mux.HandleFunc("/api/v1/analytics/forecast", h.withAPIAuth(h.forecast))
+	h.mux.HandleFunc("/api/v1/dashboard/overview", h.withAPIGetAuth(h.dashboardOverview))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-timeseries", h.withAPIGetAuth(h.dashboardCostTimeseries))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-by-category", h.withAPIGetAuth(h.dashboardCostByCategory))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-by-service", h.withAPIGetAuth(h.dashboardCostByService))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-by-provider", h.withAPIGetAuth(h.dashboardCostByProvider))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-by-compartment", h.withAPIGetAuth(h.dashboardCostByCompartment))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-by-scope", h.withAPIGetAuth(h.dashboardCostByScope))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-by-region", h.withAPIGetAuth(h.dashboardCostByRegion))
+	h.mux.HandleFunc("/api/v1/dashboard/drilldown", h.withAPIGetAuth(h.dashboardDrilldown))
+	h.mux.HandleFunc("/api/v1/dashboard/filter-options", h.withAPIGetAuth(h.dashboardFilterOptions))
+	h.mux.HandleFunc("/api/v1/dashboard/oci-cost-summary", h.withAPIGetAuth(h.dashboardOCICostSummary))
+	h.mux.HandleFunc("/api/v1/dashboard/oci-cost-drivers", h.withAPIGetAuth(h.dashboardOCICostDrivers))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-increases", h.withAPIGetAuth(h.dashboardCostIncreases))
+	h.mux.HandleFunc("/api/v1/dashboard/cost-decreases", h.withAPIGetAuth(h.dashboardCostDecreases))
+	h.mux.HandleFunc("/api/v1/dashboard/anomalies", h.withAPIGetAuth(h.dashboardAnomalies))
+	h.mux.HandleFunc("/api/v1/dashboard/ingestion-status", h.withAPIGetAuth(h.dashboardIngestionStatus))
+	h.mux.HandleFunc("/api/v1/waste/summary", h.withAPIAuth(h.wasteSummary))
+	h.mux.HandleFunc("/api/v1/waste/findings", h.withAPIAuth(h.wasteFindings))
+	h.mux.HandleFunc("/api/v1/waste/findings/", h.withAPIAuth(h.wasteFindingByID))
+	h.mux.HandleFunc("/api/v1/waste/rules", h.withAPIAuth(h.wasteRules))
+	h.mux.HandleFunc("/api/v1/grafana/timeseries/cost", h.withAPIGetAuth(h.grafanaCostTimeseries))
+	h.mux.HandleFunc("/api/v1/grafana/table/top-services", h.withAPIGetAuth(h.grafanaTopServices))
+	h.mux.HandleFunc("/api/v1/grafana/table/anomalies", h.withAPIGetAuth(h.grafanaAnomalies))
+	h.mux.HandleFunc("/api/v1/grafana/stat/summary", h.withAPIGetAuth(h.grafanaSummary))
+	h.mux.HandleFunc("/api/v1/reports/daily", h.withAPIAuth(h.dailyReport))
+	h.mux.HandleFunc("/api/v1/reports/weekly", h.withAPIAuth(h.weeklyReport))
+	h.mux.HandleFunc("/api/v1/reports/monthly", h.withAPIAuth(h.monthlyReport))
+	h.mux.Handle("/metrics", h.withAPIAuthHandler(h.metrics))
 	h.mux.Handle("/swagger/", httpSwagger.WrapHandler)
 }
 

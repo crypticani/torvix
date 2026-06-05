@@ -489,10 +489,10 @@ Create an Infinity datasource with:
 - URL: your Torvix API base URL, for example `https://torvix.example.internal`
 - Access: `Server` or `Proxy`
 
-If Torvix dashboard API auth is enabled, configure the Infinity datasource to send:
+If Torvix API auth is enabled, configure the Infinity datasource to send:
 
 ```text
-Authorization: Bearer <torvix_grafana_api_bearer_token>
+Authorization: Bearer <torvix_api_bearer_token>
 ```
 
 The bundled dashboard variables use Infinity backend JSON queries. If the datasource UID is not exactly `TorvixAPI`, map it during import or edit the JSON before import.
@@ -547,7 +547,7 @@ datasources:
       auth_method: "bearerToken"
       httpHeaderName1: "Authorization"
     secureJsonData:
-      httpHeaderValue1: "Bearer replace_with_torvix_grafana_token"
+      httpHeaderValue1: "Bearer replace_with_torvix_api_token"
 ```
 
 Restart or reload Grafana provisioning after copying the files.
@@ -555,13 +555,13 @@ Restart or reload Grafana provisioning after copying the files.
 Enable the Torvix API auth placeholder in production config:
 
 ```yaml
-grafana:
-  api_auth:
+api:
+  auth:
     enabled: true
     bearer_token: "replace_with_long_random_token"
 ```
 
-The same value can be supplied with `TORVIX_GRAFANA_API_BEARER_TOKEN`. When auth is enabled, every Torvix endpoint except `/healthz` and `/swagger/*` requires `Authorization: Bearer <token>`. Configure production Grafana's Infinity datasource to send this header for dashboard and waste API calls.
+The same value can be supplied with `TORVIX_API_BEARER_TOKEN`. When auth is enabled, every Torvix endpoint except `/healthz` and `/swagger/*` requires `Authorization: Bearer <token>`. Configure production Grafana's Infinity datasource, Superset, or custom clients to send this header.
 
 ## Verify Dashboard Data After Ingestion
 

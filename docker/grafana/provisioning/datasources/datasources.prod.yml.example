@@ -19,4 +19,4 @@ datasources:
       auth_method: "bearerToken"
       httpHeaderName1: "Authorization"
     secureJsonData:
-      httpHeaderValue1: "Bearer replace_with_torvix_grafana_token"
+      httpHeaderValue1: "Bearer replace_with_torvix_api_token"

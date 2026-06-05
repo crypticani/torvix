@@ -130,7 +130,7 @@ metrics:
   namespace: torvix
   cost_stats_enabled: false
 
-grafana:
-  api_auth:
+api:
+  auth:
     enabled: false
     bearer_token: ""

@@ -10,8 +10,8 @@ import (
 
 func TestAPIEndpointsRequireBearerWhenConfigured(t *testing.T) {
 	handler := NewWithOptions(nil, nil, nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{
-		GrafanaAuthEnabled: true,
-		GrafanaAuthToken:   "secret",
+		APIAuthEnabled: true,
+		APIAuthToken:   "secret",
 	})
 
 	for _, tc := range []struct {
@@ -45,8 +45,8 @@ func TestAPIEndpointsRequireBearerWhenConfigured(t *testing.T) {
 
 func TestHealthAndSwaggerRemainPublicWhenBearerConfigured(t *testing.T) {
 	handler := NewWithOptions(nil, nil, nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{
-		GrafanaAuthEnabled: true,
-		GrafanaAuthToken:   "secret",
+		APIAuthEnabled: true,
+		APIAuthToken:   "secret",
 	})
 
 	for _, path := range []string{"/healthz", "/swagger/"} {
@@ -65,8 +65,8 @@ func TestHealthAndSwaggerRemainPublicWhenBearerConfigured(t *testing.T) {
 
 func TestBearerAllowsProtectedEndpointWhenConfigured(t *testing.T) {
 	handler := NewWithOptions(nil, nil, nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{
-		GrafanaAuthEnabled: true,
-		GrafanaAuthToken:   "secret",
+		APIAuthEnabled: true,
+		APIAuthToken:   "secret",
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)

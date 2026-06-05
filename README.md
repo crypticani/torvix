@@ -361,7 +361,7 @@ This is intentionally debuggable operational statistics, not predictive ML. Tune
 - `GET /api/v1/reports/monthly?from=YYYY-MM-DD&to=YYYY-MM-DD`
 - `GET /metrics`
 
-When `grafana.api_auth.enabled` is true, every endpoint above except `/healthz` and `/swagger/*` requires `Authorization: Bearer <token>`. Use the same token in the Grafana Infinity datasource.
+When `api.auth.enabled` is true, every endpoint above except `/healthz` and `/swagger/*` requires `Authorization: Bearer <token>`. Use the same token in Grafana Infinity, Superset, or any custom client.
 
 The bundled OCI Grafana dashboard drills into cost in this order: Region -> Compartment -> Service. The Region, Compartment, and Service variables support `All`; when a variable is `All`, the matching API filter is not applied. The dashboard uses the selected Grafana time range and shows aggregate/top values until a Region, Compartment, or Service filter is selected. `Top OCI Cost Drivers` returns Region, Compartment, Service, Total Cost, and percent of the filtered total.
 

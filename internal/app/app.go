@@ -154,13 +154,13 @@ func NewWithLoggers(cfg config.Config, loggers logging.Loggers) (*App, error) {
 		ExclusionTagKeys:       cfg.Waste.ExclusionTagKeys,
 	}, repo, wasteProviders, loggers.Waste)
 	handler := httpapi.NewWithOptions(collectorSvc, analyticsSvc, forecastingSvc, reportingSvc, alertingSvc, reg, httpapi.HandlerOptions{
-		LookbackDays:       cfg.Ingestion.LookbackDays,
-		RetentionDays:      cfg.Ingestion.RetentionDays,
-		GrafanaAuthEnabled: cfg.Grafana.APIAuth.Enabled,
-		GrafanaAuthToken:   cfg.Grafana.APIAuth.BearerToken,
-		GrafanaMetrics:     metrics,
-		Logger:             loggers.HTTP,
-		Waste:              wasteSvc,
+		LookbackDays:   cfg.Ingestion.LookbackDays,
+		RetentionDays:  cfg.Ingestion.RetentionDays,
+		APIAuthEnabled: cfg.API.Auth.Enabled,
+		APIAuthToken:   cfg.API.Auth.BearerToken,
+		GrafanaMetrics: metrics,
+		Logger:         loggers.HTTP,
+		Waste:          wasteSvc,
 	})
 
 	schedulerCtx, cancelScheduler := context.WithCancel(context.Background())
