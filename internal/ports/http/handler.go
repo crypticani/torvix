@@ -168,6 +168,7 @@ func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
 //	@Success		202	{object}	IngestAcceptedResponse	"Ingestion queued for background processing"
 //	@Failure		405	{string}	string			"Method not allowed"
 //	@Failure		503	{object}	ErrorResponse	"Ingestion service unavailable"
+//	@Security		BearerAuth
 //	@Router			/api/v1/ingest [post]
 func (h *Handler) ingest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -216,6 +217,7 @@ func (h *Handler) ingest(w http.ResponseWriter, r *http.Request) {
 //	@Param			job_id	path		string	true	"Ingestion job ID"
 //	@Success		200		{object}	IngestionJobResponse	"Ingestion job status"
 //	@Failure		404		{object}	ErrorResponse			"Ingestion job not found"
+//	@Security		BearerAuth
 //	@Router			/api/v1/ingest/status/{job_id} [get]
 func (h *Handler) ingestStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -353,6 +355,7 @@ func titleForNotification(status string) string {
 //	@Param			window	query		string	false	"Aggregation window: daily, weekly, or monthly."		Enums(daily, weekly, monthly)	default(daily)
 //	@Success		200		{array}		domain.AggregatedCost	"Cost aggregation results"
 //	@Failure		500		{object}	ErrorResponse			"Aggregation failed"
+//	@Security		BearerAuth
 //	@Router			/api/v1/analytics/summary [get]
 func (h *Handler) summary(w http.ResponseWriter, r *http.Request) {
 	from, to := h.parseRange(r)
@@ -379,6 +382,7 @@ func (h *Handler) summary(w http.ResponseWriter, r *http.Request) {
 //	@Success		200		{array}		domain.CostVariance	"Cost variance results"
 //	@Failure		400		{object}	ErrorResponse			"Invalid period"
 //	@Failure		500		{object}	ErrorResponse			"Comparison failed"
+//	@Security		BearerAuth
 //	@Router			/api/v1/analytics/variance [get]
 func (h *Handler) variance(w http.ResponseWriter, r *http.Request) {
 	period := r.URL.Query().Get("period")
@@ -418,6 +422,7 @@ func (h *Handler) variance(w http.ResponseWriter, r *http.Request) {
 //	@Param			to		query		string	false	"End date (YYYY-MM-DD). Defaults to today."			example(2025-01-31)
 //	@Success		200		{array}		domain.Anomaly	"Detected anomalies"
 //	@Failure		500		{object}	ErrorResponse	"Detection failed"
+//	@Security		BearerAuth
 //	@Router			/api/v1/analytics/anomalies [get]
 func (h *Handler) anomalies(w http.ResponseWriter, r *http.Request) {
 	from, to := h.parseRange(r)
@@ -439,6 +444,7 @@ func (h *Handler) anomalies(w http.ResponseWriter, r *http.Request) {
 //	@Param			to		query		string	false	"End date (YYYY-MM-DD). Defaults to today."			example(2025-01-31)
 //	@Success		200		{array}		domain.ForecastPoint	"Forecast data points"
 //	@Failure		500		{object}	ErrorResponse			"Forecast generation failed"
+//	@Security		BearerAuth
 //	@Router			/api/v1/analytics/forecast [get]
 func (h *Handler) forecast(w http.ResponseWriter, r *http.Request) {
 	from, to := h.parseRange(r)
@@ -463,6 +469,7 @@ func (h *Handler) forecast(w http.ResponseWriter, r *http.Request) {
 //	@Success		200		{object}	domain.Report	"Daily report"
 //	@Failure		500		{object}	ErrorResponse	"Report generation failed"
 //	@Failure		502		{object}	ErrorResponse	"Webhook delivery failed"
+//	@Security		BearerAuth
 //	@Router			/api/v1/reports/daily [get]
 func (h *Handler) dailyReport(w http.ResponseWriter, r *http.Request) {
 	report, err := h.buildReport(r, "daily")
@@ -490,6 +497,7 @@ func (h *Handler) dailyReport(w http.ResponseWriter, r *http.Request) {
 //	@Success		200		{object}	domain.Report	"Weekly report"
 //	@Failure		500		{object}	ErrorResponse	"Report generation failed"
 //	@Failure		502		{object}	ErrorResponse	"Webhook delivery failed"
+//	@Security		BearerAuth
 //	@Router			/api/v1/reports/weekly [get]
 func (h *Handler) weeklyReport(w http.ResponseWriter, r *http.Request) {
 	report, err := h.buildReport(r, "weekly")
@@ -517,6 +525,7 @@ func (h *Handler) weeklyReport(w http.ResponseWriter, r *http.Request) {
 //	@Success		200		{object}	domain.Report	"Monthly report"
 //	@Failure		500		{object}	ErrorResponse	"Report generation failed"
 //	@Failure		502		{object}	ErrorResponse	"Webhook delivery failed"
+//	@Security		BearerAuth
 //	@Router			/api/v1/reports/monthly [get]
 func (h *Handler) monthlyReport(w http.ResponseWriter, r *http.Request) {
 	report, err := h.buildReport(r, "monthly")

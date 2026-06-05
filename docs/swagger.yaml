@@ -46,6 +46,39 @@ definitions:
       z_score:
         type: number
     type: object
+  github_com_crypticani_torvix_internal_domain.CostVariance:
+    properties:
+      account_id:
+        type: string
+      compartment_id:
+        type: string
+      compartment_name:
+        type: string
+      current_cost:
+        type: number
+      current_window_end:
+        type: string
+      current_window_start:
+        type: string
+      delta:
+        type: number
+      direction:
+        type: string
+      percent_change:
+        type: number
+      period:
+        type: string
+      previous_cost:
+        type: number
+      previous_window_end:
+        type: string
+      previous_window_start:
+        type: string
+      provider:
+        $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.Provider'
+      service:
+        type: string
+    type: object
   github_com_crypticani_torvix_internal_domain.ForecastPoint:
     properties:
       account_id:
@@ -131,6 +164,40 @@ definitions:
         example: /api/v1/ingest/status/1760000000000000000
         type: string
     type: object
+  internal_ports_http.IngestResponse:
+    description: Per-provider ingestion result with metrics.
+    properties:
+      duration_seconds:
+        example: 12.4
+        type: number
+      error:
+        example: ""
+        type: string
+      files_processed:
+        example: 5
+        type: integer
+      files_skipped:
+        example: 2
+        type: integer
+      provider:
+        example: oci
+        type: string
+      records_inserted:
+        example: 1200
+        type: integer
+      records_parsed:
+        example: 1234
+        type: integer
+      records_skipped_old:
+        example: 34
+        type: integer
+      records_within_lookback:
+        example: 1200
+        type: integer
+      skipped_old_files:
+        example: 1
+        type: integer
+    type: object
   internal_ports_http.IngestionJobResponse:
     description: Current or completed background ingestion job status.
     properties:
@@ -162,40 +229,6 @@ definitions:
         example: running
         type: string
     type: object
-  internal_ports_http.IngestResponse:
-    description: Per-provider ingestion result with metrics.
-    properties:
-      duration_seconds:
-        example: 12.4
-        type: number
-      error:
-        example: ""
-        type: string
-      files_processed:
-        example: 5
-        type: integer
-      files_skipped:
-        example: 2
-        type: integer
-      provider:
-        example: oci
-        type: string
-      records_parsed:
-        example: 1234
-        type: integer
-      records_within_lookback:
-        example: 1200
-        type: integer
-      records_skipped_old:
-        example: 34
-        type: integer
-      records_inserted:
-        example: 1200
-        type: integer
-      skipped_old_files:
-        example: 1
-        type: integer
-    type: object
   internal_ports_http.StatusResponse:
     description: Generic status response for operations.
     properties:
@@ -207,12 +240,10 @@ host: localhost:8080
 info:
   contact:
     name: Torvix Team
-  description: Multi-cloud FinOps cost analytics platform. Collects billing data from
-    AWS, Azure, GCP, and OCI, normalises it into a canonical schema, and provides
-    precomputed cost summaries, deterministic anomaly detection, forecasting, and
-    automated reporting.
+  description: Torvix is an open-source FinOps platform for cloud cost visibility,
+    anomaly detection, forecasting, and unused-resource detection across cloud providers.
   title: Torvix API
-  version: 0.8.0
+  version: 0.10.0
 paths:
   /api/v1/analytics/anomalies:
     get:
@@ -242,6 +273,8 @@ paths:
           description: Detection failed
           schema:
             $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Detect cost anomalies
       tags:
       - Analytics
@@ -273,6 +306,8 @@ paths:
           description: Forecast generation failed
           schema:
             $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Get cost forecast
       tags:
       - Forecasting
@@ -313,7 +348,52 @@ paths:
           description: Aggregation failed
           schema:
             $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Get cost summary
+      tags:
+      - Analytics
+  /api/v1/analytics/variance:
+    get:
+      description: Compares OCI cost by service and compartment for the requested
+        operational period. Daily compares yesterday with the previous day, weekly
+        compares last week with the week before, and monthly compares last month with
+        the month before.
+      parameters:
+      - default: daily
+        description: Comparison period.
+        enum:
+        - daily
+        - weekly
+        - monthly
+        in: query
+        name: period
+        type: string
+      - description: Evaluation date (YYYY-MM-DD). Defaults to today.
+        example: "2026-05-17"
+        in: query
+        name: as_of
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Cost variance results
+          schema:
+            items:
+              $ref: '#/definitions/github_com_crypticani_torvix_internal_domain.CostVariance'
+            type: array
+        "400":
+          description: Invalid period
+          schema:
+            $ref: '#/definitions/internal_ports_http.ErrorResponse'
+        "500":
+          description: Comparison failed
+          schema:
+            $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Compare cost variance
       tags:
       - Analytics
   /api/v1/ingest:
@@ -321,6 +401,13 @@ paths:
       description: Queues collection of billing data from all enabled cloud providers
         within the configured rolling ingestion window and returns immediately. Completion
         is available through the returned status URL and enabled alerting targets.
+      parameters:
+      - description: Number of days to look back for ingestion. Defaults to configured
+          rolling lookback, normally 30.
+        example: 30
+        in: query
+        name: days
+        type: integer
       produces:
       - application/json
       responses:
@@ -336,6 +423,8 @@ paths:
           description: Ingestion service unavailable
           schema:
             $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Trigger billing data ingestion
       tags:
       - Ingestion
@@ -360,21 +449,23 @@ paths:
           description: Ingestion job not found
           schema:
             $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Get ingestion job status
       tags:
       - Ingestion
   /api/v1/reports/daily:
     get:
       description: Builds a daily cost report for day-1 in the configured report timezone
-        by default, including summary, anomalies, and forecast.
-        Optionally delivers via configured webhooks.
+        by default, including summary, anomalies, and forecast. Optionally delivers
+        via configured webhooks.
       parameters:
-      - description: Start date (YYYY-MM-DD). Defaults to 30 days ago.
+      - description: Start date (YYYY-MM-DD). Defaults to yesterday for daily reports.
         example: "2025-01-01"
         in: query
         name: from
         type: string
-      - description: End date (YYYY-MM-DD). Defaults to today.
+      - description: End date (YYYY-MM-DD). Defaults to today for daily reports.
         example: "2025-01-31"
         in: query
         name: to
@@ -386,6 +477,14 @@ paths:
         - "false"
         in: query
         name: deliver
+        type: string
+      - default: "false"
+        description: Set to 'true' to resend even if this report was already delivered.
+        enum:
+        - "true"
+        - "false"
+        in: query
+        name: force
         type: string
       produces:
       - application/json
@@ -402,20 +501,24 @@ paths:
           description: Webhook delivery failed
           schema:
             $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Generate daily report
       tags:
       - Reports
   /api/v1/reports/monthly:
     get:
-      description: Builds a monthly cost report including summary, anomalies, and
-        forecast. Optionally delivers via configured webhooks.
+      description: Builds a monthly cost report for the last completed month by default,
+        including summary, anomalies, and forecast. Optionally delivers via configured
+        webhooks.
       parameters:
-      - description: Start date (YYYY-MM-DD). Defaults to 30 days ago.
+      - description: Start date (YYYY-MM-DD). Defaults to the start of last completed
+          month.
         example: "2025-01-01"
         in: query
         name: from
         type: string
-      - description: End date (YYYY-MM-DD). Defaults to today.
+      - description: End date (YYYY-MM-DD). Defaults to the start of this month.
         example: "2025-01-31"
         in: query
         name: to
@@ -427,6 +530,14 @@ paths:
         - "false"
         in: query
         name: deliver
+        type: string
+      - default: "false"
+        description: Set to 'true' to resend even if this report was already delivered.
+        enum:
+        - "true"
+        - "false"
+        in: query
+        name: force
         type: string
       produces:
       - application/json
@@ -443,21 +554,23 @@ paths:
           description: Webhook delivery failed
           schema:
             $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Generate monthly report
       tags:
       - Reports
   /api/v1/reports/weekly:
     get:
       description: Builds a weekly cost report for the previous full Monday-to-Sunday
-        week by default, including summary, anomalies, and forecast.
-        Optionally delivers via configured webhooks.
+        week by default, including summary, anomalies, and forecast. Optionally delivers
+        via configured webhooks.
       parameters:
-      - description: Start date (YYYY-MM-DD). Defaults to 30 days ago.
+      - description: Start date (YYYY-MM-DD). Defaults to previous Monday.
         example: "2025-01-01"
         in: query
         name: from
         type: string
-      - description: End date (YYYY-MM-DD). Defaults to today.
+      - description: End date (YYYY-MM-DD). Defaults to current Monday.
         example: "2025-01-31"
         in: query
         name: to
@@ -469,6 +582,14 @@ paths:
         - "false"
         in: query
         name: deliver
+        type: string
+      - default: "false"
+        description: Set to 'true' to resend even if this report was already delivered.
+        enum:
+        - "true"
+        - "false"
+        in: query
+        name: force
         type: string
       produces:
       - application/json
@@ -485,6 +606,8 @@ paths:
           description: Webhook delivery failed
           schema:
             $ref: '#/definitions/internal_ports_http.ErrorResponse'
+      security:
+      - BearerAuth: []
       summary: Generate weekly report
       tags:
       - Reports
@@ -503,4 +626,11 @@ paths:
       - Health
 schemes:
 - http
+securityDefinitions:
+  BearerAuth:
+    description: Use `Bearer <token>` when `api.auth.enabled` is true. `/healthz`
+      and `/swagger/*` remain public.
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"
