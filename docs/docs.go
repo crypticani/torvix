@@ -19,6 +19,11 @@ const docTemplate = `{
     "paths": {
         "/api/v1/analytics/anomalies": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Analyses cost data over a time range and returns any detected anomalies with severity, z-score, and deviation metrics.",
                 "produces": [
                     "application/json"
@@ -64,6 +69,11 @@ const docTemplate = `{
         },
         "/api/v1/analytics/forecast": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Generates a 7-day cost forecast based on historical data within the specified time range.",
                 "produces": [
                     "application/json"
@@ -109,6 +119,11 @@ const docTemplate = `{
         },
         "/api/v1/analytics/summary": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns aggregated cost data over a time range, grouped by the specified window (daily, weekly, or monthly).",
                 "produces": [
                     "application/json"
@@ -164,8 +179,74 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/analytics/variance": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Compares OCI cost by service and compartment for the requested operational period. Daily compares yesterday with the previous day, weekly compares last week with the week before, and monthly compares last month with the month before.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Analytics"
+                ],
+                "summary": "Compare cost variance",
+                "parameters": [
+                    {
+                        "enum": [
+                            "daily",
+                            "weekly",
+                            "monthly"
+                        ],
+                        "type": "string",
+                        "default": "daily",
+                        "description": "Comparison period.",
+                        "name": "period",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "example": "2026-05-17",
+                        "description": "Evaluation date (YYYY-MM-DD). Defaults to today.",
+                        "name": "as_of",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Cost variance results",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.CostVariance"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid period",
+                        "schema": {
+                            "$ref": "#/definitions/internal_ports_http.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Comparison failed",
+                        "schema": {
+                            "$ref": "#/definitions/internal_ports_http.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/ingest": {
             "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Queues collection of billing data from all enabled cloud providers within the configured rolling ingestion window and returns immediately. Completion is available through the returned status URL and enabled alerting targets.",
                 "produces": [
                     "application/json"
@@ -174,6 +255,15 @@ const docTemplate = `{
                     "Ingestion"
                 ],
                 "summary": "Trigger billing data ingestion",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "example": 30,
+                        "description": "Number of days to look back for ingestion. Defaults to configured rolling lookback, normally 30.",
+                        "name": "days",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "202": {
                         "description": "Ingestion queued for background processing",
@@ -198,6 +288,11 @@ const docTemplate = `{
         },
         "/api/v1/ingest/status/{job_id}": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Returns the current or completed status for a background ingestion job.",
                 "produces": [
                     "application/json"
@@ -233,6 +328,11 @@ const docTemplate = `{
         },
         "/api/v1/reports/daily": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Builds a daily cost report for day-1 in the configured report timezone by default, including summary, anomalies, and forecast. Optionally delivers via configured webhooks.",
                 "produces": [
                     "application/json"
@@ -245,14 +345,14 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "example": "2025-01-01",
-                        "description": "Start date (YYYY-MM-DD). Defaults to 30 days ago.",
+                        "description": "Start date (YYYY-MM-DD). Defaults to yesterday for daily reports.",
                         "name": "from",
                         "in": "query"
                     },
                     {
                         "type": "string",
                         "example": "2025-01-31",
-                        "description": "End date (YYYY-MM-DD). Defaults to today.",
+                        "description": "End date (YYYY-MM-DD). Defaults to today for daily reports.",
                         "name": "to",
                         "in": "query"
                     },
@@ -265,6 +365,17 @@ const docTemplate = `{
                         "default": "false",
                         "description": "Set to 'true' to send report via webhooks.",
                         "name": "deliver",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "true",
+                            "false"
+                        ],
+                        "type": "string",
+                        "default": "false",
+                        "description": "Set to 'true' to resend even if this report was already delivered.",
+                        "name": "force",
                         "in": "query"
                     }
                 ],
@@ -292,7 +403,12 @@ const docTemplate = `{
         },
         "/api/v1/reports/monthly": {
             "get": {
-                "description": "Builds a monthly cost report including summary, anomalies, and forecast. Optionally delivers via configured webhooks.",
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Builds a monthly cost report for the last completed month by default, including summary, anomalies, and forecast. Optionally delivers via configured webhooks.",
                 "produces": [
                     "application/json"
                 ],
@@ -304,14 +420,14 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "example": "2025-01-01",
-                        "description": "Start date (YYYY-MM-DD). Defaults to 30 days ago.",
+                        "description": "Start date (YYYY-MM-DD). Defaults to the start of last completed month.",
                         "name": "from",
                         "in": "query"
                     },
                     {
                         "type": "string",
                         "example": "2025-01-31",
-                        "description": "End date (YYYY-MM-DD). Defaults to today.",
+                        "description": "End date (YYYY-MM-DD). Defaults to the start of this month.",
                         "name": "to",
                         "in": "query"
                     },
@@ -324,6 +440,17 @@ const docTemplate = `{
                         "default": "false",
                         "description": "Set to 'true' to send report via webhooks.",
                         "name": "deliver",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "true",
+                            "false"
+                        ],
+                        "type": "string",
+                        "default": "false",
+                        "description": "Set to 'true' to resend even if this report was already delivered.",
+                        "name": "force",
                         "in": "query"
                     }
                 ],
@@ -351,6 +478,11 @@ const docTemplate = `{
         },
         "/api/v1/reports/weekly": {
             "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Builds a weekly cost report for the previous full Monday-to-Sunday week by default, including summary, anomalies, and forecast. Optionally delivers via configured webhooks.",
                 "produces": [
                     "application/json"
@@ -363,14 +495,14 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "example": "2025-01-01",
-                        "description": "Start date (YYYY-MM-DD). Defaults to 30 days ago.",
+                        "description": "Start date (YYYY-MM-DD). Defaults to previous Monday.",
                         "name": "from",
                         "in": "query"
                     },
                     {
                         "type": "string",
                         "example": "2025-01-31",
-                        "description": "End date (YYYY-MM-DD). Defaults to today.",
+                        "description": "End date (YYYY-MM-DD). Defaults to current Monday.",
                         "name": "to",
                         "in": "query"
                     },
@@ -383,6 +515,17 @@ const docTemplate = `{
                         "default": "false",
                         "description": "Set to 'true' to send report via webhooks.",
                         "name": "deliver",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "true",
+                            "false"
+                        ],
+                        "type": "string",
+                        "default": "false",
+                        "description": "Set to 'true' to resend even if this report was already delivered.",
+                        "name": "force",
                         "in": "query"
                     }
                 ],
@@ -497,6 +640,56 @@ const docTemplate = `{
                 },
                 "z_score": {
                     "type": "number"
+                }
+            }
+        },
+        "github_com_crypticani_torvix_internal_domain.CostVariance": {
+            "type": "object",
+            "properties": {
+                "account_id": {
+                    "type": "string"
+                },
+                "compartment_id": {
+                    "type": "string"
+                },
+                "compartment_name": {
+                    "type": "string"
+                },
+                "current_cost": {
+                    "type": "number"
+                },
+                "current_window_end": {
+                    "type": "string"
+                },
+                "current_window_start": {
+                    "type": "string"
+                },
+                "delta": {
+                    "type": "number"
+                },
+                "direction": {
+                    "type": "string"
+                },
+                "percent_change": {
+                    "type": "number"
+                },
+                "period": {
+                    "type": "string"
+                },
+                "previous_cost": {
+                    "type": "number"
+                },
+                "previous_window_end": {
+                    "type": "string"
+                },
+                "previous_window_start": {
+                    "type": "string"
+                },
+                "provider": {
+                    "$ref": "#/definitions/github_com_crypticani_torvix_internal_domain.Provider"
+                },
+                "service": {
+                    "type": "string"
                 }
             }
         },
@@ -623,6 +816,52 @@ const docTemplate = `{
                 }
             }
         },
+        "internal_ports_http.IngestResponse": {
+            "description": "Per-provider ingestion result with metrics.",
+            "type": "object",
+            "properties": {
+                "duration_seconds": {
+                    "type": "number",
+                    "example": 12.4
+                },
+                "error": {
+                    "type": "string",
+                    "example": ""
+                },
+                "files_processed": {
+                    "type": "integer",
+                    "example": 5
+                },
+                "files_skipped": {
+                    "type": "integer",
+                    "example": 2
+                },
+                "provider": {
+                    "type": "string",
+                    "example": "oci"
+                },
+                "records_inserted": {
+                    "type": "integer",
+                    "example": 1200
+                },
+                "records_parsed": {
+                    "type": "integer",
+                    "example": 1234
+                },
+                "records_skipped_old": {
+                    "type": "integer",
+                    "example": 34
+                },
+                "records_within_lookback": {
+                    "type": "integer",
+                    "example": 1200
+                },
+                "skipped_old_files": {
+                    "type": "integer",
+                    "example": 1
+                }
+            }
+        },
         "internal_ports_http.IngestionJobResponse": {
             "description": "Current or completed background ingestion job status.",
             "type": "object",
@@ -667,52 +906,6 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_ports_http.IngestResponse": {
-            "description": "Per-provider ingestion result with metrics.",
-            "type": "object",
-            "properties": {
-                "duration_seconds": {
-                    "type": "number",
-                    "example": 12.4
-                },
-                "error": {
-                    "type": "string",
-                    "example": ""
-                },
-                "files_processed": {
-                    "type": "integer",
-                    "example": 5
-                },
-                "files_skipped": {
-                    "type": "integer",
-                    "example": 2
-                },
-                "provider": {
-                    "type": "string",
-                    "example": "oci"
-                },
-                "records_parsed": {
-                    "type": "integer",
-                    "example": 1234
-                },
-                "records_within_lookback": {
-                    "type": "integer",
-                    "example": 1200
-                },
-                "records_skipped_old": {
-                    "type": "integer",
-                    "example": 34
-                },
-                "records_inserted": {
-                    "type": "integer",
-                    "example": 1200
-                },
-                "skipped_old_files": {
-                    "type": "integer",
-                    "example": 1
-                }
-            }
-        },
         "internal_ports_http.StatusResponse": {
             "description": "Generic status response for operations.",
             "type": "object",
@@ -723,12 +916,20 @@ const docTemplate = `{
                 }
             }
         }
+    },
+    "securityDefinitions": {
+        "BearerAuth": {
+            "description": "Use ` + "`" + `Bearer \u003ctoken\u003e` + "`" + ` when ` + "`" + `api.auth.enabled` + "`" + ` is true. ` + "`" + `/healthz` + "`" + ` and ` + "`" + `/swagger/*` + "`" + ` remain public.",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
     }
 }`
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "0.8.0",
+	Version:          "0.10.0",
 	Host:             "localhost:8080",
 	BasePath:         "/",
 	Schemes:          []string{"http"},

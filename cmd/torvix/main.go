@@ -17,10 +17,15 @@ import (
 )
 
 //	@title			Torvix API
-//	@version		0.8.0
+//	@version		0.10.0
 //	@description	Torvix is an open-source FinOps platform for cloud cost visibility, anomaly detection, forecasting, and unused-resource detection across cloud providers.
 
 //	@contact.name	Torvix Team
+
+//	@securityDefinitions.apikey	BearerAuth
+//	@in							header
+//	@name						Authorization
+//	@description				Use `Bearer <token>` when `api.auth.enabled` is true. `/healthz` and `/swagger/*` remain public.
 
 //	@host			localhost:8080
 //	@BasePath		/
