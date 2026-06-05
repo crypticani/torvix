@@ -74,6 +74,36 @@ func TestSwaggerDocumentsCurrentVersionAndBearerAuth(t *testing.T) {
 	}
 }
 
+func TestGeneralDocsRankAWSBeforeOCI(t *testing.T) {
+	read := func(path string) string {
+		t.Helper()
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		return string(b)
+	}
+
+	readme := read("../../README.md")
+	assertBefore(t, readme, "## AWS Ingestion", "## OCI Billing Ingestion")
+	assertBefore(t, readme, "AWS CUR/Data Export ingestion", "OCI billing export ingestion")
+	if !strings.Contains(readme, "General provider documentation is ordered by common cloud adoption: AWS first, then OCI.") {
+		t.Fatal("README should document AWS-first ordering for general provider docs")
+	}
+
+	deployment := read("../../docs/deployment.md")
+	assertBefore(t, deployment, "dashboards/torvix-aws-finops-dashboard.json", "dashboards/torvix-oci-finops-dashboard.json")
+	assertBefore(t, deployment, "The AWS dashboard production API endpoints are:", "The OCI dashboard production API endpoints are:")
+	assertBefore(t, deployment, "The AWS dashboard uses Region -> Account/Scope -> Service", "The OCI dashboard uses Region -> Compartment -> Service")
+
+	agents := read("../../AGENTS.md")
+	if !strings.Contains(agents, "AWS and OCI are first-class providers.") {
+		t.Fatal("AGENTS should describe AWS and OCI as first-class providers")
+	}
+	assertBefore(t, agents, "with AWS before OCI", "unless the page or section is explicitly provider-specific")
+	assertBefore(t, agents, "AWS ingestion must default", "OCI ingestion must use")
+}
+
 func hasBearerSecurity(security []map[string][]string) bool {
 	for _, entry := range security {
 		if _, ok := entry["BearerAuth"]; ok {
@@ -81,4 +111,19 @@ func hasBearerSecurity(security []map[string][]string) bool {
 		}
 	}
 	return false
+}
+
+func assertBefore(t *testing.T, text, first, second string) {
+	t.Helper()
+	firstIndex := strings.Index(text, first)
+	if firstIndex < 0 {
+		t.Fatalf("expected to find %q", first)
+	}
+	secondIndex := strings.Index(text, second)
+	if secondIndex < 0 {
+		t.Fatalf("expected to find %q", second)
+	}
+	if firstIndex >= secondIndex {
+		t.Fatalf("expected %q to appear before %q", first, second)
+	}
 }
