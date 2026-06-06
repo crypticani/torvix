@@ -19,6 +19,7 @@ func TestTimescaleMigrationsContainRequiredPrimitives(t *testing.T) {
 		"../../migrations/009_report_deliveries.sql",
 		"../../migrations/012_waste_detection.sql",
 		"../../migrations/013_cloud_inventory_runs.sql",
+		"../../migrations/014_anomaly_dimensions.sql",
 	}
 
 	combined := ""
@@ -57,10 +58,35 @@ func TestTimescaleMigrationsContainRequiredPrimitives(t *testing.T) {
 		"last_seen_run_id TEXT",
 		"missing_since TIMESTAMPTZ",
 		"inactive_at TIMESTAMPTZ",
+		"ADD COLUMN IF NOT EXISTS compartment_id TEXT NOT NULL DEFAULT ''",
+		"ADD COLUMN IF NOT EXISTS compartment_name TEXT NOT NULL DEFAULT ''",
+		"ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT ''",
+		"ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL DEFAULT ''",
 	}
 	for _, needle := range required {
 		if !strings.Contains(combined, needle) {
 			t.Fatalf("expected migrations to contain %q", needle)
+		}
+	}
+}
+
+func TestAnomalyDimensionsMigrationInvalidatesDerivedRows(t *testing.T) {
+	b, err := os.ReadFile("../../migrations/014_anomaly_dimensions.sql")
+	if err != nil {
+		t.Fatalf("read anomaly dimensions migration: %v", err)
+	}
+	migration := string(b)
+	for _, required := range []string{
+		"ALTER TABLE cost_anomalies",
+		"ADD COLUMN IF NOT EXISTS compartment_id TEXT NOT NULL DEFAULT ''",
+		"ADD COLUMN IF NOT EXISTS compartment_name TEXT NOT NULL DEFAULT ''",
+		"ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT ''",
+		"ADD COLUMN IF NOT EXISTS direction TEXT NOT NULL DEFAULT ''",
+		"DELETE FROM cost_anomalies",
+		"idx_cost_anomalies_compartment_range",
+	} {
+		if !strings.Contains(migration, required) {
+			t.Fatalf("anomaly dimensions migration must contain %q", required)
 		}
 	}
 }

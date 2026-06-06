@@ -688,6 +688,16 @@ func (h *Handler) dashboardAnomalies(w http.ResponseWriter, r *http.Request) {
 		}
 		rows = filtered
 	}
+	filters := dashboardFiltersFromRequest(r)
+	if filters != (dashboardFilters{}) {
+		filtered := rows[:0]
+		for _, row := range rows {
+			if dashboardAnomalyMatchesFilters(row, filters) {
+				filtered = append(filtered, row)
+			}
+		}
+		rows = filtered
+	}
 	if len(rows) == 0 {
 		meta.Message = "no anomalies detected"
 	}
@@ -887,6 +897,26 @@ func dashboardRowMatchesFilters(row domain.DashboardCostSummary, filters dashboa
 		return false
 	}
 	if filters.Service != "" && dashboardDimensionValue(row, "service") != filters.Service {
+		return false
+	}
+	return true
+}
+
+func dashboardAnomalyMatchesFilters(row domain.DashboardAnomaly, filters dashboardFilters) bool {
+	if filters.Region != "" && row.Region != filters.Region {
+		return false
+	}
+	compartment := row.CompartmentName
+	if compartment == "" {
+		compartment = row.CompartmentID
+	}
+	if filters.Compartment != "" && compartment != filters.Compartment {
+		return false
+	}
+	if filters.Scope != "" && row.AccountID != filters.Scope {
+		return false
+	}
+	if filters.Service != "" && row.Service != filters.Service {
 		return false
 	}
 	return true

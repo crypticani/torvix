@@ -2,7 +2,7 @@
   "title": "Torvix OCI FinOps Dashboard",
   "uid": "torvix-oci-finops-dashboard",
   "schemaVersion": 39,
-  "version": 19,
+  "version": 20,
   "refresh": "1m",
   "time": {
     "from": "now-30d",
@@ -897,7 +897,7 @@
       "id": 10,
       "type": "table",
       "title": "Daily Cost Anomalies vs 7-Day Average",
-      "description": "Compares actual daily spend with the average of the previous 7 completed days. A row appears when the absolute difference is at least 1 and the change is at least 30% or at least 2 standard deviations from normal. High severity means at least 50% change or at least 3 standard deviations.",
+      "description": "Compares actual daily spend with matching tenancy, compartment, service, region, and currency spend from the previous 7 completed calendar days. A row appears when the absolute difference is at least 1 and the change is at least 30% or at least 2 standard deviations from normal. High severity means at least 50% change or at least 3 standard deviations.",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "TorvixAPI"
@@ -927,6 +927,16 @@
               "type": "string"
             },
             {
+              "selector": "direction",
+              "text": "Direction",
+              "type": "string"
+            },
+            {
+              "selector": "compartment_name",
+              "text": "Compartment",
+              "type": "string"
+            },
+            {
               "selector": "service",
               "text": "Service",
               "type": "string"
@@ -934,6 +944,11 @@
             {
               "selector": "region",
               "text": "Region",
+              "type": "string"
+            },
+            {
+              "selector": "currency",
+              "text": "Currency",
               "type": "string"
             },
             {
@@ -1052,7 +1067,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Severity"
+              "options": "Direction"
             },
             "properties": [
               {
@@ -1061,20 +1076,15 @@
                   {
                     "type": "value",
                     "options": {
-                      "high": {
+                      "increase": {
                         "color": "red",
                         "index": 0,
-                        "text": "High"
+                        "text": "Increase"
                       },
-                      "medium": {
-                        "color": "orange",
-                        "index": 1,
-                        "text": "Medium"
-                      },
-                      "low": {
+                      "decrease": {
                         "color": "green",
-                        "index": 2,
-                        "text": "Low"
+                        "index": 1,
+                        "text": "Decrease"
                       }
                     }
                   }
@@ -1098,7 +1108,28 @@
             "displayName": "Date"
           }
         ]
-      }
+      },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "Date": 0,
+              "Tenancy": 1,
+              "Compartment": 2,
+              "Service": 3,
+              "Region": 4,
+              "Currency": 5,
+              "Direction": 6,
+              "Actual Spend": 7,
+              "7-Day Average": 8,
+              "Difference": 9,
+              "Change": 10,
+              "Severity": 11
+            }
+          }
+        }
+      ]
     },
     {
       "id": 11,

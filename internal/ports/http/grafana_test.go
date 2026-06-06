@@ -41,19 +41,46 @@ func (g *grafanaRepo) DashboardCostSummaries(context.Context, string, time.Time,
 }
 
 func (g *grafanaRepo) DashboardAnomalies(context.Context, time.Time, time.Time, string) ([]domain.DashboardAnomaly, error) {
-	return []domain.DashboardAnomaly{{
-		DetectedAt:      time.Date(2026, 5, 2, 6, 0, 0, 0, time.UTC),
-		PeriodStart:     time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC),
-		Provider:        domain.ProviderOCI,
-		Service:         "Compute",
-		ObservedCost:    12.5,
-		ExpectedCost:    8,
-		AbsoluteDelta:   4.5,
-		PercentageDelta: 56.25,
-		Severity:        "high",
-		DetectionMethod: "trailing_7_day_baseline",
-		Explanation:     "OCI Compute daily spend was 56% above its trailing baseline: observed 12.50, expected 8.00.",
-	}}, nil
+	return []domain.DashboardAnomaly{
+		{
+			DetectedAt:      time.Date(2026, 5, 2, 6, 0, 0, 0, time.UTC),
+			PeriodStart:     time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC),
+			Provider:        domain.ProviderOCI,
+			AccountID:       "tenancy-a",
+			CompartmentID:   "ocid1.compartment.oc1..app",
+			CompartmentName: "app-prod",
+			Service:         "Compute",
+			Region:          "us-ashburn-1",
+			Currency:        "USD",
+			ObservedCost:    12.5,
+			ExpectedCost:    8,
+			AbsoluteDelta:   4.5,
+			PercentageDelta: 56.25,
+			Direction:       "increase",
+			Severity:        "high",
+			DetectionMethod: "trailing_7_day_baseline",
+			Explanation:     "OCI Compute daily spend was 56% above its trailing baseline: observed 12.50, expected 8.00.",
+		},
+		{
+			DetectedAt:      time.Date(2026, 5, 2, 6, 0, 0, 0, time.UTC),
+			PeriodStart:     time.Date(2026, 5, 2, 0, 0, 0, 0, time.UTC),
+			Provider:        domain.ProviderOCI,
+			AccountID:       "tenancy-a",
+			CompartmentID:   "ocid1.compartment.oc1..data",
+			CompartmentName: "data-prod",
+			Service:         "Object Storage",
+			Region:          "ap-mumbai-1",
+			Currency:        "USD",
+			ObservedCost:    4,
+			ExpectedCost:    10,
+			AbsoluteDelta:   -6,
+			PercentageDelta: -60,
+			Direction:       "decrease",
+			Severity:        "high",
+			DetectionMethod: "trailing_7_day_baseline",
+			Explanation:     "OCI Object Storage daily spend was 60% below its trailing baseline: observed 4.00, expected 10.00.",
+		},
+	}, nil
 }
 
 func (g *grafanaRepo) LatestIngestionStatus(context.Context) (domain.IngestionStatusSummary, error) {
@@ -167,8 +194,8 @@ func TestDashboardOverviewCanBeProviderScoped(t *testing.T) {
 	if got.Current30DaySpend != 27 {
 		t.Fatalf("expected provider current spend 27, got %f", got.Current30DaySpend)
 	}
-	if got.AnomalyCount != 1 {
-		t.Fatalf("expected provider anomaly count 1, got %d", got.AnomalyCount)
+	if got.AnomalyCount != 2 {
+		t.Fatalf("expected provider anomaly count 2, got %d", got.AnomalyCount)
 	}
 }
 
@@ -563,6 +590,27 @@ func TestDashboardAnomaliesReturnsEmptyArrayShape(t *testing.T) {
 	}
 	if got.Meta.Message != "no anomalies detected" {
 		t.Fatalf("expected no anomalies metadata, got %q", got.Meta.Message)
+	}
+}
+
+func TestDashboardAnomaliesAppliesProviderAndDimensionFilters(t *testing.T) {
+	handler := NewWithOptions(nil, analytics.New(&grafanaRepo{}), nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{LookbackDays: 30})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/anomalies?from=2026-05-01&to=2026-05-03&provider=oci&compartment=app-prod&region=us-ashburn-1&service=Compute", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected ok, got %d", rr.Code)
+	}
+	var got dashboardAnomaliesResponse
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("decode anomalies: %v", err)
+	}
+	if len(got.Data) != 1 {
+		t.Fatalf("expected one matching anomaly, got %+v", got.Data)
+	}
+	if got.Data[0].CompartmentName != "app-prod" || got.Data[0].Direction != "increase" {
+		t.Fatalf("unexpected filtered anomaly: %+v", got.Data[0])
 	}
 }
 

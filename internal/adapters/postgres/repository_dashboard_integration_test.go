@@ -41,6 +41,7 @@ func TestRefreshCostAnomaliesExecutesAgainstPostgres(t *testing.T) {
 			account_id text NOT NULL DEFAULT '',
 			compartment_id text NOT NULL DEFAULT '',
 			compartment_name text NOT NULL DEFAULT '',
+			record_type text NOT NULL DEFAULT '',
 			service text NOT NULL DEFAULT 'unknown',
 			category text NOT NULL DEFAULT 'uncategorized',
 			region text NOT NULL DEFAULT '',
@@ -58,13 +59,17 @@ func TestRefreshCostAnomaliesExecutesAgainstPostgres(t *testing.T) {
 			period_start timestamptz NOT NULL,
 			provider text NOT NULL,
 			account_id text NOT NULL DEFAULT '',
+			compartment_id text NOT NULL DEFAULT '',
+			compartment_name text NOT NULL DEFAULT '',
 			category text NOT NULL DEFAULT 'uncategorized',
 			service text NOT NULL DEFAULT 'unknown',
 			region text NOT NULL DEFAULT '',
+			currency text NOT NULL DEFAULT '',
 			observed_cost numeric(20,8) NOT NULL,
 			expected_cost numeric(20,8) NOT NULL,
 			absolute_delta numeric(20,8) NOT NULL,
 			percentage_delta double precision NOT NULL,
+			direction text NOT NULL DEFAULT '',
 			severity text NOT NULL,
 			detection_method text NOT NULL,
 			explanation text NOT NULL,
@@ -82,8 +87,10 @@ func TestRefreshCostAnomaliesExecutesAgainstPostgres(t *testing.T) {
 		}
 		_, err := tx.Exec(ctx, `
 			INSERT INTO daily_cost_summaries
-			(period_start, period_end, provider, account_id, service, category, region, currency, total_cost)
-			VALUES ($1, $2, 'oci', 'acct', 'Object Storage', 'storage', 'us-ashburn-1', 'USD', $3)
+			(period_start, period_end, provider, account_id, compartment_id, compartment_name, service, category, region, currency, total_cost)
+			VALUES
+				($1, $2, 'oci', 'acct', 'compartment-a', 'App', 'Object Storage', 'storage', 'us-ashburn-1', 'USD', $3),
+				($1, $2, 'oci', 'acct', 'compartment-b', 'Data', 'Object Storage', 'storage', 'us-ashburn-1', 'USD', 100)
 		`, base.AddDate(0, 0, i), base.AddDate(0, 0, i+1), cost)
 		if err != nil {
 			t.Fatalf("insert daily summary fixture: %v", err)
@@ -104,6 +111,14 @@ func TestRefreshCostAnomaliesExecutesAgainstPostgres(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("expected 1 anomaly, got %d", count)
+	}
+
+	var compartmentName, direction string
+	if err := tx.QueryRow(ctx, `SELECT compartment_name, direction FROM cost_anomalies LIMIT 1`).Scan(&compartmentName, &direction); err != nil {
+		t.Fatalf("read anomaly dimensions: %v", err)
+	}
+	if compartmentName != "App" || direction != "increase" {
+		t.Fatalf("unexpected anomaly dimensions: compartment=%q direction=%q", compartmentName, direction)
 	}
 }
 

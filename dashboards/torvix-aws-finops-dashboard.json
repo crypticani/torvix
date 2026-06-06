@@ -2,7 +2,7 @@
   "title": "Torvix AWS FinOps Dashboard",
   "uid": "torvix-aws-finops-dashboard",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "5m",
   "time": {
     "from": "now-30d",
@@ -504,7 +504,7 @@
       "id": 10,
       "type": "table",
       "title": "Daily Cost Anomalies vs 7-Day Average",
-      "description": "Compares actual daily spend with the average of the previous 7 completed days. A row appears when the absolute difference is at least 1 and the change is at least 30% or at least 2 standard deviations from normal. High severity means at least 50% change or at least 3 standard deviations.",
+      "description": "Compares actual daily spend with matching account, service, region, and currency spend from the previous 7 completed calendar days. A row appears when the absolute difference is at least 1 and the change is at least 30% or at least 2 standard deviations from normal. High severity means at least 50% change or at least 3 standard deviations.",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "TorvixAPI"
@@ -534,6 +534,11 @@
               "type": "string"
             },
             {
+              "selector": "direction",
+              "text": "Direction",
+              "type": "string"
+            },
+            {
               "selector": "service",
               "text": "Service",
               "type": "string"
@@ -541,6 +546,11 @@
             {
               "selector": "region",
               "text": "Region",
+              "type": "string"
+            },
+            {
+              "selector": "currency",
+              "text": "Currency",
               "type": "string"
             },
             {
@@ -586,6 +596,26 @@
           }
         ]
       },
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "Date": 0,
+              "Account": 1,
+              "Service": 2,
+              "Region": 3,
+              "Currency": 4,
+              "Direction": 5,
+              "Actual Spend": 6,
+              "7-Day Average": 7,
+              "Difference": 8,
+              "Change": 9,
+              "Severity": 10
+            }
+          }
+        }
+      ],
       "fieldConfig": {
         "defaults": {},
         "overrides": [
@@ -668,7 +698,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "Severity"
+              "options": "Direction"
             },
             "properties": [
               {
@@ -677,20 +707,15 @@
                   {
                     "type": "value",
                     "options": {
-                      "high": {
+                      "increase": {
                         "color": "red",
                         "index": 0,
-                        "text": "High"
+                        "text": "Increase"
                       },
-                      "medium": {
-                        "color": "orange",
-                        "index": 1,
-                        "text": "Medium"
-                      },
-                      "low": {
+                      "decrease": {
                         "color": "green",
-                        "index": 2,
-                        "text": "Low"
+                        "index": 1,
+                        "text": "Decrease"
                       }
                     }
                   }
