@@ -407,15 +407,15 @@ For sensitive files, keep the host user as the owner, grant the Torvix
 container group read access, and prevent access by other users:
 
 ```bash
-HOST_FILE=configs/config.prod.yaml
-sudo chown "$(id -u):10001" "$HOST_FILE"
-sudo chmod 640 "$HOST_FILE"
-chmod 755 configs
+sudo chown -R "$(id -u):10001" configs
+sudo find configs -type d -exec chmod 750 {} \;
+sudo find configs -type f -exec chmod 640 {} \;
 ```
 
-Set `HOST_FILE` to each required mounted file. For example, apply it to
-`configs/config.prod.yaml`, the OCI config file, and the private key referenced
-by OCI `key_file`. Do not make private keys or credential files world-readable.
+`-type d` applies mode `750` to directories so the owner and Torvix group can
+traverse them. `-type f` applies mode `640` to regular files so the owner can
+write them and the Torvix group can read them. Other users receive no access.
+Do not make private keys or credential files world-readable.
 
 When upgrading from an older Torvix image that used an implicitly assigned
 container GID, update the group ownership of each mounted file once to

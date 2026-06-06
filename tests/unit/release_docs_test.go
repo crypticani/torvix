@@ -45,7 +45,9 @@ func TestContainerUsesStableRuntimeIdentity(t *testing.T) {
 	deployment := string(deploymentBytes)
 	for _, expected := range []string{
 		"UID `10001` and GID `10001`",
-		`sudo chown "$(id -u):10001" "$HOST_FILE"`,
+		`sudo chown -R "$(id -u):10001" configs`,
+		`sudo find configs -type d -exec chmod 750 {} \;`,
+		`sudo find configs -type f -exec chmod 640 {} \;`,
 	} {
 		if !strings.Contains(deployment, expected) {
 			t.Fatalf("deployment docs should contain %q", expected)
