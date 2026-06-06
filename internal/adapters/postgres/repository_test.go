@@ -154,24 +154,33 @@ func TestAnomalySQLRequiresMeaningfulAbsoluteDeltaAndPositiveBaselineForPercentD
 }
 
 func TestAnomalySQLUsesPrecomputedSummariesWithCompartmentAndRegionDimensions(t *testing.T) {
-	b, err := os.ReadFile("repository.go")
+	b, err := os.ReadFile("repository_dashboard.go")
 	if err != nil {
-		t.Fatalf("read repository.go: %v", err)
+		t.Fatalf("read repository_dashboard.go: %v", err)
 	}
 	sql := string(b)
 	for _, want := range []string{
 		"FROM daily_cost_summaries",
 		"compartment_id",
 		"compartment_name",
-		"COALESCE(region, '') AS region",
-		"PARTITION BY provider, account_id, service, category, compartment_id, compartment_name, region",
+		"currency",
+		"GROUP BY period_start, provider, account_id, compartment_id, compartment_name, service, region, currency",
+		"prior.period_start >= current.period_start - INTERVAL '7 days'",
+		"prior.compartment_id = current.compartment_id",
+		"prior.compartment_name = current.compartment_name",
+		"prior.currency = current.currency",
 	} {
 		if !strings.Contains(sql, want) {
 			t.Fatalf("anomaly SQL must include locality dimension %q", want)
 		}
 	}
-	if strings.Contains(sql, `WHERE "timestamp" >= $1::timestamptz - INTERVAL '7 days'`) {
-		t.Fatal("anomaly SQL must not scan raw cost_records for report-time anomaly detection")
+	for _, forbidden := range []string{
+		"PARTITION BY provider, account_id, service, category, region",
+		"ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING",
+	} {
+		if strings.Contains(sql, forbidden) {
+			t.Fatalf("anomaly SQL must not mix dimensions using %q", forbidden)
+		}
 	}
 }
 
