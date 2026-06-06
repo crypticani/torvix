@@ -385,6 +385,62 @@ Resource limits can be tuned with:
 TORVIX_CPU_LIMIT=1.0 TORVIX_MEMORY_LIMIT=512M docker compose -f docker-compose.prod.yml up --build -d
 ```
 
+## Configure OCI Private Key Permissions
+
+The Torvix container starts as root only to prepare the writable log directory,
+then runs the application as the non-root `torvix` user. OCI config and private
+key files are mounted read-only from `./configs`, so Torvix cannot change their
+host ownership or permissions automatically.
+
+Check the numeric UID and GID used by the selected image:
+
+```bash
+docker run --rm \
+  --entrypoint id \
+  "${TORVIX_IMAGE:-crypticani/torvix:latest}" \
+  torvix
+```
+
+For the current image, the application user is UID `100` and GID `101`. Keep
+the host user as the file owner, grant the container group read access, and
+prevent access by other users:
+
+```bash
+sudo chown "$(id -u):101" configs/oci_privkey.pem
+sudo chmod 640 configs/oci_privkey.pem
+chmod 755 configs
+```
+
+Replace `configs/oci_privkey.pem` with the path referenced by `key_file` in the
+OCI config. If a future image reports a different GID, use that value instead
+of `101`.
+
+Verify readability without starting the restart-prone application process:
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm --no-deps \
+  --entrypoint sh torvix -lc \
+  'su-exec torvix:torvix test -r /app/configs/oci_privkey.pem && echo readable'
+```
+
+On SELinux-enforcing hosts such as Fedora or RHEL, label the bind mount for
+container access:
+
+```yaml
+volumes:
+  - ./configs:/app/configs:ro,Z
+```
+
+Recreate Torvix after changing permissions or mount labels:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --force-recreate torvix
+```
+
+An `open /app/configs/<key>: permission denied` bootstrap error means the
+container user cannot read the local bind-mounted key. It occurs before OCI
+authentication and does not indicate that OCI API access was revoked.
+
 ## Connect Production Prometheus
 
 Torvix exposes Prometheus metrics at:
