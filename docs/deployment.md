@@ -385,12 +385,17 @@ Resource limits can be tuned with:
 TORVIX_CPU_LIMIT=1.0 TORVIX_MEMORY_LIMIT=512M docker compose -f docker-compose.prod.yml up --build -d
 ```
 
-## Configure OCI Private Key Permissions
+## Configure Bind-Mounted File Permissions
 
 The Torvix container starts as root only to prepare the writable log directory,
-then runs the application as the non-root `torvix` user. OCI config and private
-key files are mounted read-only from `./configs`, so Torvix cannot change their
-host ownership or permissions automatically.
+then runs the application as the non-root `torvix` user. Files under
+`./configs` are mounted read-only, so Torvix cannot change their host ownership
+or permissions automatically.
+
+This applies to `config.prod.yaml`, provider configuration files, private keys,
+CA certificates, and any other file read from the bind mount. A file can exist
+inside the container and still be unreadable when its host ownership or mode
+does not grant access to the container user.
 
 Check the numeric UID and GID used by the selected image:
 
@@ -401,26 +406,30 @@ docker run --rm \
   torvix
 ```
 
-For the current image, the application user is UID `100` and GID `101`. Keep
-the host user as the file owner, grant the container group read access, and
-prevent access by other users:
+For the current image, the application user is UID `100` and GID `101`. For
+sensitive files, keep the host user as the owner, grant the container group
+read access, and prevent access by other users:
 
 ```bash
-sudo chown "$(id -u):101" configs/oci_privkey.pem
-sudo chmod 640 configs/oci_privkey.pem
+HOST_FILE=configs/config.prod.yaml
+sudo chown "$(id -u):101" "$HOST_FILE"
+sudo chmod 640 "$HOST_FILE"
 chmod 755 configs
 ```
 
-Replace `configs/oci_privkey.pem` with the path referenced by `key_file` in the
-OCI config. If a future image reports a different GID, use that value instead
-of `101`.
+Set `HOST_FILE` to each required mounted file. For example, apply it to
+`configs/config.prod.yaml`, the OCI config file, and the private key referenced
+by OCI `key_file`. If a future image reports a different GID, use that value
+instead of `101`. Do not make private keys or credential files world-readable.
 
 Verify readability without starting the restart-prone application process:
 
 ```bash
 docker compose -f docker-compose.prod.yml run --rm --no-deps \
-  --entrypoint sh torvix -lc \
-  'su-exec torvix:torvix test -r /app/configs/oci_privkey.pem && echo readable'
+  --entrypoint sh \
+  -e CHECK_FILE=/app/configs/config.prod.yaml \
+  torvix -lc \
+  'su-exec torvix:torvix test -r "$CHECK_FILE" && echo readable'
 ```
 
 On SELinux-enforcing hosts such as Fedora or RHEL, label the bind mount for
@@ -437,9 +446,10 @@ Recreate Torvix after changing permissions or mount labels:
 docker compose -f docker-compose.prod.yml up -d --force-recreate torvix
 ```
 
-An `open /app/configs/<key>: permission denied` bootstrap error means the
-container user cannot read the local bind-mounted key. It occurs before OCI
-authentication and does not indicate that OCI API access was revoked.
+An `open /app/configs/<file>: permission denied` bootstrap error means the
+container user cannot read the local bind-mounted file. When the file is an OCI
+private key, this occurs before OCI authentication and does not indicate that
+OCI API access was revoked.
 
 ## Connect Production Prometheus
 
