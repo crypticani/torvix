@@ -2,7 +2,7 @@
   "title": "Torvix OCI FinOps Dashboard",
   "uid": "torvix-oci-finops-dashboard",
   "schemaVersion": 39,
-  "version": 18,
+  "version": 19,
   "refresh": "1m",
   "time": {
     "from": "now-30d",
@@ -896,7 +896,8 @@
     {
       "id": 10,
       "type": "table",
-      "title": "Anomaly Table",
+      "title": "Daily Cost Anomalies vs 7-Day Average",
+      "description": "Compares actual daily spend with the average of the previous 7 completed days. A row appears when the absolute difference is at least 1 and the change is at least 30% or at least 2 standard deviations from normal. High severity means at least 50% change or at least 3 standard deviations.",
       "datasource": {
         "type": "yesoreyeram-infinity-datasource",
         "uid": "TorvixAPI"
@@ -917,37 +918,47 @@
           "columns": [
             {
               "selector": "period_start",
-              "text": "period_start",
+              "text": "Date",
               "type": "timestamp"
             },
             {
+              "selector": "account_id",
+              "text": "Tenancy",
+              "type": "string"
+            },
+            {
               "selector": "service",
-              "text": "service",
+              "text": "Service",
+              "type": "string"
+            },
+            {
+              "selector": "region",
+              "text": "Region",
               "type": "string"
             },
             {
               "selector": "observed_cost",
-              "text": "observed_cost",
+              "text": "Actual Spend",
               "type": "number"
             },
             {
               "selector": "expected_cost",
-              "text": "expected_cost",
+              "text": "7-Day Average",
+              "type": "number"
+            },
+            {
+              "selector": "absolute_delta",
+              "text": "Difference",
               "type": "number"
             },
             {
               "selector": "percentage_delta",
-              "text": "percentage_delta",
+              "text": "Change",
               "type": "number"
             },
             {
               "selector": "severity",
-              "text": "severity",
-              "type": "string"
-            },
-            {
-              "selector": "explanation",
-              "text": "explanation",
+              "text": "Severity",
               "type": "string"
             }
           ]
@@ -955,14 +966,138 @@
       ],
       "gridPos": {
         "h": 8,
-        "w": 16,
+        "w": 24,
         "x": 0,
         "y": 53
       },
       "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        }
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Date"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "time:YYYY-MM-DD"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Actual Spend"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "7-Day Average"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Difference"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "locale"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Change"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Severity"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "high": {
+                        "color": "red",
+                        "index": 0,
+                        "text": "High"
+                      },
+                      "medium": {
+                        "color": "orange",
+                        "index": 1,
+                        "text": "Medium"
+                      },
+                      "low": {
+                        "color": "green",
+                        "index": 2,
+                        "text": "Low"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Date"
+          }
+        ]
       }
     },
     {
@@ -1017,9 +1152,9 @@
       ],
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 53
+        "w": 24,
+        "x": 0,
+        "y": 61
       }
     },
     {
@@ -1041,7 +1176,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 61
+        "y": 69
       },
       "fieldConfig": {
         "defaults": {
@@ -1068,7 +1203,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 61
+        "y": 69
       }
     },
     {
@@ -1090,7 +1225,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 61
+        "y": 69
       }
     },
     {
@@ -1112,7 +1247,7 @@
         "h": 4,
         "w": 4,
         "x": 12,
-        "y": 61
+        "y": 69
       }
     },
     {
@@ -1134,7 +1269,7 @@
         "h": 4,
         "w": 4,
         "x": 16,
-        "y": 61
+        "y": 69
       }
     },
     {
@@ -1156,7 +1291,7 @@
         "h": 4,
         "w": 4,
         "x": 20,
-        "y": 61
+        "y": 69
       }
     }
   ],
