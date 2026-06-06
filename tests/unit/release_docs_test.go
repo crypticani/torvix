@@ -21,6 +21,35 @@ func TestComposeFilesPassThroughAPIBearerToken(t *testing.T) {
 	}
 }
 
+func TestDeploymentDocsExplainAPIBearerToken(t *testing.T) {
+	envBytes, err := os.ReadFile("../../.env.example")
+	if err != nil {
+		t.Fatalf("read .env.example: %v", err)
+	}
+	envExample := string(envBytes)
+	if !strings.Contains(envExample, "TORVIX_API_BEARER_TOKEN=replace_with_long_random_token") {
+		t.Fatal(".env.example should provide a visible API bearer token placeholder")
+	}
+
+	deploymentBytes, err := os.ReadFile("../../docs/deployment.md")
+	if err != nil {
+		t.Fatalf("read deployment docs: %v", err)
+	}
+	deployment := string(deploymentBytes)
+	for _, expected := range []string{
+		"openssl rand -hex 32",
+		"TORVIX_API_BEARER_TOKEN=replace_with_generated_token",
+		`Authorization: Bearer ${TORVIX_API_BEARER_TOKEN}`,
+	} {
+		if !strings.Contains(deployment, expected) {
+			t.Fatalf("deployment docs should contain %q", expected)
+		}
+	}
+	if strings.Contains(deployment, "## Migration 011 Upgrade Note") {
+		t.Fatal("deployment docs should not contain the obsolete migration 011 upgrade note")
+	}
+}
+
 func TestSwaggerDocumentsCurrentVersionAndBearerAuth(t *testing.T) {
 	b, err := os.ReadFile("../../docs/swagger.json")
 	if err != nil {
