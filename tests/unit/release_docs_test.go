@@ -21,6 +21,38 @@ func TestComposeFilesPassThroughAPIBearerToken(t *testing.T) {
 	}
 }
 
+func TestContainerUsesStableRuntimeIdentity(t *testing.T) {
+	dockerfileBytes, err := os.ReadFile("../../Dockerfile")
+	if err != nil {
+		t.Fatalf("read Dockerfile: %v", err)
+	}
+	dockerfile := string(dockerfileBytes)
+	for _, expected := range []string{
+		"ARG TORVIX_UID=10001",
+		"ARG TORVIX_GID=10001",
+		`addgroup -S -g "$TORVIX_GID" torvix`,
+		`adduser -S -D -H -u "$TORVIX_UID" -G torvix torvix`,
+	} {
+		if !strings.Contains(dockerfile, expected) {
+			t.Fatalf("Dockerfile should contain %q", expected)
+		}
+	}
+
+	deploymentBytes, err := os.ReadFile("../../docs/deployment.md")
+	if err != nil {
+		t.Fatalf("read deployment docs: %v", err)
+	}
+	deployment := string(deploymentBytes)
+	for _, expected := range []string{
+		"UID `10001` and GID `10001`",
+		`sudo chown "$(id -u):10001" "$HOST_FILE"`,
+	} {
+		if !strings.Contains(deployment, expected) {
+			t.Fatalf("deployment docs should contain %q", expected)
+		}
+	}
+}
+
 func TestDeploymentDocsExplainAPIBearerToken(t *testing.T) {
 	envBytes, err := os.ReadFile("../../.env.example")
 	if err != nil {
