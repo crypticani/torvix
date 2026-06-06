@@ -74,12 +74,6 @@ Raw `cost_records` older than 90 days are removed by TimescaleDB retention and l
 
 Object-level selection and `processed_report_files` dedupe reduce unnecessary OCI downloads. For broad prefixes such as `reports/`, Torvix narrows OCI proprietary cost report selection to `reports/cost-csv/`, seeks near the recent Object Storage metadata window, and processes the bounded candidate set newest-first. OCI numeric suffixes are not authoritative billing-period recency signals, and record-level filtering is still required because a recently modified billing export can contain historical usage rows. Torvix filters each parsed record by `ingestion.lookback_days` before insertion, so old rows are reported as `records_skipped_old` and never rely on retention cleanup to disappear. If selected reports produce zero rows inside the lookback window, `max_zero_yield_files` stops the run before it can spend minutes parsing historical data.
 
-## Migration 011 Upgrade Note
-
-Older Torvix builds could fail during migration 011 on existing TimescaleDB deployments where `cost_records` had columnstore/compression enabled. Current builds use the safe hypertable migration pattern for `cost_records`: add nullable columns, backfill existing rows, set defaults afterward, and avoid adding `NOT NULL` constraints on the compressed hypertable.
-
-When upgrading from an affected build, use an image that includes the patched migration and verify that `011_provider_agnostic_cost_dimensions.sql` is recorded in `schema_migrations` after bootstrap completes.
-
 ## Production Setup
 
 Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are managed outside the Torvix Compose stack.
@@ -107,7 +101,40 @@ Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are 
 
 3. Set production provider credentials in `configs/config.prod.yaml` and/or `.env`. AWS uses `providers.aws` plus the AWS SDK credential environment; OCI uses `providers.oci`. The production Compose file loads `.env` into the Torvix container with `env_file`; if `.env` is absent, only YAML/default values are used.
 
-4. Configure any alerting targets under `reporting.webhooks`.
+4. Configure API authentication. Generate a long random token:
+
+   ```bash
+   openssl rand -hex 32
+   ```
+
+   Put the generated value in the ignored `.env` file:
+
+   ```env
+   TORVIX_API_BEARER_TOKEN=replace_with_generated_token
+   ```
+
+   A non-empty `TORVIX_API_BEARER_TOKEN` automatically enables API authentication and overrides the YAML bearer token. The production Compose file passes this variable to Torvix. Do not commit `.env`.
+
+   Every endpoint except `/healthz` and `/swagger/*` then requires the token:
+
+   ```bash
+   curl \
+     -H "Authorization: Bearer ${TORVIX_API_BEARER_TOKEN}" \
+     "http://localhost:8080/api/v1/dashboard/overview?provider=aws"
+   ```
+
+   Grafana Infinity, Superset, and custom clients must send the same `Authorization` header. To configure auth in YAML instead, set:
+
+   ```yaml
+   api:
+     auth:
+       enabled: true
+       bearer_token: "replace_with_long_random_token"
+   ```
+
+   Prefer the environment variable for production secrets.
+
+5. Configure any alerting targets under `reporting.webhooks`.
    The production example includes disabled placeholders for Slack, Microsoft Teams, Telegram, Discord, and SMTP email. Keep only the targets you use, replace placeholder secrets, set the correct `currency`, and set `enabled: true`.
 
    The default report scheduler uses `Asia/Kolkata`:
@@ -141,7 +168,7 @@ Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are 
 
    The same values can be overridden with `TORVIX_WASTE_DETECTION_ENABLED`, `TORVIX_WASTE_PROVIDER`, `TORVIX_WASTE_SCAN_INTERVAL_HOURS`, `TORVIX_WASTE_MIN_RESOURCE_AGE_DAYS`, `TORVIX_WASTE_STOPPED_INSTANCE_MIN_DAYS`, `TORVIX_WASTE_MIN_COST_THRESHOLD`, `TORVIX_WASTE_HIGH_MONTHLY_THRESHOLD`, `TORVIX_WASTE_ENABLE_TAG_EXCLUSIONS`, and `TORVIX_WASTE_EXCLUSION_TAG_KEYS`.
 
-5. Start only the Torvix app:
+6. Start only the Torvix app:
 
    ```bash
    docker compose -f docker-compose.prod.yml up --build -d
@@ -153,11 +180,11 @@ Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are 
    make compose-prod-up
    ```
 
-6. Validate the app:
+7. Validate the app:
 
    ```bash
    curl http://localhost:8080/healthz
-   curl http://localhost:8080/metrics
+   curl -H "Authorization: Bearer ${TORVIX_API_BEARER_TOKEN}" http://localhost:8080/metrics
    ```
 
 The production Compose file uses host networking and does not publish Docker ports. The app binds to `:8080` by default. Override the actual app listener with:
@@ -170,7 +197,7 @@ Then validate with:
 
 ```bash
 curl http://localhost:18080/healthz
-curl http://localhost:18080/metrics
+curl -H "Authorization: Bearer ${TORVIX_API_BEARER_TOKEN}" http://localhost:18080/metrics
 ```
 
 The config file can also manage the listener:
@@ -554,16 +581,7 @@ datasources:
 
 Restart or reload Grafana provisioning after copying the files.
 
-Enable the Torvix API auth placeholder in production config:
-
-```yaml
-api:
-  auth:
-    enabled: true
-    bearer_token: "replace_with_long_random_token"
-```
-
-The same value can be supplied with `TORVIX_API_BEARER_TOKEN`. When auth is enabled, every Torvix endpoint except `/healthz` and `/swagger/*` requires `Authorization: Bearer <token>`. Configure production Grafana's Infinity datasource, Superset, or custom clients to send this header.
+Use the API bearer token configured during production setup. When auth is enabled, every Torvix endpoint except `/healthz` and `/swagger/*` requires `Authorization: Bearer <token>`. Configure production Grafana's Infinity datasource, Superset, or custom clients to send this header.
 
 ## Verify Dashboard Data After Ingestion
 
