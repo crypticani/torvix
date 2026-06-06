@@ -61,6 +61,12 @@ func TestNewDashboardsUseTorvixAPIEndpoints(t *testing.T) {
 				"/api/v1/dashboard/cost-by-service?provider=aws",
 				"/api/v1/dashboard/drilldown?provider=aws",
 				"/api/v1/dashboard/anomalies?provider=aws",
+				"/api/v1/dashboard/cost-increases?period=daily&provider=aws",
+				"/api/v1/dashboard/cost-increases?period=weekly&provider=aws",
+				"/api/v1/dashboard/cost-increases?period=monthly&provider=aws",
+				"/api/v1/dashboard/cost-decreases?period=daily&provider=aws",
+				"/api/v1/dashboard/cost-decreases?period=weekly&provider=aws",
+				"/api/v1/dashboard/cost-decreases?period=monthly&provider=aws",
 			},
 		},
 	}
@@ -77,6 +83,51 @@ func TestNewDashboardsUseTorvixAPIEndpoints(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestAWSDashboardCostChangePanelsUseTwoPanelRows(t *testing.T) {
+	b, err := os.ReadFile("../../dashboards/torvix-aws-finops-dashboard.json")
+	if err != nil {
+		t.Fatalf("read AWS dashboard: %v", err)
+	}
+	var dashboard struct {
+		Panels []struct {
+			Title   string `json:"title"`
+			GridPos struct {
+				H int `json:"h"`
+				W int `json:"w"`
+				X int `json:"x"`
+				Y int `json:"y"`
+			} `json:"gridPos"`
+		} `json:"panels"`
+	}
+	if err := json.Unmarshal(b, &dashboard); err != nil {
+		t.Fatalf("parse AWS dashboard: %v", err)
+	}
+	expected := map[string]struct {
+		x int
+		y int
+	}{
+		"Daily Cost Increases":   {x: 0, y: 29},
+		"Daily Cost Decreases":   {x: 12, y: 29},
+		"Weekly Cost Increases":  {x: 0, y: 37},
+		"Weekly Cost Decreases":  {x: 12, y: 37},
+		"Monthly Cost Increases": {x: 0, y: 45},
+		"Monthly Cost Decreases": {x: 12, y: 45},
+	}
+	for _, panel := range dashboard.Panels {
+		want, ok := expected[panel.Title]
+		if !ok {
+			continue
+		}
+		if panel.GridPos.X != want.x || panel.GridPos.Y != want.y || panel.GridPos.W != 12 || panel.GridPos.H != 8 {
+			t.Fatalf("%s grid position = %+v, want x=%d y=%d w=12 h=8", panel.Title, panel.GridPos, want.x, want.y)
+		}
+		delete(expected, panel.Title)
+	}
+	if len(expected) != 0 {
+		t.Fatalf("missing AWS cost-change panels: %+v", expected)
 	}
 }
 

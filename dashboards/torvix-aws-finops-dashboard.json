@@ -2,7 +2,7 @@
   "title": "Torvix AWS FinOps Dashboard",
   "uid": "torvix-aws-finops-dashboard",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "5m",
   "time": {
     "from": "now-30d",
@@ -579,6 +579,408 @@
             "displayName": "period_start"
           }
         ]
+      }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Daily Cost Increases",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-increases?period=daily&provider=aws&limit=10",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "account_id",
+              "text": "account",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "current_cost",
+              "text": "current_cost",
+              "type": "number"
+            },
+            {
+              "selector": "previous_cost",
+              "text": "previous_cost",
+              "type": "number"
+            },
+            {
+              "selector": "delta",
+              "text": "delta",
+              "type": "number"
+            },
+            {
+              "selector": "percent_change",
+              "text": "percent_change",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 29
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Weekly Cost Increases",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-increases?period=weekly&provider=aws&limit=10",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "account_id",
+              "text": "account",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "current_cost",
+              "text": "current_cost",
+              "type": "number"
+            },
+            {
+              "selector": "previous_cost",
+              "text": "previous_cost",
+              "type": "number"
+            },
+            {
+              "selector": "delta",
+              "text": "delta",
+              "type": "number"
+            },
+            {
+              "selector": "percent_change",
+              "text": "percent_change",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 37
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Monthly Cost Increases",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-increases?period=monthly&provider=aws&limit=10",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "account_id",
+              "text": "account",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "current_cost",
+              "text": "current_cost",
+              "type": "number"
+            },
+            {
+              "selector": "previous_cost",
+              "text": "previous_cost",
+              "type": "number"
+            },
+            {
+              "selector": "delta",
+              "text": "delta",
+              "type": "number"
+            },
+            {
+              "selector": "percent_change",
+              "text": "percent_change",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 45
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "Daily Cost Decreases",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-decreases?period=daily&provider=aws&limit=10",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "account_id",
+              "text": "account",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "current_cost",
+              "text": "current_cost",
+              "type": "number"
+            },
+            {
+              "selector": "previous_cost",
+              "text": "previous_cost",
+              "type": "number"
+            },
+            {
+              "selector": "delta",
+              "text": "delta",
+              "type": "number"
+            },
+            {
+              "selector": "percent_change",
+              "text": "percent_change",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 29
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "table",
+      "title": "Weekly Cost Decreases",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-decreases?period=weekly&provider=aws&limit=10",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "account_id",
+              "text": "account",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "current_cost",
+              "text": "current_cost",
+              "type": "number"
+            },
+            {
+              "selector": "previous_cost",
+              "text": "previous_cost",
+              "type": "number"
+            },
+            {
+              "selector": "delta",
+              "text": "delta",
+              "type": "number"
+            },
+            {
+              "selector": "percent_change",
+              "text": "percent_change",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 37
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "table",
+      "title": "Monthly Cost Decreases",
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "TorvixAPI"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/api/v1/dashboard/cost-decreases?period=monthly&provider=aws&limit=10",
+          "url_options": {
+            "data": "",
+            "method": "GET"
+          },
+          "root_selector": "data",
+          "columns": [
+            {
+              "selector": "account_id",
+              "text": "account",
+              "type": "string"
+            },
+            {
+              "selector": "service",
+              "text": "service",
+              "type": "string"
+            },
+            {
+              "selector": "current_cost",
+              "text": "current_cost",
+              "type": "number"
+            },
+            {
+              "selector": "previous_cost",
+              "text": "previous_cost",
+              "type": "number"
+            },
+            {
+              "selector": "delta",
+              "text": "delta",
+              "type": "number"
+            },
+            {
+              "selector": "percent_change",
+              "text": "percent_change",
+              "type": "number"
+            }
+          ]
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 45
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
       }
     }
   ],
