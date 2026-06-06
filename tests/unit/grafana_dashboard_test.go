@@ -58,6 +58,13 @@ func TestGrafanaDashboardUsesTorvixDashboardAPIs(t *testing.T) {
 			} `json:"list"`
 		} `json:"templating"`
 		Panels []struct {
+			Title   string `json:"title"`
+			GridPos struct {
+				H int `json:"h"`
+				W int `json:"w"`
+				X int `json:"x"`
+				Y int `json:"y"`
+			} `json:"gridPos"`
 			Datasource struct {
 				UID string `json:"uid"`
 			} `json:"datasource"`
@@ -81,6 +88,31 @@ func TestGrafanaDashboardUsesTorvixDashboardAPIs(t *testing.T) {
 	}
 	if dashboard.Version < 16 {
 		t.Fatalf("expected dashboard version to be bumped for Grafana provisioning reloads, got %d", dashboard.Version)
+	}
+	expectedCostChangePositions := map[string]struct {
+		x int
+		y int
+		w int
+	}{
+		"Daily Cost Increases":   {x: 0, y: 29, w: 12},
+		"Daily Cost Decreases":   {x: 12, y: 29, w: 12},
+		"Weekly Cost Increases":  {x: 0, y: 37, w: 12},
+		"Weekly Cost Decreases":  {x: 12, y: 37, w: 12},
+		"Monthly Cost Increases": {x: 0, y: 45, w: 12},
+		"Monthly Cost Decreases": {x: 12, y: 45, w: 12},
+	}
+	for _, panel := range dashboard.Panels {
+		expected, ok := expectedCostChangePositions[panel.Title]
+		if !ok {
+			continue
+		}
+		if panel.GridPos.X != expected.x || panel.GridPos.Y != expected.y || panel.GridPos.W != expected.w || panel.GridPos.H != 8 {
+			t.Fatalf("%s grid position = %+v, want x=%d y=%d w=%d h=8", panel.Title, panel.GridPos, expected.x, expected.y, expected.w)
+		}
+		delete(expectedCostChangePositions, panel.Title)
+	}
+	if len(expectedCostChangePositions) != 0 {
+		t.Fatalf("missing cost-change panels from dashboard: %+v", expectedCostChangePositions)
 	}
 	joined := string(b)
 	for _, required := range []string{
