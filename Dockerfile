@@ -8,12 +8,14 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=${TARGETARCH:-$(go env GOARCH)} go build -o /out/torvix ./cmd/torvix
 
 FROM alpine:3.22
+ARG TORVIX_UID=10001
+ARG TORVIX_GID=10001
 LABEL org.opencontainers.image.title="Torvix" \
       org.opencontainers.image.description="Torvix is an open-source cloud cost intelligence and waste detection platform."
 WORKDIR /app
 RUN apk add --no-cache ca-certificates su-exec \
-    && addgroup -S torvix \
-    && adduser -S -D -H -G torvix torvix \
+    && addgroup -S -g "$TORVIX_GID" torvix \
+    && adduser -S -D -H -u "$TORVIX_UID" -G torvix torvix \
     && mkdir -p /app/logs \
     && chown -R torvix:torvix /app
 COPY docker/entrypoint.sh /app/entrypoint.sh

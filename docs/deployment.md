@@ -397,30 +397,29 @@ CA certificates, and any other file read from the bind mount. A file can exist
 inside the container and still be unreadable when its host ownership or mode
 does not grant access to the container user.
 
-Check the numeric UID and GID used by the selected image:
+The official Torvix image uses the stable runtime identity UID `10001` and GID `10001`.
+These IDs are explicit in the Dockerfile and remain fixed across
+releases. Custom image builds can override the `TORVIX_UID` and `TORVIX_GID`
+build arguments, but deployments using the official image should configure
+host files for GID `10001`.
 
-```bash
-docker run --rm \
-  --entrypoint id \
-  "${TORVIX_IMAGE:-crypticani/torvix:latest}" \
-  torvix
-```
-
-For the current image, the application user is UID `100` and GID `101`. For
-sensitive files, keep the host user as the owner, grant the container group
-read access, and prevent access by other users:
+For sensitive files, keep the host user as the owner, grant the Torvix
+container group read access, and prevent access by other users:
 
 ```bash
 HOST_FILE=configs/config.prod.yaml
-sudo chown "$(id -u):101" "$HOST_FILE"
+sudo chown "$(id -u):10001" "$HOST_FILE"
 sudo chmod 640 "$HOST_FILE"
 chmod 755 configs
 ```
 
 Set `HOST_FILE` to each required mounted file. For example, apply it to
 `configs/config.prod.yaml`, the OCI config file, and the private key referenced
-by OCI `key_file`. If a future image reports a different GID, use that value
-instead of `101`. Do not make private keys or credential files world-readable.
+by OCI `key_file`. Do not make private keys or credential files world-readable.
+
+When upgrading from an older Torvix image that used an implicitly assigned
+container GID, update the group ownership of each mounted file once to
+`10001` before recreating the container.
 
 Verify readability without starting the restart-prone application process:
 
