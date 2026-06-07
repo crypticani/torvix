@@ -187,17 +187,17 @@ func refreshCostAnomalies(ctx context.Context, tx pgx.Tx, logger *slog.Logger, f
 		return fmt.Errorf("delete cost anomalies window: %w", err)
 	}
 	_, err := tx.Exec(ctx, `
-		WITH series AS (
+		WITH selected AS (
 			SELECT
 				period_start,
 				provider,
 				account_id,
+				compartment_id,
+				compartment_name,
 				service,
-				category,
 				region,
-				total_cost,
-				AVG(total_cost) OVER w AS expected_cost,
-				STDDEV_POP(total_cost) OVER w AS stddev
+				currency,
+				total_cost
 			FROM daily_cost_summaries d
 			WHERE d.period_start >= $3 AND d.period_start < $2
 			  AND (
@@ -214,44 +214,74 @@ func refreshCostAnomalies(ctx context.Context, tx pgx.Tx, logger *slog.Logger, f
 					)
 				)
 			  )
-			WINDOW w AS (
-				PARTITION BY provider, account_id, service, category, region
-				ORDER BY period_start
-				ROWS BETWEEN 7 PRECEDING AND 1 PRECEDING
-			)
 		),
-		scored AS (
+		daily AS (
 			SELECT
 				period_start,
 				provider,
 				account_id,
+				compartment_id,
+				compartment_name,
 				service,
-				category,
 				region,
-				total_cost AS observed_cost,
-				expected_cost,
-				(total_cost - expected_cost) AS absolute_delta,
-				CASE WHEN expected_cost > 0 THEN ((total_cost - expected_cost) / expected_cost) * 100 ELSE 0 END AS percentage_delta,
-				CASE WHEN COALESCE(stddev, 0) > 0 THEN (total_cost - expected_cost) / stddev ELSE 0 END AS z_score
-			FROM series
-			WHERE period_start >= $1
-			  AND period_start < $2
-			  AND expected_cost IS NOT NULL
+				currency,
+				SUM(total_cost)::double precision AS total_cost
+			FROM selected
+			GROUP BY period_start, provider, account_id, compartment_id, compartment_name, service, region, currency
+		),
+		scored AS (
+			SELECT
+				current.period_start,
+				current.provider,
+				current.account_id,
+				current.compartment_id,
+				current.compartment_name,
+				current.service,
+				current.region,
+				current.currency,
+				current.total_cost AS observed_cost,
+				baseline.expected_cost,
+				(current.total_cost - baseline.expected_cost) AS absolute_delta,
+				CASE WHEN baseline.expected_cost > 0 THEN ((current.total_cost - baseline.expected_cost) / baseline.expected_cost) * 100 ELSE 0 END AS percentage_delta,
+				CASE WHEN COALESCE(baseline.stddev, 0) > 0 THEN (current.total_cost - baseline.expected_cost) / baseline.stddev ELSE 0 END AS z_score
+			FROM daily current
+			CROSS JOIN LATERAL (
+				SELECT
+					AVG(prior.total_cost) AS expected_cost,
+					STDDEV_POP(prior.total_cost) AS stddev
+				FROM daily prior
+				WHERE prior.provider = current.provider
+				  AND prior.account_id = current.account_id
+				  AND prior.compartment_id = current.compartment_id
+				  AND prior.compartment_name = current.compartment_name
+				  AND prior.service = current.service
+				  AND prior.region = current.region
+				  AND prior.currency = current.currency
+				  AND prior.period_start >= current.period_start - INTERVAL '7 days'
+				  AND prior.period_start < current.period_start
+			) baseline
+			WHERE current.period_start >= $1
+			  AND current.period_start < $2
+			  AND baseline.expected_cost IS NOT NULL
 		)
 		INSERT INTO cost_anomalies
-		(detected_at, period_start, provider, account_id, category, service, region, observed_cost, expected_cost, absolute_delta, percentage_delta, severity, detection_method, explanation, created_at)
+		(detected_at, period_start, provider, account_id, compartment_id, compartment_name, category, service, region, currency, observed_cost, expected_cost, absolute_delta, percentage_delta, direction, severity, detection_method, explanation, created_at)
 		SELECT
 			NOW(),
 			period_start,
 			provider,
 			account_id,
-			category,
+			compartment_id,
+			compartment_name,
+			'all',
 			service,
 			region,
+			currency,
 			observed_cost,
 			expected_cost,
 			absolute_delta,
 			percentage_delta,
+			CASE WHEN absolute_delta >= 0 THEN 'increase' ELSE 'decrease' END,
 			CASE
 				WHEN ABS(percentage_delta) >= 50 OR ABS(z_score) >= 3 THEN 'high'
 				WHEN ABS(percentage_delta) >= 30 OR ABS(z_score) >= 2 THEN 'medium'
@@ -406,10 +436,11 @@ func (r *Repository) DashboardAnomalies(ctx context.Context, from, to time.Time,
 		args = append(args, severity)
 	}
 	rows, err := r.db.Query(ctx, `
-		SELECT detected_at, period_start, provider, account_id, category, service, region,
+		SELECT detected_at, period_start, provider, account_id, compartment_id, compartment_name,
+		       category, service, region, currency,
 		       observed_cost::double precision, expected_cost::double precision,
 		       absolute_delta::double precision, percentage_delta::double precision,
-		       severity, detection_method, explanation, created_at
+		       direction, severity, detection_method, explanation, created_at
 		FROM cost_anomalies
 		WHERE period_start >= $1 AND period_start < $2`+filter+`
 		ORDER BY period_start DESC, ABS(absolute_delta) DESC
@@ -422,7 +453,7 @@ func (r *Repository) DashboardAnomalies(ctx context.Context, from, to time.Time,
 	out := make([]domain.DashboardAnomaly, 0)
 	for rows.Next() {
 		var row domain.DashboardAnomaly
-		if err := rows.Scan(&row.DetectedAt, &row.PeriodStart, &row.Provider, &row.AccountID, &row.Category, &row.Service, &row.Region, &row.ObservedCost, &row.ExpectedCost, &row.AbsoluteDelta, &row.PercentageDelta, &row.Severity, &row.DetectionMethod, &row.Explanation, &row.CreatedAt); err != nil {
+		if err := rows.Scan(&row.DetectedAt, &row.PeriodStart, &row.Provider, &row.AccountID, &row.CompartmentID, &row.CompartmentName, &row.Category, &row.Service, &row.Region, &row.Currency, &row.ObservedCost, &row.ExpectedCost, &row.AbsoluteDelta, &row.PercentageDelta, &row.Direction, &row.Severity, &row.DetectionMethod, &row.Explanation, &row.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, row)

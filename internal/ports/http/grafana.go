@@ -30,11 +30,15 @@ type grafanaAnomalyRow struct {
 	Date             time.Time       `json:"date"`
 	Provider         domain.Provider `json:"provider"`
 	AccountID        string          `json:"account_id"`
+	CompartmentName  string          `json:"compartment_name"`
 	Service          string          `json:"service"`
+	Region           string          `json:"region"`
+	Currency         string          `json:"currency"`
 	Baseline         float64         `json:"baseline"`
 	Actual           float64         `json:"actual"`
 	ZScore           float64         `json:"z_score"`
 	PercentDeviation float64         `json:"percent_deviation"`
+	Direction        string          `json:"direction"`
 	Severity         string          `json:"severity"`
 }
 
@@ -195,11 +199,15 @@ func (h *Handler) grafanaAnomalies(w http.ResponseWriter, r *http.Request) {
 			Date:             anomaly.PeriodStart,
 			Provider:         anomaly.Provider,
 			AccountID:        anomaly.AccountID,
+			CompartmentName:  anomaly.CompartmentName,
 			Service:          anomaly.Service,
+			Region:           anomaly.Region,
+			Currency:         anomaly.Currency,
 			Baseline:         anomaly.ExpectedCost,
 			Actual:           anomaly.ObservedCost,
 			ZScore:           0,
 			PercentDeviation: anomaly.PercentageDelta,
+			Direction:        anomaly.Direction,
 			Severity:         anomaly.Severity,
 		})
 	}

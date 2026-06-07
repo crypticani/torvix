@@ -133,9 +133,10 @@ func TestAWSDashboardCostChangePanelsUseTwoPanelRows(t *testing.T) {
 
 func TestAnomalyTablesUseReadableEvidenceColumns(t *testing.T) {
 	tests := []struct {
-		file       string
-		panelTitle string
-		scopeLabel string
+		file        string
+		panelTitle  string
+		scopeLabel  string
+		compartment bool
 	}{
 		{
 			file:       "../../dashboards/torvix-aws-finops-dashboard.json",
@@ -143,9 +144,10 @@ func TestAnomalyTablesUseReadableEvidenceColumns(t *testing.T) {
 			scopeLabel: "Account",
 		},
 		{
-			file:       "../../dashboards/torvix-oci-finops-dashboard.json",
-			panelTitle: "Daily Cost Anomalies vs 7-Day Average",
-			scopeLabel: "Tenancy",
+			file:        "../../dashboards/torvix-oci-finops-dashboard.json",
+			panelTitle:  "Daily Cost Anomalies vs 7-Day Average",
+			scopeLabel:  "Tenancy",
+			compartment: true,
 		},
 	}
 
@@ -194,7 +196,7 @@ func TestAnomalyTablesUseReadableEvidenceColumns(t *testing.T) {
 				if panel.GridPos.X != 0 || panel.GridPos.W != 24 || panel.GridPos.H != 8 {
 					t.Fatalf("anomaly table must be full-width, got %+v", panel.GridPos)
 				}
-				for _, expected := range []string{"previous 7 completed days", "30%", "50%", "standard deviations"} {
+				for _, expected := range []string{"previous 7 completed calendar days", "30%", "50%", "standard deviations"} {
 					if !strings.Contains(panel.Description, expected) {
 						t.Fatalf("anomaly description should explain %q, got %q", expected, panel.Description)
 					}
@@ -209,14 +211,33 @@ func TestAnomalyTablesUseReadableEvidenceColumns(t *testing.T) {
 				}{
 					{selector: "period_start", text: "Date", dataType: "timestamp"},
 					{selector: "account_id", text: tt.scopeLabel, dataType: "string"},
-					{selector: "service", text: "Service", dataType: "string"},
-					{selector: "region", text: "Region", dataType: "string"},
-					{selector: "observed_cost", text: "Actual Spend", dataType: "number"},
-					{selector: "expected_cost", text: "7-Day Average", dataType: "number"},
-					{selector: "absolute_delta", text: "Difference", dataType: "number"},
-					{selector: "percentage_delta", text: "Change", dataType: "number"},
-					{selector: "severity", text: "Severity", dataType: "string"},
+					{selector: "direction", text: "Direction", dataType: "string"},
 				}
+				if tt.compartment {
+					expectedColumns = append(expectedColumns,
+						struct {
+							selector string
+							text     string
+							dataType string
+						}{selector: "compartment_name", text: "Compartment", dataType: "string"},
+					)
+				}
+				expectedColumns = append(expectedColumns,
+					[]struct {
+						selector string
+						text     string
+						dataType string
+					}{
+						{selector: "service", text: "Service", dataType: "string"},
+						{selector: "region", text: "Region", dataType: "string"},
+						{selector: "currency", text: "Currency", dataType: "string"},
+						{selector: "observed_cost", text: "Actual Spend", dataType: "number"},
+						{selector: "expected_cost", text: "7-Day Average", dataType: "number"},
+						{selector: "absolute_delta", text: "Difference", dataType: "number"},
+						{selector: "percentage_delta", text: "Change", dataType: "number"},
+						{selector: "severity", text: "Severity", dataType: "string"},
+					}...,
+				)
 				if len(panel.Targets[0].Columns) != len(expectedColumns) {
 					t.Fatalf("anomaly columns = %+v, want %d readable evidence columns", panel.Targets[0].Columns, len(expectedColumns))
 				}
@@ -230,7 +251,7 @@ func TestAnomalyTablesUseReadableEvidenceColumns(t *testing.T) {
 				for _, override := range panel.FieldConfig.Overrides {
 					overrideNames[override.Matcher.Options] = struct{}{}
 				}
-				for _, expected := range []string{"Date", "Actual Spend", "7-Day Average", "Difference", "Change", "Severity"} {
+				for _, expected := range []string{"Date", "Direction", "Actual Spend", "7-Day Average", "Difference", "Change"} {
 					if _, ok := overrideNames[expected]; !ok {
 						t.Fatalf("expected anomaly table field override for %q", expected)
 					}
