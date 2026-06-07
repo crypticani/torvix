@@ -376,7 +376,7 @@ func storeCostRecordsTx(ctx context.Context, tx pgx.Tx, records []domain.Canonic
 	`
 	const insertSQL = insertPrefix + `
 		ON CONFLICT ("timestamp", cloud_provider, region, billing_scope_type, billing_scope_id, service, record_type)
-		WHERE cloud_provider = 'aws'
+		WHERE cloud_provider = 'aws' AND record_type <> 'cur_line_item'
 		DO UPDATE SET
 			account_id = EXCLUDED.account_id,
 			category = EXCLUDED.category,

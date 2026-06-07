@@ -192,6 +192,7 @@ func TestAWSCostRecordsUseIdempotentUpsertKey(t *testing.T) {
 	sql := string(b)
 	for _, want := range []string{
 		`ON CONFLICT ("timestamp", cloud_provider, region, billing_scope_type, billing_scope_id, service, record_type)`,
+		`record_type <> 'cur_line_item'`,
 		`ON CONFLICT ("timestamp", cloud_provider, record_type, source_file_key, source_record_hash)`,
 		`record_type = 'cur_line_item'`,
 		`source_file_key <> ''`,

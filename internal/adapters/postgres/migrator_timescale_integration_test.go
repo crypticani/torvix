@@ -13,6 +13,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/crypticani/torvix/internal/domain"
 )
 
 func TestMigration011UpgradesCompressedLegacyHypertable(t *testing.T) {
@@ -126,6 +128,75 @@ func TestMigration011UpgradesCompressedLegacyHypertable(t *testing.T) {
 		if defaultValue != expectedDefault {
 			t.Fatalf("%s default = %q, want %q", column, defaultValue, expectedDefault)
 		}
+	}
+
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatalf("begin AWS idempotency verification: %v", err)
+	}
+	records := []domain.CanonicalCostRecord{
+		{
+			Timestamp:        time.Now().UTC(),
+			Provider:         domain.ProviderAWS,
+			AccountID:        "123456789012",
+			Service:          "AmazonEC2",
+			Category:         "Compute",
+			BillingScopeType: "linked_account",
+			BillingScopeID:   "123456789012",
+			Region:           "us-east-1",
+			Cost:             10,
+			Currency:         "USD",
+			RecordType:       "cost_explorer_daily",
+		},
+	}
+	records = append(records, records[0])
+	curTimestamp := time.Now().UTC().Add(time.Second)
+	records = append(records,
+		domain.CanonicalCostRecord{
+			Timestamp:        curTimestamp,
+			Provider:         domain.ProviderAWS,
+			AccountID:        "123456789012",
+			Service:          "AmazonS3",
+			Category:         "Storage",
+			BillingScopeType: "linked_account",
+			BillingScopeID:   "123456789012",
+			Region:           "us-east-1",
+			Cost:             1,
+			Currency:         "USD",
+			RecordType:       "cur_line_item",
+			SourceFileKey:    "exports/part-1.csv.gz",
+			SourceRecordHash: "same-logical-line",
+		},
+		domain.CanonicalCostRecord{
+			Timestamp:        curTimestamp,
+			Provider:         domain.ProviderAWS,
+			AccountID:        "123456789012",
+			Service:          "AmazonS3",
+			Category:         "Storage",
+			BillingScopeType: "linked_account",
+			BillingScopeID:   "123456789012",
+			Region:           "us-east-1",
+			Cost:             2,
+			Currency:         "USD",
+			RecordType:       "cur_line_item",
+			SourceFileKey:    "exports/part-2.csv.gz",
+			SourceRecordHash: "same-logical-line",
+		},
+	)
+	if err := storeCostRecordsTx(ctx, tx, records); err != nil {
+		_ = tx.Rollback(ctx)
+		t.Fatalf("store AWS records after idempotency migration: %v", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatalf("commit AWS idempotency verification: %v", err)
+	}
+
+	var awsRows int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM cost_records WHERE cloud_provider = 'aws'`).Scan(&awsRows); err != nil {
+		t.Fatalf("count AWS idempotency rows: %v", err)
+	}
+	if awsRows != 3 {
+		t.Fatalf("AWS rows = %d, want 3 (one generic aggregate and two source-scoped CUR rows)", awsRows)
 	}
 }
 
