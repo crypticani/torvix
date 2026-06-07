@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -100,7 +101,7 @@ func NewWithLoggers(cfg config.Config, loggers logging.Loggers) (*App, error) {
 		collectors = append(collectors, ociCollector)
 	}
 	if cfg.Providers.AWS.Enabled {
-		awsCollector, err := awsadapter.New(context.Background(), cfg.Providers.AWS, loggers.AWS)
+		awsCollector, err := awsadapter.New(context.Background(), cfg.Providers.AWS.WithIngestionDefaults(cfg.Ingestion), loggers.AWS, repo)
 		if err != nil {
 			return nil, err
 		}
@@ -320,6 +321,10 @@ func (a *App) runScheduledIngestion(ctx context.Context, now func() time.Time) {
 	}
 	started := now()
 	results, err := a.collector.Run(ctx, time.Time{})
+	if errors.Is(err, collect.ErrRunAlreadyActive) {
+		a.schedulerLogger.Info("scheduled ingestion skipped because another ingestion run is active")
+		return
+	}
 	completedAt := now()
 	duration := completedAt.Sub(started)
 	status := scheduledIngestionStatus(results, err)

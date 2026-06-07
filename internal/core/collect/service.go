@@ -20,7 +20,10 @@ type Service struct {
 	collectors []providers.Collector
 	metrics    MetricsRecorder
 	policy     Policy
+	runMu      sync.Mutex
 }
+
+var ErrRunAlreadyActive = errors.New("ingestion run already active")
 
 type Policy struct {
 	LookbackDays         int
@@ -61,6 +64,11 @@ type ProviderResult struct {
 }
 
 func (s *Service) Run(ctx context.Context, since time.Time) ([]ProviderResult, error) {
+	if !s.runMu.TryLock() {
+		return nil, ErrRunAlreadyActive
+	}
+	defer s.runMu.Unlock()
+
 	var (
 		wg      sync.WaitGroup
 		mu      sync.Mutex

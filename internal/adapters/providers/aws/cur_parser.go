@@ -32,6 +32,16 @@ type curParseResult struct {
 }
 
 func parseCURCSV(reader io.Reader, source curSource) (curParseResult, error) {
+	result := curParseResult{Records: make([]domain.RawBillingRecord, 0)}
+	parsed, err := parseCURCSVStream(reader, source, func(record domain.RawBillingRecord) error {
+		result.Records = append(result.Records, record)
+		return nil
+	})
+	parsed.Records = result.Records
+	return parsed, err
+}
+
+func parseCURCSVStream(reader io.Reader, source curSource, handle func(domain.RawBillingRecord) error) (curParseResult, error) {
 	csvReader := csv.NewReader(reader)
 	csvReader.FieldsPerRecord = -1
 	csvReader.ReuseRecord = true
@@ -48,7 +58,7 @@ func parseCURCSV(reader io.Reader, source curSource) (curParseResult, error) {
 		return curParseResult{}, err
 	}
 
-	result := curParseResult{Records: make([]domain.RawBillingRecord, 0)}
+	result := curParseResult{}
 	lineNumber := int64(1)
 	for {
 		row, err := csvReader.Read()
@@ -68,7 +78,9 @@ func parseCURCSV(reader io.Reader, source curSource) (curParseResult, error) {
 			result.MalformedRows++
 			continue
 		}
-		result.Records = append(result.Records, record)
+		if err := handle(record); err != nil {
+			return result, err
+		}
 	}
 	return result, nil
 }

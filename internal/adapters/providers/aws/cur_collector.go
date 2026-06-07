@@ -20,10 +20,15 @@ import (
 	"github.com/crypticani/torvix/internal/ports/providers"
 )
 
+type sourceCleaner interface {
+	DeleteCostRecordsForSource(ctx context.Context, provider domain.Provider, sourceObject string) error
+}
+
 type CURCollector struct {
 	cfg    config.AWSProvider
 	logger *slog.Logger
 	client S3Client
+	repo   sourceCleaner
 }
 
 type curObject struct {
@@ -33,22 +38,56 @@ type curObject struct {
 	Size         int64
 }
 
-func NewCURCollector(cfg config.AWSProvider, logger *slog.Logger, client S3Client) *CURCollector {
+func NewCURCollector(cfg config.AWSProvider, logger *slog.Logger, client S3Client, cleaners ...sourceCleaner) *CURCollector {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &CURCollector{cfg: cfg.WithDefaults(), logger: logger, client: client}
+	var repo sourceCleaner
+	if len(cleaners) > 0 {
+		repo = cleaners[0]
+	}
+	return &CURCollector{cfg: cfg.WithDefaults(), logger: logger, client: client, repo: repo}
 }
 
 func (c *CURCollector) Name() string { return string(domain.ProviderAWS) }
 
-func (c *CURCollector) Collect(ctx context.Context, _ time.Time) (providers.CollectResult, error) {
+func (c *CURCollector) Collect(ctx context.Context, since time.Time) (providers.CollectResult, error) {
+	var (
+		batches       []providers.FileBatch
+		records       []domain.RawBillingRecord
+		currentObject string
+	)
+	result, err := c.CollectStream(ctx, since, func(_ context.Context, batch providers.FileBatch) error {
+		if !batch.Final {
+			if currentObject != "" && currentObject != batch.Metadata.ObjectName {
+				records = nil
+			}
+			currentObject = batch.Metadata.ObjectName
+			records = append(records, batch.Records...)
+			return nil
+		}
+		if currentObject != "" && currentObject != batch.Metadata.ObjectName {
+			records = nil
+		}
+		batches = append(batches, providers.FileBatch{
+			Metadata: batch.Metadata,
+			Records:  records,
+		})
+		records = nil
+		currentObject = ""
+		return nil
+	})
+	result.Batches = batches
+	return result, err
+}
+
+func (c *CURCollector) CollectStream(ctx context.Context, _ time.Time, handle providers.BatchHandler) (providers.CollectResult, error) {
 	if !c.cfg.Enabled {
 		c.logger.Info("AWS CUR collector skipped because provider is disabled", "provider", domain.ProviderAWS, "ingestion_mode", "cur_s3")
 		return providers.CollectResult{}, nil
 	}
 	if strings.TrimSpace(c.cfg.CURLocalPath) != "" {
-		return c.collectLocalFile(ctx, c.cfg.CURLocalPath)
+		return c.collectLocalFileStream(ctx, c.cfg.CURLocalPath, handle)
 	}
 	if strings.TrimSpace(c.cfg.CURBucket) == "" {
 		return providers.CollectResult{}, fmt.Errorf("AWS CUR ingestion requires %s or %s", config.EnvAWSCURBucket, config.EnvAWSCURLocalPath)
@@ -72,10 +111,26 @@ func (c *CURCollector) Collect(ctx context.Context, _ time.Time) (providers.Coll
 		c.logger.Info("no AWS CUR billing export files found", "provider", domain.ProviderAWS, "ingestion_mode", "cur_s3", "bucket", c.cfg.CURBucket, "prefix", c.cfg.CURPrefix)
 		return providers.CollectResult{}, nil
 	}
+	limits := c.cfg.IngestionLimits()
+	deadline := time.Now().Add(limits.MaxRuntime)
 	var result providers.CollectResult
 	var errs []error
-	for _, object := range objects {
-		batch, parsed, err := c.collectS3Object(ctx, client, object)
+	for index, object := range objects {
+		if err := ctx.Err(); err != nil {
+			errs = append(errs, err)
+			break
+		}
+		if index >= limits.MaxFilesPerRun {
+			result.HitFileLimit = true
+			c.logger.Warn("AWS CUR max files per run reached", "provider", domain.ProviderAWS, "limit", limits.MaxFilesPerRun)
+			break
+		}
+		if index > 0 && time.Now().After(deadline) {
+			result.HitRuntimeLimit = true
+			c.logger.Warn("AWS CUR max runtime reached before starting next object", "provider", domain.ProviderAWS, "limit", limits.MaxRuntime)
+			break
+		}
+		parsed, err := c.collectS3ObjectStream(ctx, client, object, handle, &result)
 		if err != nil {
 			result.Failures++
 			errs = append(errs, err)
@@ -83,15 +138,12 @@ func (c *CURCollector) Collect(ctx context.Context, _ time.Time) (providers.Coll
 			continue
 		}
 		result.FilesProcessed++
-		result.RecordsProcessed += parsed.RowsParsed
-		if len(batch.Records) > 0 {
-			result.Batches = append(result.Batches, batch)
-		}
+		c.logger.Info("AWS CUR S3 object streamed", "provider", domain.ProviderAWS, "ingestion_mode", "cur_s3", "bucket", c.cfg.CURBucket, "prefix", c.cfg.CURPrefix, "source_file_key", object.Key, "source_file_etag", object.ETag, "source_file_size", object.Size, "format", c.cfg.CURFormat, "records_parsed", parsed.RowsParsed, "records_skipped", parsed.RowsSkipped)
 	}
 	return result, errors.Join(errs...)
 }
 
-func (c *CURCollector) collectLocalFile(ctx context.Context, path string) (providers.CollectResult, error) {
+func (c *CURCollector) collectLocalFileStream(ctx context.Context, path string, handle providers.BatchHandler) (providers.CollectResult, error) {
 	started := time.Now()
 	file, err := os.Open(path)
 	if err != nil {
@@ -102,11 +154,6 @@ func (c *CURCollector) collectLocalFile(ctx context.Context, path string) (provi
 	if err != nil {
 		return providers.CollectResult{}, fmt.Errorf("stat local AWS CUR file %q: %w", path, err)
 	}
-	reader, closeReader, err := c.curReader(file, path)
-	if err != nil {
-		return providers.CollectResult{}, err
-	}
-	defer closeReader()
 	source := curSource{
 		Bucket:       "local_file",
 		Key:          path,
@@ -114,23 +161,20 @@ func (c *CURCollector) collectLocalFile(ctx context.Context, path string) (provi
 		LastModified: stat.ModTime().UTC(),
 		Size:         stat.Size(),
 	}
-	parsed, err := parseCURCSV(reader, source)
+	metadata := domain.ProcessedReportFile{
+		Provider:     domain.ProviderAWS,
+		Bucket:       "local_file",
+		ObjectName:   path,
+		LastModified: stat.ModTime().UTC(),
+	}
+	var result providers.CollectResult
+	parsed, err := c.streamCURSource(ctx, file, source, metadata, handle, &result)
 	if err != nil {
 		return providers.CollectResult{}, err
 	}
-	batch := providers.FileBatch{
-		Metadata: domain.ProcessedReportFile{
-			Provider:     domain.ProviderAWS,
-			Bucket:       "local_file",
-			ObjectName:   path,
-			ETag:         "",
-			LastModified: stat.ModTime().UTC(),
-			RecordCount:  len(parsed.Records),
-		},
-		Records: parsed.Records,
-	}
-	c.logger.Info("AWS CUR local file collected", "provider", domain.ProviderAWS, "ingestion_mode", "cur_s3", "source", "local_file", "local_path", path, "format", c.cfg.CURFormat, "records_processed", parsed.RowsParsed, "records_inserted", len(parsed.Records), "records_skipped", parsed.RowsSkipped, "duration", time.Since(started).String())
-	return providers.CollectResult{FilesProcessed: 1, RecordsProcessed: parsed.RowsParsed, Batches: []providers.FileBatch{batch}}, nil
+	result.FilesProcessed = 1
+	c.logger.Info("AWS CUR local file streamed", "provider", domain.ProviderAWS, "ingestion_mode", "cur_s3", "source", "local_file", "local_path", path, "format", c.cfg.CURFormat, "records_parsed", parsed.RowsParsed, "records_processed", result.RecordsProcessed, "records_skipped", parsed.RowsSkipped, "duration", time.Since(started).String())
+	return result, nil
 }
 
 func (c *CURCollector) listCURObjects(ctx context.Context, client S3Client) ([]curObject, error) {
@@ -176,18 +220,12 @@ func (c *CURCollector) listCURObjects(ctx context.Context, client S3Client) ([]c
 	return objects, nil
 }
 
-func (c *CURCollector) collectS3Object(ctx context.Context, client S3Client, object curObject) (providers.FileBatch, curParseResult, error) {
-	started := time.Now()
+func (c *CURCollector) collectS3ObjectStream(ctx context.Context, client S3Client, object curObject, handle providers.BatchHandler, result *providers.CollectResult) (curParseResult, error) {
 	out, err := client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(c.cfg.CURBucket), Key: aws.String(object.Key)})
 	if err != nil {
-		return providers.FileBatch{}, curParseResult{}, fmt.Errorf("download AWS CUR S3 object %s/%s: %w", c.cfg.CURBucket, object.Key, err)
+		return curParseResult{}, fmt.Errorf("download AWS CUR S3 object %s/%s: %w", c.cfg.CURBucket, object.Key, err)
 	}
 	defer out.Body.Close()
-	reader, closeReader, err := c.curReader(out.Body, object.Key)
-	if err != nil {
-		return providers.FileBatch{}, curParseResult{}, err
-	}
-	defer closeReader()
 	source := curSource{
 		Bucket:       c.cfg.CURBucket,
 		Key:          object.Key,
@@ -196,22 +234,89 @@ func (c *CURCollector) collectS3Object(ctx context.Context, client S3Client, obj
 		LastModified: object.LastModified,
 		Size:         object.Size,
 	}
-	parsed, err := parseCURCSV(reader, source)
-	if err != nil {
-		return providers.FileBatch{}, parsed, err
+	metadata := domain.ProcessedReportFile{
+		Provider:     domain.ProviderAWS,
+		Bucket:       c.cfg.CURBucket,
+		ObjectName:   object.Key,
+		ETag:         object.ETag,
+		LastModified: object.LastModified,
 	}
-	c.logger.Info("AWS CUR S3 object collected", "provider", domain.ProviderAWS, "ingestion_mode", "cur_s3", "bucket", c.cfg.CURBucket, "prefix", c.cfg.CURPrefix, "source_file_key", object.Key, "source_file_etag", object.ETag, "source_file_size", object.Size, "format", c.cfg.CURFormat, "records_processed", parsed.RowsParsed, "records_inserted", len(parsed.Records), "records_skipped", parsed.RowsSkipped, "duration", time.Since(started).String())
-	return providers.FileBatch{
-		Metadata: domain.ProcessedReportFile{
-			Provider:     domain.ProviderAWS,
-			Bucket:       c.cfg.CURBucket,
-			ObjectName:   object.Key,
-			ETag:         object.ETag,
-			LastModified: object.LastModified,
-			RecordCount:  len(parsed.Records),
-		},
-		Records: parsed.Records,
-	}, parsed, nil
+	return c.streamCURSource(ctx, out.Body, source, metadata, handle, result)
+}
+
+func (c *CURCollector) streamCURSource(ctx context.Context, raw io.Reader, source curSource, metadata domain.ProcessedReportFile, handle providers.BatchHandler, result *providers.CollectResult) (curParseResult, error) {
+	reader, closeReader, err := c.curReader(raw, source.Key)
+	if err != nil {
+		return curParseResult{}, err
+	}
+	defer closeReader()
+
+	limits := c.cfg.IngestionLimits()
+	buffer := make([]domain.RawBillingRecord, 0, limits.MaxMemoryBufferRecords)
+	firstBatch := true
+	accepted := 0
+	flush := func() error {
+		if len(buffer) == 0 {
+			return nil
+		}
+		records := buffer
+		if err := handle(ctx, providers.FileBatch{
+			Metadata: metadata,
+			Records:  records,
+			First:    firstBatch,
+		}); err != nil {
+			return err
+		}
+		firstBatch = false
+		result.BatchesInserted++
+		buffer = make([]domain.RawBillingRecord, 0, limits.MaxMemoryBufferRecords)
+		return nil
+	}
+
+	parsed, err := parseCURCSVStream(reader, source, func(record domain.RawBillingRecord) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		buffer = append(buffer, record)
+		accepted++
+		result.RecordsProcessed++
+		if len(buffer) >= limits.MaxMemoryBufferRecords {
+			return flush()
+		}
+		return nil
+	})
+	if err == nil {
+		err = flush()
+	}
+	if err == nil {
+		metadata.RecordCount = accepted
+		metadata.ProcessedAt = time.Now().UTC()
+		metadata.Status = "processed"
+		err = handle(ctx, providers.FileBatch{Metadata: metadata, First: firstBatch, Final: true})
+	}
+	if err != nil {
+		if !firstBatch {
+			if cleanupErr := c.cleanupPartialIngest(source.Key); cleanupErr != nil {
+				return parsed, errors.Join(err, cleanupErr)
+			}
+		}
+		return parsed, err
+	}
+	return parsed, nil
+}
+
+func (c *CURCollector) cleanupPartialIngest(sourceObject string) error {
+	if c.repo == nil || strings.TrimSpace(sourceObject) == "" {
+		return nil
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if err := c.repo.DeleteCostRecordsForSource(cleanupCtx, domain.ProviderAWS, sourceObject); err != nil {
+		c.logger.Error("failed to clean up partial AWS CUR records", "source_file_key", sourceObject, "error", err)
+		return err
+	}
+	c.logger.Info("partial AWS CUR records cleaned up", "source_file_key", sourceObject)
+	return nil
 }
 
 func (c *CURCollector) curReader(reader io.Reader, name string) (io.Reader, func(), error) {

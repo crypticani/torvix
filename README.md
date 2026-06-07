@@ -145,7 +145,7 @@ TORVIX_AWS_INGESTION_MODE=cur_s3
 TORVIX_AWS_CUR_LOCAL_PATH=./testdata/aws/cur-sample.csv.gz
 ```
 
-CUR records are stored with `provider='aws'`, `billing_scope_type='linked_account'`, and `record_type='cur_line_item'`. Re-reading the same export rows uses a deterministic `source_record_hash`, so ingestion updates existing rows instead of duplicating them. General totals, reports, anomalies, and forecasts aggregate canonical CUR line items.
+CUR records are stored with `provider='aws'`, `billing_scope_type='linked_account'`, and `record_type='cur_line_item'`. Each source object is replaced through bounded streaming batches, and the source file key plus deterministic record hash form the CUR idempotency boundary. AWS CUR uses the global `ingestion.max_files_per_run`, `max_records_per_batch`, `max_memory_buffer_records`, and `max_runtime` limits. General totals, reports, anomalies, and forecasts aggregate canonical CUR line items.
 
 With defaults, an ingestion on `2026-06-01` reprocesses recent billing exports covering `2026-05-29` through `2026-05-31`; AWS daily reports use a 2-day lag, so the stable report date is `2026-05-30`.
 
@@ -422,6 +422,10 @@ Torvix listens on `http.address` from config by default. Override the actual app
 Torvix writes JSON logs to subsystem files instead of stdout. Compose mounts `./logs` to `/app/logs`; control logging with `TORVIX_LOG_LEVEL`, `TORVIX_LOG_DIR`, and `TORVIX_LOG_RETENTION_DAYS`.
 
 For production setup, Prometheus scraping, and Grafana dashboard import instructions, see `docs/deployment.md`. If you change the app port, update the Prometheus scrape target in `deploy/prometheus.yml` or your production Prometheus config to match.
+
+## License
+
+Torvix is licensed under the [Apache License 2.0](LICENSE).
 
 ## Configuration Highlights
 
