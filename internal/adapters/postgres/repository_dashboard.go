@@ -432,18 +432,24 @@ func (r *Repository) DashboardAnomalies(ctx context.Context, from, to time.Time,
 	args := []any{from.UTC(), to.UTC()}
 	filter := ""
 	if severity = strings.TrimSpace(strings.ToLower(severity)); severity != "" {
-		filter = " AND severity = $3"
+		filter = " AND a.severity = $3"
 		args = append(args, severity)
 	}
 	rows, err := r.db.Query(ctx, `
-		SELECT detected_at, period_start, provider, account_id, compartment_id, compartment_name,
-		       category, service, region, currency,
-		       observed_cost::double precision, expected_cost::double precision,
-		       absolute_delta::double precision, percentage_delta::double precision,
-		       direction, severity, detection_method, explanation, created_at
-		FROM cost_anomalies
-		WHERE period_start >= $1 AND period_start < $2`+filter+`
-		ORDER BY period_start DESC, ABS(absolute_delta) DESC
+		SELECT a.id, a.detected_at, a.period_start, a.provider, a.account_id, a.compartment_id, a.compartment_name,
+		       a.category, a.service, a.region, a.currency,
+		       a.observed_cost::double precision, a.expected_cost::double precision,
+		       a.absolute_delta::double precision, a.percentage_delta::double precision,
+		       a.direction, a.severity, a.detection_method, a.explanation, a.created_at,
+		       ai.provider, ai.model, ai.status, ai.summary, ai.likely_cause, ai.business_impact,
+		       ai.recommended_actions, ai.priority, ai.confidence, ai.generated_at, ai.updated_at
+		FROM cost_anomalies a
+		LEFT JOIN ai_enrichments ai
+		  ON ai.entity_type = 'anomaly'
+		 AND ai.entity_id = a.id
+		 AND ai.status = 'completed'
+		WHERE a.period_start >= $1 AND a.period_start < $2`+filter+`
+		ORDER BY a.period_start DESC, ABS(a.absolute_delta) DESC
 	`, args...)
 	if err != nil {
 		return nil, err
@@ -453,7 +459,14 @@ func (r *Repository) DashboardAnomalies(ctx context.Context, from, to time.Time,
 	out := make([]domain.DashboardAnomaly, 0)
 	for rows.Next() {
 		var row domain.DashboardAnomaly
-		if err := rows.Scan(&row.DetectedAt, &row.PeriodStart, &row.Provider, &row.AccountID, &row.CompartmentID, &row.CompartmentName, &row.Category, &row.Service, &row.Region, &row.Currency, &row.ObservedCost, &row.ExpectedCost, &row.AbsoluteDelta, &row.PercentageDelta, &row.Direction, &row.Severity, &row.DetectionMethod, &row.Explanation, &row.CreatedAt); err != nil {
+		var enrichment nullableAIEnrichment
+		targets := []any{&row.ID, &row.DetectedAt, &row.PeriodStart, &row.Provider, &row.AccountID, &row.CompartmentID, &row.CompartmentName, &row.Category, &row.Service, &row.Region, &row.Currency, &row.ObservedCost, &row.ExpectedCost, &row.AbsoluteDelta, &row.PercentageDelta, &row.Direction, &row.Severity, &row.DetectionMethod, &row.Explanation, &row.CreatedAt}
+		targets = append(targets, enrichment.scanTargets()...)
+		if err := rows.Scan(targets...); err != nil {
+			return nil, err
+		}
+		row.AIEnrichment, err = enrichment.value(domain.AIEntityAnomaly, row.ID)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, row)

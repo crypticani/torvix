@@ -82,6 +82,15 @@ services:
       - TORVIX_WASTE_CURRENCY
       - TORVIX_WASTE_ENABLE_TAG_EXCLUSIONS
       - TORVIX_WASTE_EXCLUSION_TAG_KEYS
+      - TORVIX_AI_ENABLED
+      - TORVIX_AI_PROVIDER
+      - TORVIX_AI_MODEL
+      - OPENAI_API_KEY
+      - OPENAI_BASE_URL
+      - TORVIX_AI_TIMEOUT
+      - TORVIX_AI_MAX_ITEMS_PER_RUN
+      - TORVIX_AI_QUEUE_SIZE
+      - TORVIX_AI_INCLUDE_IDENTIFIERS
     volumes:
       - ./configs:/app/configs:ro
       - ./logs:/app/logs

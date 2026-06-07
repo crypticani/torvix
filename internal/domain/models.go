@@ -116,25 +116,27 @@ type DashboardCostSummary struct {
 }
 
 type DashboardAnomaly struct {
-	DetectedAt      time.Time `json:"detected_at"`
-	PeriodStart     time.Time `json:"period_start"`
-	Provider        Provider  `json:"provider"`
-	AccountID       string    `json:"account_id"`
-	CompartmentID   string    `json:"compartment_id"`
-	CompartmentName string    `json:"compartment_name"`
-	Category        string    `json:"category"`
-	Service         string    `json:"service"`
-	Region          string    `json:"region"`
-	Currency        string    `json:"currency"`
-	ObservedCost    float64   `json:"observed_cost"`
-	ExpectedCost    float64   `json:"expected_cost"`
-	AbsoluteDelta   float64   `json:"absolute_delta"`
-	PercentageDelta float64   `json:"percentage_delta"`
-	Direction       string    `json:"direction"`
-	Severity        string    `json:"severity"`
-	DetectionMethod string    `json:"detection_method"`
-	Explanation     string    `json:"explanation"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID              int64         `json:"id"`
+	DetectedAt      time.Time     `json:"detected_at"`
+	PeriodStart     time.Time     `json:"period_start"`
+	Provider        Provider      `json:"provider"`
+	AccountID       string        `json:"account_id"`
+	CompartmentID   string        `json:"compartment_id"`
+	CompartmentName string        `json:"compartment_name"`
+	Category        string        `json:"category"`
+	Service         string        `json:"service"`
+	Region          string        `json:"region"`
+	Currency        string        `json:"currency"`
+	ObservedCost    float64       `json:"observed_cost"`
+	ExpectedCost    float64       `json:"expected_cost"`
+	AbsoluteDelta   float64       `json:"absolute_delta"`
+	PercentageDelta float64       `json:"percentage_delta"`
+	Direction       string        `json:"direction"`
+	Severity        string        `json:"severity"`
+	DetectionMethod string        `json:"detection_method"`
+	Explanation     string        `json:"explanation"`
+	CreatedAt       time.Time     `json:"created_at"`
+	AIEnrichment    *AIEnrichment `json:"ai_enrichment,omitempty"`
 }
 
 type DashboardOverview struct {

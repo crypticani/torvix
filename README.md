@@ -321,7 +321,7 @@ The waste summary API is an open-findings summary. Grafana can use the Torvix AP
 
 ## Anomaly Detection
 
-Torvix does not use AI/ML for anomaly detection today. The v1 anomaly model is deterministic and explainable:
+Torvix anomaly detection is deterministic and explainable:
 
 - It evaluates daily precomputed spend by provider, account, service, category, and region.
 - It compares each day against the trailing 7-day baseline within the retained 90-day horizon.
@@ -336,6 +336,22 @@ OCI Object Storage daily spend was 82.0% above its trailing baseline: observed 1
 ```
 
 This is intentionally debuggable operational statistics, not predictive ML. Tune thresholds in code only after validating false positives against real billing history.
+
+### Optional AI Explanations
+
+Torvix can optionally add AI-generated explanations to deterministic anomaly and waste findings. AI does not create findings, change severity, resolve findings, or perform remediation. Enrichment runs asynchronously after successful analytics or waste-detection runs, so provider timeouts and quota errors do not block ingestion or detection.
+
+Enable it through the root `.env` loaded by Compose:
+
+```env
+TORVIX_AI_ENABLED=true
+TORVIX_AI_PROVIDER=openai
+TORVIX_AI_MODEL=gpt-5.4-mini
+OPENAI_API_KEY=replace_with_project_api_key
+TORVIX_AI_INCLUDE_IDENTIFIERS=false
+```
+
+Completed enrichments are returned in the `ai_enrichment` field on dashboard anomaly and waste finding responses. By default, account, compartment, scope, resource IDs, and resource names are excluded from model input. Set `TORVIX_AI_INCLUDE_IDENTIFIERS=true` only after reviewing your data-handling requirements. The default limit is 10 findings per run with a 20-second timeout and a bounded queue.
 
 ## API
 
@@ -426,7 +442,7 @@ In `configs/config.yaml`:
     dir: logs
     retention_days: 14
   ```
-  The files are `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `aws.log`, `scheduler.log`, `alerting.log`, and `waste.log`. Files older than `retention_days` are deleted from the configured log directory.
+  The files are `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `aws.log`, `scheduler.log`, `alerting.log`, `waste.log`, and `ai.log`. Files older than `retention_days` are deleted from the configured log directory.
 - **Scheduler:** Torvix includes an in-process scheduler to run ingestion automatically.
   ```yaml
   scheduler:

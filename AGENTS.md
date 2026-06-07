@@ -16,6 +16,8 @@ AWS and OCI are first-class providers. In general user-facing docs, list provide
 
 Dashboard cost panels must read Torvix HTTP APIs backed by precomputed PostgreSQL/TimescaleDB summary tables. Production Grafana must not query PostgreSQL directly. Keep Prometheus focused on operational metrics; do not push high-cardinality billing dimensions into Prometheus labels.
 
+Optional AI integration is an enrichment layer only. Deterministic anomaly and waste rules remain authoritative; AI must not create findings, change finding status or severity, or perform remediation. Keep provider clients behind `internal/ports/ai`, run enrichment asynchronously with bounded work, persist results separately, and treat provider failures as non-blocking. Exclude account, compartment, scope, resource IDs, and resource names from prompts unless `include_identifiers` is explicitly enabled.
+
 ## Branching & Release Workflow
 
 Do not implement feature work directly on `main`. After a release, merge, or clean checkpoint on `main`, create a focused feature branch before editing code, using names like `feat/post-ingestion-report-alerts` or `fix/oci-parser-drift`. Keep `main` for merged, releasable states and release tags only.

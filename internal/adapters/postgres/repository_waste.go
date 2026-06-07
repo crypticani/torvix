@@ -359,15 +359,21 @@ func (r *Repository) ResolveMissingWasteFindings(ctx context.Context, provider d
 
 func (r *Repository) ListWasteFindings(ctx context.Context, filters waste.FindingFilters) ([]waste.Finding, error) {
 	query := `
-		SELECT id, provider, resource_id, COALESCE(resource_name, ''), resource_type, COALESCE(region, ''), COALESCE(scope_id, ''), COALESCE(scope_name, ''),
-		       COALESCE(service, ''), rule_id, severity, confidence::double precision, estimated_monthly_waste::double precision, currency, summary, recommendation,
-		       evidence, status, detected_at, last_seen_at, resolved_at
-		FROM waste_findings`
+		SELECT w.id, w.provider, w.resource_id, COALESCE(w.resource_name, ''), w.resource_type, COALESCE(w.region, ''), COALESCE(w.scope_id, ''), COALESCE(w.scope_name, ''),
+		       COALESCE(w.service, ''), w.rule_id, w.severity, w.confidence::double precision, w.estimated_monthly_waste::double precision, w.currency, w.summary, w.recommendation,
+		       w.evidence, w.status, w.detected_at, w.last_seen_at, w.resolved_at,
+		       ai.provider, ai.model, ai.status, ai.summary, ai.likely_cause, ai.business_impact,
+		       ai.recommended_actions, ai.priority, ai.confidence, ai.generated_at, ai.updated_at
+		FROM waste_findings w
+		LEFT JOIN ai_enrichments ai
+		  ON ai.entity_type = 'waste_finding'
+		 AND ai.entity_id = w.id
+		 AND ai.status = 'completed'`
 	where, args := wasteFindingWhere(filters)
 	if len(where) > 0 {
 		query += " WHERE " + strings.Join(where, " AND ")
 	}
-	query += " ORDER BY estimated_monthly_waste DESC NULLS LAST, confidence DESC, last_seen_at DESC"
+	query += " ORDER BY w.estimated_monthly_waste DESC NULLS LAST, w.confidence DESC, w.last_seen_at DESC"
 	if filters.Limit <= 0 {
 		filters.Limit = 100
 	}
@@ -381,22 +387,28 @@ func (r *Repository) ListWasteFindings(ctx context.Context, filters waste.Findin
 		return nil, err
 	}
 	defer rows.Close()
-	return scanWasteFindings(rows)
+	return scanWasteFindings(rows, true)
 }
 
 func (r *Repository) GetWasteFinding(ctx context.Context, id int64) (waste.Finding, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, provider, resource_id, COALESCE(resource_name, ''), resource_type, COALESCE(region, ''), COALESCE(scope_id, ''), COALESCE(scope_name, ''),
-		       COALESCE(service, ''), rule_id, severity, confidence::double precision, estimated_monthly_waste::double precision, currency, summary, recommendation,
-		       evidence, status, detected_at, last_seen_at, resolved_at
-		FROM waste_findings
-		WHERE id = $1
+		SELECT w.id, w.provider, w.resource_id, COALESCE(w.resource_name, ''), w.resource_type, COALESCE(w.region, ''), COALESCE(w.scope_id, ''), COALESCE(w.scope_name, ''),
+		       COALESCE(w.service, ''), w.rule_id, w.severity, w.confidence::double precision, w.estimated_monthly_waste::double precision, w.currency, w.summary, w.recommendation,
+		       w.evidence, w.status, w.detected_at, w.last_seen_at, w.resolved_at,
+		       ai.provider, ai.model, ai.status, ai.summary, ai.likely_cause, ai.business_impact,
+		       ai.recommended_actions, ai.priority, ai.confidence, ai.generated_at, ai.updated_at
+		FROM waste_findings w
+		LEFT JOIN ai_enrichments ai
+		  ON ai.entity_type = 'waste_finding'
+		 AND ai.entity_id = w.id
+		 AND ai.status = 'completed'
+		WHERE w.id = $1
 	`, id)
 	if err != nil {
 		return waste.Finding{}, err
 	}
 	defer rows.Close()
-	findings, err := scanWasteFindings(rows)
+	findings, err := scanWasteFindings(rows, true)
 	if err != nil {
 		return waste.Finding{}, err
 	}
@@ -425,7 +437,7 @@ func (r *Repository) UpdateWasteFindingStatus(ctx context.Context, id int64, sta
 		return waste.Finding{}, err
 	}
 	defer rows.Close()
-	findings, err := scanWasteFindings(rows)
+	findings, err := scanWasteFindings(rows, false)
 	if err != nil {
 		return waste.Finding{}, err
 	}
@@ -443,37 +455,37 @@ func wasteFindingWhere(filters waste.FindingFilters) ([]string, []any) {
 		where = append(where, fmt.Sprintf(sql, len(args)))
 	}
 	if filters.Provider != "" {
-		add("provider = $%d", filters.Provider)
+		add("w.provider = $%d", filters.Provider)
 	}
 	if filters.Region != "" {
-		add("region = $%d", filters.Region)
+		add("w.region = $%d", filters.Region)
 	}
 	if filters.ScopeID != "" {
-		add("scope_id = $%d", filters.ScopeID)
+		add("w.scope_id = $%d", filters.ScopeID)
 	}
 	if filters.ScopeName != "" {
-		add("scope_name = $%d", filters.ScopeName)
+		add("w.scope_name = $%d", filters.ScopeName)
 	}
 	if filters.Service != "" {
-		add("service = $%d", filters.Service)
+		add("w.service = $%d", filters.Service)
 	}
 	if filters.ResourceType != "" {
-		add("resource_type = $%d", filters.ResourceType)
+		add("w.resource_type = $%d", filters.ResourceType)
 	}
 	if filters.RuleID != "" {
-		add("rule_id = $%d", filters.RuleID)
+		add("w.rule_id = $%d", filters.RuleID)
 	}
 	if filters.Severity != "" {
-		add("severity = $%d", filters.Severity)
+		add("w.severity = $%d", filters.Severity)
 	}
 	if filters.Status != "" {
-		add("status = $%d", filters.Status)
+		add("w.status = $%d", filters.Status)
 	}
 	if filters.MinConfidence != nil {
-		add("confidence >= $%d", *filters.MinConfidence)
+		add("w.confidence >= $%d", *filters.MinConfidence)
 	}
 	if filters.MinEstimatedMonthlyWaste != nil {
-		add("estimated_monthly_waste >= $%d", *filters.MinEstimatedMonthlyWaste)
+		add("w.estimated_monthly_waste >= $%d", *filters.MinEstimatedMonthlyWaste)
 	}
 	return where, args
 }
@@ -495,14 +507,19 @@ func scanCloudResource(rows pgx.Rows) (waste.Resource, error) {
 	return resource, nil
 }
 
-func scanWasteFindings(rows pgx.Rows) ([]waste.Finding, error) {
+func scanWasteFindings(rows pgx.Rows, includeAI bool) ([]waste.Finding, error) {
 	var findings []waste.Finding
 	for rows.Next() {
 		var finding waste.Finding
 		var estimate sql.NullFloat64
 		var evidence []byte
 		var resolvedAt sql.NullTime
-		if err := rows.Scan(&finding.ID, &finding.Provider, &finding.ResourceID, &finding.ResourceName, &finding.ResourceType, &finding.Region, &finding.ScopeID, &finding.ScopeName, &finding.Service, &finding.RuleID, &finding.Severity, &finding.Confidence, &estimate, &finding.Currency, &finding.Summary, &finding.Recommendation, &evidence, &finding.Status, &finding.DetectedAt, &finding.LastSeenAt, &resolvedAt); err != nil {
+		targets := []any{&finding.ID, &finding.Provider, &finding.ResourceID, &finding.ResourceName, &finding.ResourceType, &finding.Region, &finding.ScopeID, &finding.ScopeName, &finding.Service, &finding.RuleID, &finding.Severity, &finding.Confidence, &estimate, &finding.Currency, &finding.Summary, &finding.Recommendation, &evidence, &finding.Status, &finding.DetectedAt, &finding.LastSeenAt, &resolvedAt}
+		var enrichment nullableAIEnrichment
+		if includeAI {
+			targets = append(targets, enrichment.scanTargets()...)
+		}
+		if err := rows.Scan(targets...); err != nil {
 			return nil, err
 		}
 		if estimate.Valid {
@@ -512,6 +529,13 @@ func scanWasteFindings(rows pgx.Rows) ([]waste.Finding, error) {
 		_ = json.Unmarshal(evidence, &finding.Evidence)
 		if resolvedAt.Valid {
 			finding.ResolvedAt = &resolvedAt.Time
+		}
+		if includeAI {
+			var err error
+			finding.AIEnrichment, err = enrichment.value(domain.AIEntityWaste, finding.ID)
+			if err != nil {
+				return nil, err
+			}
 		}
 		findings = append(findings, finding)
 	}

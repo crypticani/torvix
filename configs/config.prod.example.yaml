@@ -124,6 +124,18 @@ waste:
     - "retain"
     - "do-not-delete"
 
+ai:
+  # Prefer OPENAI_API_KEY in the root .env instead of storing a key in YAML.
+  enabled: false
+  provider: "openai"
+  model: "gpt-5.4-mini"
+  api_key: ""
+  base_url: "https://api.openai.com/v1"
+  timeout: "20s"
+  max_items_per_run: 10
+  queue_size: 100
+  include_identifiers: false
+
 metrics:
   # The legacy torvix namespace remains the compatibility default for existing dashboards.
   namespace: torvix

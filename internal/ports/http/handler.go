@@ -25,7 +25,7 @@ import (
 
 type Handler struct {
 	mux           *http.ServeMux
-	collector     *collect.Service
+	collector     IngestionRunner
 	analytics     *analytics.Service
 	forecasting   *forecasting.Service
 	reporting     *reporting.Service
@@ -37,6 +37,10 @@ type Handler struct {
 	ingestions    *ingestionJobStore
 	grafana       grafanaOptions
 	logger        *slog.Logger
+}
+
+type IngestionRunner interface {
+	Run(context.Context, time.Time) ([]collect.ProviderResult, error)
 }
 
 type HandlerOptions struct {
@@ -59,15 +63,15 @@ type grafanaOptions struct {
 	metrics     GrafanaMetricsRecorder
 }
 
-func New(collector *collect.Service, analytics *analytics.Service, forecasting *forecasting.Service, reporting *reporting.Service, alerting *alerting.Service, reg *prometheus.Registry) *Handler {
+func New(collector IngestionRunner, analytics *analytics.Service, forecasting *forecasting.Service, reporting *reporting.Service, alerting *alerting.Service, reg *prometheus.Registry) *Handler {
 	return NewWithLookback(collector, analytics, forecasting, reporting, alerting, reg, 30)
 }
 
-func NewWithLookback(collector *collect.Service, analytics *analytics.Service, forecasting *forecasting.Service, reporting *reporting.Service, alerting *alerting.Service, reg *prometheus.Registry, lookbackDays int) *Handler {
+func NewWithLookback(collector IngestionRunner, analytics *analytics.Service, forecasting *forecasting.Service, reporting *reporting.Service, alerting *alerting.Service, reg *prometheus.Registry, lookbackDays int) *Handler {
 	return NewWithOptions(collector, analytics, forecasting, reporting, alerting, reg, HandlerOptions{LookbackDays: lookbackDays})
 }
 
-func NewWithOptions(collector *collect.Service, analytics *analytics.Service, forecasting *forecasting.Service, reporting *reporting.Service, alerting *alerting.Service, reg *prometheus.Registry, opts HandlerOptions) *Handler {
+func NewWithOptions(collector IngestionRunner, analytics *analytics.Service, forecasting *forecasting.Service, reporting *reporting.Service, alerting *alerting.Service, reg *prometheus.Registry, opts HandlerOptions) *Handler {
 	lookbackDays := opts.LookbackDays
 	if lookbackDays <= 0 {
 		lookbackDays = 30
