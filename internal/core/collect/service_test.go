@@ -2,6 +2,7 @@ package collect
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -9,6 +10,31 @@ import (
 	"github.com/crypticani/torvix/internal/domain"
 	"github.com/crypticani/torvix/internal/ports/providers"
 )
+
+func TestRunRejectsConcurrentIngestion(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	repo := &recordFilteringRepo{}
+	svc := New(nil, repo, normalize.New(), []providers.Collector{
+		&blockingCollector{started: started, release: release},
+	}, nil)
+
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := svc.Run(context.Background(), time.Time{})
+		firstDone <- err
+	}()
+	<-started
+
+	if _, err := svc.Run(context.Background(), time.Time{}); !errors.Is(err, ErrRunAlreadyActive) {
+		t.Fatalf("concurrent Run() error = %v, want %v", err, ErrRunAlreadyActive)
+	}
+
+	close(release)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first Run() error = %v", err)
+	}
+}
 
 func TestRunSkipsOldRecordsBeforeInsertion(t *testing.T) {
 	now := time.Now().UTC()
@@ -173,6 +199,19 @@ func (c *batchCollector) Name() string { return "oci" }
 
 func (c *batchCollector) Collect(context.Context, time.Time) (providers.CollectResult, error) {
 	return c.result, nil
+}
+
+type blockingCollector struct {
+	started chan<- struct{}
+	release <-chan struct{}
+}
+
+func (c *blockingCollector) Name() string { return "aws" }
+
+func (c *blockingCollector) Collect(context.Context, time.Time) (providers.CollectResult, error) {
+	close(c.started)
+	<-c.release
+	return providers.CollectResult{}, nil
 }
 
 type recordFilteringRepo struct {

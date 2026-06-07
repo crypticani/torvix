@@ -198,3 +198,25 @@ func TestProviderAgnosticMigrationKeepsOCIBackfillAndAWSIndexes(t *testing.T) {
 		}
 	}
 }
+
+func TestAWSCURIdempotencyMigrationSeparatesAggregateAndLineItemKeys(t *testing.T) {
+	b, err := os.ReadFile("../../migrations/016_aws_cur_idempotency.sql")
+	if err != nil {
+		t.Fatalf("read AWS CUR idempotency migration: %v", err)
+	}
+	migration := string(b)
+	for _, required := range []string{
+		"DROP INDEX IF EXISTS idx_cost_records_aws_idempotency",
+		"DROP INDEX IF EXISTS idx_cost_records_aws_cur_record_hash",
+		`WHERE cloud_provider = 'aws' AND record_type <> 'cur_line_item'`,
+		`("timestamp", cloud_provider, record_type, source_file_key, source_record_hash)`,
+		`WHERE cloud_provider = 'aws'`,
+		`AND record_type = 'cur_line_item'`,
+		`AND source_file_key <> ''`,
+		`AND source_record_hash <> ''`,
+	} {
+		if !strings.Contains(migration, required) {
+			t.Fatalf("AWS CUR idempotency migration must contain %q", required)
+		}
+	}
+}

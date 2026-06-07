@@ -340,8 +340,11 @@ func storeCostRecordsTx(ctx context.Context, tx pgx.Tx, records []domain.Canonic
 		($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23::jsonb, $24::jsonb, $25, $26, $27, $28, $29, $30, $31)
 	`
 	const curUpsertSQL = insertPrefix + `
-		ON CONFLICT ("timestamp", cloud_provider, record_type, source_record_hash)
-		WHERE cloud_provider = 'aws' AND record_type = 'cur_line_item' AND source_record_hash <> ''
+		ON CONFLICT ("timestamp", cloud_provider, record_type, source_file_key, source_record_hash)
+		WHERE cloud_provider = 'aws'
+		  AND record_type = 'cur_line_item'
+		  AND source_file_key <> ''
+		  AND source_record_hash <> ''
 		DO UPDATE SET
 			account_id = EXCLUDED.account_id,
 			service = EXCLUDED.service,

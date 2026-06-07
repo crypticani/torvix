@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadHTTPAddressDefault(t *testing.T) {
@@ -312,6 +313,28 @@ func TestProviderInheritsMaxZeroYieldFilesDefault(t *testing.T) {
 	}
 	if provider.IngestionLimits().MaxZeroYieldFiles != 17 {
 		t.Fatalf("expected provider ingestion limit max_zero_yield_files 17, got %d", provider.IngestionLimits().MaxZeroYieldFiles)
+	}
+}
+
+func TestAWSProviderInheritsGlobalIngestionLimits(t *testing.T) {
+	provider := (AWSProvider{}).WithIngestionDefaults(Ingestion{
+		MaxFilesPerRun:         7,
+		MaxRecordsPerBatch:     250,
+		MaxMemoryBufferRecords: 125,
+		MaxRuntime:             "3m",
+	})
+	limits := provider.IngestionLimits()
+	if limits.MaxFilesPerRun != 7 {
+		t.Fatalf("MaxFilesPerRun = %d, want 7", limits.MaxFilesPerRun)
+	}
+	if limits.MaxRecordsPerBatch != 250 {
+		t.Fatalf("MaxRecordsPerBatch = %d, want 250", limits.MaxRecordsPerBatch)
+	}
+	if limits.MaxMemoryBufferRecords != 125 {
+		t.Fatalf("MaxMemoryBufferRecords = %d, want 125", limits.MaxMemoryBufferRecords)
+	}
+	if limits.MaxRuntime != 3*time.Minute {
+		t.Fatalf("MaxRuntime = %s, want 3m", limits.MaxRuntime)
 	}
 }
 

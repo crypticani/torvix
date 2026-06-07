@@ -138,19 +138,23 @@ type Provider struct {
 }
 
 type AWSProvider struct {
-	Enabled          bool   `yaml:"enabled"`
-	IngestionMode    string `yaml:"ingestion_mode"`
-	Region           string `yaml:"region"`
-	CostMetric       string `yaml:"cost_metric"`
-	LookbackDays     int    `yaml:"lookback_days"`
-	ReportLagDays    int    `yaml:"report_lag_days"`
-	CURBucket        string `yaml:"cur_bucket"`
-	CURPrefix        string `yaml:"cur_prefix"`
-	CURRegion        string `yaml:"cur_region"`
-	CURFormat        string `yaml:"cur_format"`
-	CURLookbackDays  int    `yaml:"cur_lookback_days"`
-	CURReportLagDays int    `yaml:"cur_report_lag_days"`
-	CURLocalPath     string `yaml:"cur_local_path"`
+	Enabled                bool   `yaml:"enabled"`
+	IngestionMode          string `yaml:"ingestion_mode"`
+	Region                 string `yaml:"region"`
+	CostMetric             string `yaml:"cost_metric"`
+	LookbackDays           int    `yaml:"lookback_days"`
+	ReportLagDays          int    `yaml:"report_lag_days"`
+	CURBucket              string `yaml:"cur_bucket"`
+	CURPrefix              string `yaml:"cur_prefix"`
+	CURRegion              string `yaml:"cur_region"`
+	CURFormat              string `yaml:"cur_format"`
+	CURLookbackDays        int    `yaml:"cur_lookback_days"`
+	CURReportLagDays       int    `yaml:"cur_report_lag_days"`
+	CURLocalPath           string `yaml:"cur_local_path"`
+	MaxFilesPerRun         int    `yaml:"max_files_per_run"`
+	MaxRecordsPerBatch     int    `yaml:"max_records_per_batch"`
+	MaxRuntime             string `yaml:"max_runtime"`
+	MaxMemoryBufferRecords int    `yaml:"max_memory_buffer_records"`
 }
 
 type Waste struct {
@@ -528,6 +532,33 @@ func (a AWSProvider) WithDefaults() AWSProvider {
 		a.CURReportLagDays = 2
 	}
 	return a
+}
+
+func (a AWSProvider) WithIngestionDefaults(ingestion Ingestion) AWSProvider {
+	ingestion = ingestion.WithDefaults()
+	if a.MaxFilesPerRun <= 0 {
+		a.MaxFilesPerRun = ingestion.MaxFilesPerRun
+	}
+	if a.MaxRecordsPerBatch <= 0 {
+		a.MaxRecordsPerBatch = ingestion.MaxRecordsPerBatch
+	}
+	if a.MaxMemoryBufferRecords <= 0 {
+		a.MaxMemoryBufferRecords = ingestion.MaxMemoryBufferRecords
+	}
+	if a.MaxRuntime == "" {
+		a.MaxRuntime = ingestion.MaxRuntime
+	}
+	return a
+}
+
+func (a AWSProvider) IngestionLimits() IngestionLimits {
+	provider := Provider{
+		MaxFilesPerRun:         a.MaxFilesPerRun,
+		MaxRecordsPerBatch:     a.MaxRecordsPerBatch,
+		MaxRuntime:             a.MaxRuntime,
+		MaxMemoryBufferRecords: a.MaxMemoryBufferRecords,
+	}
+	return provider.IngestionLimits()
 }
 
 func (w Waste) WithDefaults() Waste {

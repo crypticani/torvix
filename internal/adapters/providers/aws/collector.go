@@ -22,11 +22,11 @@ type Collector struct {
 	client CostExplorerClient
 }
 
-func New(ctx context.Context, cfg config.AWSProvider, logger *slog.Logger) (providers.Collector, error) {
+func New(ctx context.Context, cfg config.AWSProvider, logger *slog.Logger, cleaners ...sourceCleaner) (providers.Collector, error) {
 	cfg = cfg.WithDefaults()
 	switch cfg.IngestionMode {
 	case "cur_s3":
-		return NewCURCollector(cfg, logger, nil), nil
+		return NewCURCollector(cfg, logger, nil, cleaners...), nil
 	case "cost_explorer":
 	default:
 		return nil, fmt.Errorf("unknown AWS ingestion mode %q; expected cur_s3 or cost_explorer", cfg.IngestionMode)

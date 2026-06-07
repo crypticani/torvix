@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/crypticani/torvix/internal/config"
 	"github.com/crypticani/torvix/internal/domain"
+	"github.com/crypticani/torvix/internal/ports/providers"
 )
 
 func TestCURParserMapsCSVHeaderVariants(t *testing.T) {
@@ -200,6 +202,104 @@ func TestCURCollectorCollectsSelectedS3Objects(t *testing.T) {
 	if batch.Records[0].SourceFileKey != "billing/current.csv.gz" || batch.Records[0].SourceFileETag != "new-etag" || batch.Records[0].Cost != 9.99 {
 		t.Fatalf("unexpected S3 record: %+v", batch.Records[0])
 	}
+}
+
+func TestCURCollectorStreamsBoundedBatches(t *testing.T) {
+	path := writeGzipCURFixture(t, strings.Join([]string{
+		"line_item_usage_start_date,line_item_usage_account_id,product_product_name,product_region,line_item_unblended_cost,pricing_currency",
+		"2026-05-30T00:00:00Z,123456789012,Amazon S3,us-east-1,1.00,USD",
+		"2026-05-30T01:00:00Z,123456789012,Amazon S3,us-east-1,2.00,USD",
+		"2026-05-30T02:00:00Z,123456789012,Amazon S3,us-east-1,3.00,USD",
+		"2026-05-30T03:00:00Z,123456789012,Amazon S3,us-east-1,4.00,USD",
+		"2026-05-30T04:00:00Z,123456789012,Amazon S3,us-east-1,5.00,USD",
+	}, "\n"))
+
+	collector := NewCURCollector(config.AWSProvider{
+		Enabled:            true,
+		IngestionMode:      "cur_s3",
+		CURLocalPath:       path,
+		CURFormat:          "csv_gzip",
+		MaxRecordsPerBatch: 2,
+	}, nil, nil)
+
+	var batchSizes []int
+	var finalBatches int
+	result, err := collector.CollectStream(context.Background(), time.Time{}, func(_ context.Context, batch providers.FileBatch) error {
+		if batch.Final {
+			finalBatches++
+			if batch.Metadata.RecordCount != 5 {
+				t.Fatalf("final record count = %d, want 5", batch.Metadata.RecordCount)
+			}
+			return nil
+		}
+		batchSizes = append(batchSizes, len(batch.Records))
+		if len(batch.Records) > 2 {
+			t.Fatalf("batch exceeded configured limit: %d", len(batch.Records))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("CollectStream() error = %v", err)
+	}
+	if len(result.Batches) != 0 {
+		t.Fatalf("streaming collector must not retain batches in memory: %d", len(result.Batches))
+	}
+	if result.FilesProcessed != 1 || result.RecordsProcessed != 5 || result.BatchesInserted != 3 {
+		t.Fatalf("unexpected streaming result: %+v", result)
+	}
+	if !slices.Equal(batchSizes, []int{2, 2, 1}) {
+		t.Fatalf("batch sizes = %v, want [2 2 1]", batchSizes)
+	}
+	if finalBatches != 1 {
+		t.Fatalf("final batches = %d, want 1", finalBatches)
+	}
+}
+
+func TestCURCollectorCleansPartialSourceWhenHandlerFails(t *testing.T) {
+	path := writeGzipCURFixture(t, strings.Join([]string{
+		"line_item_usage_start_date,line_item_usage_account_id,product_product_name,product_region,line_item_unblended_cost,pricing_currency",
+		"2026-05-30T00:00:00Z,123456789012,Amazon S3,us-east-1,1.00,USD",
+		"2026-05-30T01:00:00Z,123456789012,Amazon S3,us-east-1,2.00,USD",
+		"2026-05-30T02:00:00Z,123456789012,Amazon S3,us-east-1,3.00,USD",
+	}, "\n"))
+	cleaner := &fakeSourceCleaner{}
+	collector := NewCURCollector(config.AWSProvider{
+		Enabled:            true,
+		IngestionMode:      "cur_s3",
+		CURLocalPath:       path,
+		CURFormat:          "csv_gzip",
+		MaxRecordsPerBatch: 1,
+	}, nil, nil, cleaner)
+
+	calls := 0
+	_, err := collector.CollectStream(context.Background(), time.Time{}, func(_ context.Context, batch providers.FileBatch) error {
+		if batch.Final {
+			return nil
+		}
+		calls++
+		if calls == 2 {
+			return io.ErrUnexpectedEOF
+		}
+		return nil
+	})
+	if err == nil {
+		t.Fatal("CollectStream() error = nil, want handler failure")
+	}
+	if !slices.Equal(cleaner.sources, []string{path}) {
+		t.Fatalf("cleaned sources = %v, want [%s]", cleaner.sources, path)
+	}
+}
+
+type fakeSourceCleaner struct {
+	sources []string
+}
+
+func (f *fakeSourceCleaner) DeleteCostRecordsForSource(_ context.Context, provider domain.Provider, sourceObject string) error {
+	if provider != domain.ProviderAWS {
+		return io.ErrUnexpectedEOF
+	}
+	f.sources = append(f.sources, sourceObject)
+	return nil
 }
 
 func writeGzipCURFixture(t *testing.T, content string) string {
