@@ -423,6 +423,10 @@ Torvix writes JSON logs to subsystem files instead of stdout. Compose mounts `./
 
 For production setup, Prometheus scraping, and Grafana dashboard import instructions, see `docs/deployment.md`. If you change the app port, update the Prometheus scrape target in `deploy/prometheus.yml` or your production Prometheus config to match.
 
+## License
+
+Torvix is licensed under the [Apache License 2.0](LICENSE).
+
 ## Configuration Highlights
 
 In `configs/config.yaml`:

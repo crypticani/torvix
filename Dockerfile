@@ -11,7 +11,8 @@ FROM alpine:3.22
 ARG TORVIX_UID=10001
 ARG TORVIX_GID=10001
 LABEL org.opencontainers.image.title="Torvix" \
-      org.opencontainers.image.description="Torvix is an open-source cloud cost intelligence and waste detection platform."
+      org.opencontainers.image.description="Torvix is an open-source cloud cost intelligence and waste detection platform." \
+      org.opencontainers.image.licenses="Apache-2.0"
 WORKDIR /app
 RUN apk add --no-cache ca-certificates su-exec \
     && addgroup -S -g "$TORVIX_GID" torvix \
