@@ -168,6 +168,22 @@ Use production Compose when PostgreSQL/TimescaleDB, Prometheus, and Grafana are 
 
    The same values can be overridden with `TORVIX_WASTE_DETECTION_ENABLED`, `TORVIX_WASTE_PROVIDER`, `TORVIX_WASTE_SCAN_INTERVAL_HOURS`, `TORVIX_WASTE_MIN_RESOURCE_AGE_DAYS`, `TORVIX_WASTE_STOPPED_INSTANCE_MIN_DAYS`, `TORVIX_WASTE_MIN_COST_THRESHOLD`, `TORVIX_WASTE_HIGH_MONTHLY_THRESHOLD`, `TORVIX_WASTE_ENABLE_TAG_EXCLUSIONS`, and `TORVIX_WASTE_EXCLUSION_TAG_KEYS`.
 
+   Optional AI explanations can enrich deterministic anomaly and waste findings without changing detection results. Keep this disabled unless you have configured an API key:
+
+   ```env
+   TORVIX_AI_ENABLED=true
+   TORVIX_AI_PROVIDER=openai
+   TORVIX_AI_MODEL=gpt-5.4-mini
+   OPENAI_API_KEY=replace_with_project_api_key
+   OPENAI_BASE_URL=https://api.openai.com/v1
+   TORVIX_AI_TIMEOUT=20s
+   TORVIX_AI_MAX_ITEMS_PER_RUN=10
+   TORVIX_AI_QUEUE_SIZE=100
+   TORVIX_AI_INCLUDE_IDENTIFIERS=false
+   ```
+
+   Put these values in the ignored root `.env`; both Compose files pass them into the Torvix container. AI processing is asynchronous and best-effort. A missing key, provider failure, timeout, or full queue does not fail ingestion or waste detection. Completed output appears as `ai_enrichment` on anomaly and waste finding API responses. Identifiers are omitted from prompts by default.
+
 6. Start only the Torvix app:
 
    ```bash
@@ -219,7 +235,7 @@ The production Compose healthcheck checks `http://127.0.0.1:${TORVIX_HTTP_PORT:-
 
 If you change only `http.address` in `configs/config.prod.yaml`, also set `TORVIX_HTTP_PORT` to the same port or update the healthcheck command in `docker-compose.prod.yml`. Compose cannot read the mounted YAML value into its healthcheck automatically.
 
-Torvix writes file-only JSON logs and does not emit normal application logs to stdout. Logs are split by subsystem into `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `aws.log`, `scheduler.log`, `alerting.log`, and `waste.log`. The bundled Compose files mount `./logs` to `/app/logs`; set `TORVIX_LOG_DIR=/app/logs` or keep `logging.dir: logs` while the container runs from `/app`.
+Torvix writes file-only JSON logs and does not emit normal application logs to stdout. Logs are split by subsystem into `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `aws.log`, `scheduler.log`, `alerting.log`, `waste.log`, and `ai.log`. The bundled Compose files mount `./logs` to `/app/logs`; set `TORVIX_LOG_DIR=/app/logs` or keep `logging.dir: logs` while the container runs from `/app`.
 
 Logging runtime controls:
 

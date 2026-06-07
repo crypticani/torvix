@@ -46,6 +46,15 @@ const (
 	EnvWasteCurrency                  = "TORVIX_WASTE_CURRENCY"
 	EnvWasteEnableTagExclusions       = "TORVIX_WASTE_ENABLE_TAG_EXCLUSIONS"
 	EnvWasteExclusionTagKeys          = "TORVIX_WASTE_EXCLUSION_TAG_KEYS"
+	EnvAIEnabled                      = "TORVIX_AI_ENABLED"
+	EnvAIProvider                     = "TORVIX_AI_PROVIDER"
+	EnvAIModel                        = "TORVIX_AI_MODEL"
+	EnvAIAPIKey                       = "OPENAI_API_KEY"
+	EnvAIBaseURL                      = "OPENAI_BASE_URL"
+	EnvAITimeout                      = "TORVIX_AI_TIMEOUT"
+	EnvAIMaxItemsPerRun               = "TORVIX_AI_MAX_ITEMS_PER_RUN"
+	EnvAIQueueSize                    = "TORVIX_AI_QUEUE_SIZE"
+	EnvAIIncludeIdentifiers           = "TORVIX_AI_INCLUDE_IDENTIFIERS"
 
 	LegacyEnvReportTimezone                 = "CLOUDPULSE_REPORT_TIMEZONE"
 	LegacyEnvDailyReportCron                = "CLOUDPULSE_DAILY_REPORT_CRON"
@@ -80,6 +89,7 @@ type Config struct {
 	Reporting Reporting `yaml:"reporting"`
 	Metrics   Metrics   `yaml:"metrics"`
 	Waste     Waste     `yaml:"waste"`
+	AI        AI        `yaml:"ai"`
 }
 
 type Logging struct {
@@ -155,6 +165,18 @@ type Waste struct {
 	Currency               string   `yaml:"currency"`
 	EnableTagExclusions    bool     `yaml:"enable_tag_exclusions"`
 	ExclusionTagKeys       []string `yaml:"exclusion_tag_keys"`
+}
+
+type AI struct {
+	Enabled            bool   `yaml:"enabled"`
+	Provider           string `yaml:"provider"`
+	Model              string `yaml:"model"`
+	APIKey             string `yaml:"api_key"`
+	BaseURL            string `yaml:"base_url"`
+	Timeout            string `yaml:"timeout"`
+	MaxItemsPerRun     int    `yaml:"max_items_per_run"`
+	QueueSize          int    `yaml:"queue_size"`
+	IncludeIdentifiers bool   `yaml:"include_identifiers"`
 }
 
 type Ingestion struct {
@@ -243,6 +265,7 @@ func Load(path string) (Config, error) {
 	cfg.Reporting = cfg.Reporting.WithDefaults()
 	cfg.Providers.AWS = cfg.Providers.AWS.WithDefaults()
 	cfg.Waste = cfg.Waste.WithDefaults()
+	cfg.AI = cfg.AI.WithDefaults()
 	return cfg, nil
 }
 
@@ -384,6 +407,41 @@ func applyEnvOverrides(cfg *Config) {
 	if keys := envValue(EnvWasteExclusionTagKeys, LegacyEnvWasteExclusionTagKeys); keys != "" {
 		cfg.Waste.ExclusionTagKeys = splitCSV(keys)
 	}
+	if enabled := envValue(EnvAIEnabled); enabled != "" {
+		if parsed, err := strconv.ParseBool(enabled); err == nil {
+			cfg.AI.Enabled = parsed
+		}
+	}
+	if provider := envValue(EnvAIProvider); provider != "" {
+		cfg.AI.Provider = provider
+	}
+	if model := envValue(EnvAIModel); model != "" {
+		cfg.AI.Model = model
+	}
+	if apiKey := envValue(EnvAIAPIKey); apiKey != "" {
+		cfg.AI.APIKey = apiKey
+	}
+	if baseURL := envValue(EnvAIBaseURL); baseURL != "" {
+		cfg.AI.BaseURL = baseURL
+	}
+	if timeout := envValue(EnvAITimeout); timeout != "" {
+		cfg.AI.Timeout = timeout
+	}
+	if limit := envValue(EnvAIMaxItemsPerRun); limit != "" {
+		if parsed, err := strconv.Atoi(limit); err == nil {
+			cfg.AI.MaxItemsPerRun = parsed
+		}
+	}
+	if size := envValue(EnvAIQueueSize); size != "" {
+		if parsed, err := strconv.Atoi(size); err == nil {
+			cfg.AI.QueueSize = parsed
+		}
+	}
+	if include := envValue(EnvAIIncludeIdentifiers); include != "" {
+		if parsed, err := strconv.ParseBool(include); err == nil {
+			cfg.AI.IncludeIdentifiers = parsed
+		}
+	}
 }
 
 func envValue(names ...string) string {
@@ -499,6 +557,29 @@ func (w Waste) WithDefaults() Waste {
 		w.ExclusionTagKeys = []string{"torvix:ignore", "torvix:waste-ignore", "finops:ignore", "keep", "retain", "do-not-delete"}
 	}
 	return w
+}
+
+func (a AI) WithDefaults() AI {
+	a.Provider = strings.TrimSpace(strings.ToLower(a.Provider))
+	if a.Provider == "" {
+		a.Provider = "openai"
+	}
+	if a.Model == "" {
+		a.Model = "gpt-5.4-mini"
+	}
+	if a.BaseURL == "" {
+		a.BaseURL = "https://api.openai.com/v1"
+	}
+	if a.Timeout == "" {
+		a.Timeout = "20s"
+	}
+	if a.MaxItemsPerRun <= 0 {
+		a.MaxItemsPerRun = 10
+	}
+	if a.QueueSize <= 0 {
+		a.QueueSize = 100
+	}
+	return a
 }
 
 func (l Logging) WithDefaults(legacyLevel string) Logging {

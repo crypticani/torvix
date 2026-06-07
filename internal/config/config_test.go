@@ -102,6 +102,47 @@ func TestAPIAuthEnvOverridePrefersNeutralName(t *testing.T) {
 	}
 }
 
+func TestAIConfigDefaultsDisabled(t *testing.T) {
+	cfg := loadTestConfig(t, "{}\n")
+
+	if cfg.AI.Enabled {
+		t.Fatal("expected AI enrichment disabled by default")
+	}
+	if cfg.AI.Provider != "openai" {
+		t.Fatalf("expected default AI provider openai, got %q", cfg.AI.Provider)
+	}
+	if cfg.AI.Model != "gpt-5.4-mini" {
+		t.Fatalf("expected default AI model gpt-5.4-mini, got %q", cfg.AI.Model)
+	}
+	if cfg.AI.Timeout != "20s" || cfg.AI.MaxItemsPerRun != 10 || cfg.AI.QueueSize != 100 {
+		t.Fatalf("unexpected AI defaults: %+v", cfg.AI)
+	}
+}
+
+func TestAIConfigEnvOverrides(t *testing.T) {
+	t.Setenv(EnvAIEnabled, "true")
+	t.Setenv(EnvAIProvider, "openai")
+	t.Setenv(EnvAIModel, "gpt-5.4-nano")
+	t.Setenv(EnvAIAPIKey, "test-key")
+	t.Setenv(EnvAIBaseURL, "https://example.invalid/v1")
+	t.Setenv(EnvAITimeout, "5s")
+	t.Setenv(EnvAIMaxItemsPerRun, "4")
+	t.Setenv(EnvAIQueueSize, "12")
+	t.Setenv(EnvAIIncludeIdentifiers, "true")
+
+	cfg := loadTestConfig(t, "{}\n")
+
+	if !cfg.AI.Enabled || cfg.AI.APIKey != "test-key" || cfg.AI.Model != "gpt-5.4-nano" {
+		t.Fatalf("unexpected AI env config: %+v", cfg.AI)
+	}
+	if cfg.AI.BaseURL != "https://example.invalid/v1" || cfg.AI.Timeout != "5s" {
+		t.Fatalf("unexpected AI endpoint config: %+v", cfg.AI)
+	}
+	if cfg.AI.MaxItemsPerRun != 4 || cfg.AI.QueueSize != 12 || !cfg.AI.IncludeIdentifiers {
+		t.Fatalf("unexpected AI limits config: %+v", cfg.AI)
+	}
+}
+
 func TestIngestionDefaultsUseNinetyDayOperationalHorizon(t *testing.T) {
 	cfg := loadTestConfig(t, "log_level: debug\n")
 

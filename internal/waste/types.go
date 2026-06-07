@@ -126,6 +126,7 @@ type Finding struct {
 	DetectedAt            time.Time
 	LastSeenAt            time.Time
 	ResolvedAt            *time.Time
+	AIEnrichment          *domain.AIEnrichment `json:"ai_enrichment,omitempty"`
 }
 
 type FindingFilters struct {

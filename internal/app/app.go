@@ -20,6 +20,7 @@ import (
 	"github.com/crypticani/torvix/internal/core/analytics"
 	"github.com/crypticani/torvix/internal/core/collect"
 	"github.com/crypticani/torvix/internal/core/forecasting"
+	"github.com/crypticani/torvix/internal/core/intelligence"
 	"github.com/crypticani/torvix/internal/core/normalize"
 	"github.com/crypticani/torvix/internal/core/reporting"
 	"github.com/crypticani/torvix/internal/domain"
@@ -37,6 +38,7 @@ type App struct {
 	reporting       *reporting.Service
 	collector       ingestionRunner
 	wasteDetector   waste.Detector
+	intelligence    *intelligence.Service
 	schedulerCfg    config.Scheduler
 	reportingCfg    config.Reporting
 	wasteCfg        config.Waste
@@ -63,6 +65,7 @@ func New(cfg config.Config, logger *slog.Logger) (*App, error) {
 		Scheduler: logger,
 		Alerting:  logger,
 		Waste:     logger,
+		AI:        logger,
 	})
 }
 
@@ -134,6 +137,7 @@ func NewWithLoggers(cfg config.Config, loggers logging.Loggers) (*App, error) {
 		RequireCompleteIngestion: cfg.Reporting.RequireCompleteIngestion,
 	})
 	alertingSvc := alerting.NewWithLogger(&http.Client{Timeout: 10 * time.Second}, cfg.Reporting.Webhooks, loggers.Alerting)
+	intelligenceSvc := newIntelligenceService(cfg.AI, repo, loggers.AI)
 	var wasteProviders []waste.InventoryProvider
 	if cfg.Providers.OCI.Enabled {
 		ociInventory, err := ociadapter.NewInventoryCollector(cfg.Providers.OCI, repo, loggers.Waste)
@@ -159,14 +163,31 @@ func NewWithLoggers(cfg config.Config, loggers logging.Loggers) (*App, error) {
 		EnableTagExclusions:    cfg.Waste.EnableTagExclusions,
 		ExclusionTagKeys:       cfg.Waste.ExclusionTagKeys,
 	}, repo, wasteProviders, loggers.Waste)
-	handler := httpapi.NewWithOptions(collectorSvc, analyticsSvc, forecastingSvc, reportingSvc, alertingSvc, reg, httpapi.HandlerOptions{
+	collectorRunner := ingestionRunner(collectorSvc)
+	wasteDetector := waste.Detector(wasteSvc)
+	if intelligenceSvc.Enabled() {
+		collectorRunner = &enrichingCollector{
+			next:         collectorSvc,
+			repo:         repo,
+			intelligence: intelligenceSvc,
+			lookbackDays: cfg.Ingestion.LookbackDays,
+			logger:       loggers.AI,
+		}
+		wasteDetector = &enrichingWasteDetector{
+			next:         wasteSvc,
+			intelligence: intelligenceSvc,
+			maxItems:     cfg.AI.MaxItemsPerRun,
+			logger:       loggers.AI,
+		}
+	}
+	handler := httpapi.NewWithOptions(collectorRunner, analyticsSvc, forecastingSvc, reportingSvc, alertingSvc, reg, httpapi.HandlerOptions{
 		LookbackDays:   cfg.Ingestion.LookbackDays,
 		RetentionDays:  cfg.Ingestion.RetentionDays,
 		APIAuthEnabled: cfg.API.Auth.Enabled,
 		APIAuthToken:   cfg.API.Auth.BearerToken,
 		GrafanaMetrics: metrics,
 		Logger:         loggers.HTTP,
-		Waste:          wasteSvc,
+		Waste:          wasteDetector,
 	})
 
 	schedulerCtx, cancelScheduler := context.WithCancel(context.Background())
@@ -179,8 +200,9 @@ func NewWithLoggers(cfg config.Config, loggers logging.Loggers) (*App, error) {
 		repo:            repo,
 		alerting:        alertingSvc,
 		reporting:       reportingSvc,
-		collector:       collectorSvc,
-		wasteDetector:   wasteSvc,
+		collector:       collectorRunner,
+		wasteDetector:   wasteDetector,
+		intelligence:    intelligenceSvc,
 		schedulerCfg:    cfg.Scheduler,
 		reportingCfg:    cfg.Reporting,
 		wasteCfg:        cfg.Waste,
@@ -476,6 +498,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 }
 
 func (a *App) Close() error {
+	if a.intelligence != nil {
+		a.intelligence.Close()
+	}
 	a.repo.Close()
 	return nil
 }

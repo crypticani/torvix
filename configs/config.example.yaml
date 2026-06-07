@@ -125,6 +125,19 @@ waste:
     - "retain"
     - "do-not-delete"
 
+ai:
+  # Optional explanations only. Deterministic anomaly and waste rules remain authoritative.
+  enabled: false
+  provider: "openai"
+  model: "gpt-5.4-mini"
+  api_key: ""
+  base_url: "https://api.openai.com/v1"
+  timeout: "20s"
+  max_items_per_run: 10
+  queue_size: 100
+  # Keep account, compartment, scope, and resource identifiers out of prompts by default.
+  include_identifiers: false
+
 metrics:
   # The legacy torvix namespace remains the compatibility default for existing dashboards.
   namespace: torvix
