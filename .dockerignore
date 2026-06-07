@@ -21,7 +21,6 @@ coverage/
 
 dashboards/
 deploy/
-docs/
 tests/
 
 .DS_Store
