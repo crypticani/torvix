@@ -96,6 +96,34 @@ func TestManagerDoesNotWriteToStdout(t *testing.T) {
 	}
 }
 
+func TestManagerCanMirrorLogsToStdout(t *testing.T) {
+	dir := t.TempDir()
+	stdout := captureStdout(t, func() {
+		manager, err := NewManager(Config{
+			Level:         "info",
+			Dir:           dir,
+			RetentionDays: 14,
+			Stdout:        true,
+		})
+		if err != nil {
+			t.Fatalf("new manager: %v", err)
+		}
+		defer manager.Close()
+
+		manager.Logger(SubsystemApp).Info("visible in docker logs")
+		if err := manager.Close(); err != nil {
+			t.Fatalf("close manager: %v", err)
+		}
+	})
+
+	if !strings.Contains(stdout, "visible in docker logs") {
+		t.Fatalf("expected stdout mirror, got %q", stdout)
+	}
+	if !strings.Contains(readLogFile(t, dir, "app.log"), "visible in docker logs") {
+		t.Fatalf("expected stdout-mirrored message to remain in app.log")
+	}
+}
+
 func TestCleanupExpiredDeletesOldLogFiles(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Date(2026, 5, 27, 12, 0, 0, 0, time.UTC)

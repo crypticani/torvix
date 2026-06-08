@@ -51,6 +51,7 @@ services:
       - TORVIX_LOG_LEVEL
       - TORVIX_LOG_DIR
       - TORVIX_LOG_RETENTION_DAYS
+      - TORVIX_LOG_STDOUT
       - TORVIX_REPORT_TIMEZONE
       - TORVIX_DAILY_REPORT_CRON
       - TORVIX_WEEKLY_REPORT_CRON
@@ -95,6 +96,12 @@ services:
       - ./configs:/app/configs:ro
       - ./logs:/app/logs
     command: ["-config", "/app/configs/config.yaml"]
+    healthcheck:
+      test: ["CMD-SHELL", "port=$${TORVIX_HTTP_PORT:-$${TORVIX_API_PORT:-}}; addr=$${TORVIX_HTTP_ADDRESS:-}; if [ -z \"$$port\" ] && [ -n \"$$addr\" ]; then port=$${addr##*:}; fi; wget -qO- http://127.0.0.1:$${port:-8080}/healthz >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: ${TORVIX_HEALTH_START_PERIOD:-120s}
     deploy:
       resources:
         limits:

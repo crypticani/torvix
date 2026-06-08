@@ -20,6 +20,7 @@ import (
 	"github.com/crypticani/torvix/internal/core/forecasting"
 	"github.com/crypticani/torvix/internal/core/reporting"
 	"github.com/crypticani/torvix/internal/domain"
+	"github.com/crypticani/torvix/internal/version"
 	"github.com/crypticani/torvix/internal/waste"
 )
 
@@ -159,7 +160,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 //	@Success		200	{object}	StatusResponse	"Service is healthy"
 //	@Router			/healthz [get]
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "ok",
+		"version": version.Version,
+	})
 }
 
 // ingest godoc

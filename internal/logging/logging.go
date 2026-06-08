@@ -3,6 +3,7 @@ package logging
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -30,6 +31,7 @@ type Config struct {
 	Level         string
 	Dir           string
 	RetentionDays int
+	Stdout        bool
 }
 
 type Loggers struct {
@@ -121,7 +123,11 @@ func NewManager(cfg Config) (*Manager, error) {
 			return nil, fmt.Errorf("open %s log: %w", subsystem, err)
 		}
 		m.files[subsystem] = file
-		m.loggers[subsystem] = slog.New(slog.NewJSONHandler(file, &slog.HandlerOptions{Level: level})).With("subsystem", subsystem)
+		writer := io.Writer(file)
+		if cfg.Stdout {
+			writer = io.MultiWriter(file, os.Stdout)
+		}
+		m.loggers[subsystem] = slog.New(slog.NewJSONHandler(writer, &slog.HandlerOptions{Level: level})).With("subsystem", subsystem)
 	}
 	return m, nil
 }

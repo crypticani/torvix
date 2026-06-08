@@ -18,6 +18,7 @@ const (
 	EnvLogLevel                       = "TORVIX_LOG_LEVEL"
 	EnvLogDir                         = "TORVIX_LOG_DIR"
 	EnvLogRetentionDays               = "TORVIX_LOG_RETENTION_DAYS"
+	EnvLogStdout                      = "TORVIX_LOG_STDOUT"
 	EnvReportTimezone                 = "TORVIX_REPORT_TIMEZONE"
 	EnvDailyReportCron                = "TORVIX_DAILY_REPORT_CRON"
 	EnvWeeklyReportCron               = "TORVIX_WEEKLY_REPORT_CRON"
@@ -96,6 +97,7 @@ type Logging struct {
 	Level         string `yaml:"level"`
 	Dir           string `yaml:"dir"`
 	RetentionDays int    `yaml:"retention_days"`
+	Stdout        bool   `yaml:"stdout"`
 }
 
 type Scheduler struct {
@@ -292,6 +294,11 @@ func applyEnvOverrides(cfg *Config) {
 	if retention := envValue(EnvLogRetentionDays); retention != "" {
 		if days, err := strconv.Atoi(retention); err == nil {
 			cfg.Logging.RetentionDays = days
+		}
+	}
+	if stdout := envValue(EnvLogStdout); stdout != "" {
+		if enabled, err := strconv.ParseBool(stdout); err == nil {
+			cfg.Logging.Stdout = enabled
 		}
 	}
 	if timezone := envValue(EnvReportTimezone, LegacyEnvReportTimezone); timezone != "" {

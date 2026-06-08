@@ -7,6 +7,8 @@ logging:
   dir: logs
   # Can be overridden with TORVIX_LOG_RETENTION_DAYS.
   retention_days: 14
+  # Can be overridden with TORVIX_LOG_STDOUT. Keeps subsystem log files and also mirrors JSON logs to stdout.
+  stdout: false
 
 http:
   # Can be overridden at runtime with TORVIX_HTTP_ADDRESS, TORVIX_HTTP_PORT, or TORVIX_API_PORT.
