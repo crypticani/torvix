@@ -1,10 +1,12 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/crypticani/torvix/internal/version"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -60,6 +62,27 @@ func TestHealthAndSwaggerRemainPublicWhenBearerConfigured(t *testing.T) {
 				t.Fatalf("expected %s to remain public, got unauthorized", path)
 			}
 		})
+	}
+}
+
+func TestHealthIncludesRuntimeVersion(t *testing.T) {
+	handler := NewWithOptions(nil, nil, nil, nil, nil, prometheus.NewRegistry(), HandlerOptions{
+		APIAuthEnabled: true,
+		APIAuthToken:   "secret",
+	})
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected health ok, got %d", rec.Code)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode health response: %v", err)
+	}
+	if body["status"] != "ok" || body["version"] != version.Version {
+		t.Fatalf("unexpected health response: %+v", body)
 	}
 }
 

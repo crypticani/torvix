@@ -419,7 +419,7 @@ The bundled Grafana dashboards read from the Torvix API and Prometheus. The loca
 
 Torvix listens on `http.address` from config by default. Override the actual app listener at runtime with `TORVIX_HTTP_ADDRESS`, `TORVIX_HTTP_PORT`, or `TORVIX_API_PORT`, which is useful when using host networking.
 
-Torvix writes JSON logs to subsystem files instead of stdout. Compose mounts `./logs` to `/app/logs`; control logging with `TORVIX_LOG_LEVEL`, `TORVIX_LOG_DIR`, and `TORVIX_LOG_RETENTION_DAYS`.
+Torvix writes JSON logs to subsystem files by default. Compose mounts `./logs` to `/app/logs`; control logging with `TORVIX_LOG_LEVEL`, `TORVIX_LOG_DIR`, and `TORVIX_LOG_RETENTION_DAYS`. Set `TORVIX_LOG_STDOUT=true` when you also want the same JSON log stream in `docker logs`.
 
 For production setup, Prometheus scraping, and Grafana dashboard import instructions, see `docs/deployment.md`. If you change the app port, update the Prometheus scrape target in `deploy/prometheus.yml` or your production Prometheus config to match.
 
@@ -439,14 +439,15 @@ In `configs/config.yaml`:
     compression_after_days: 7
   ```
   AWS CUR/S3 ingestion reprocesses recent billing export windows and uses source metadata plus deterministic row hashes for idempotency. OCI object-level report selection and dedupe reduce unnecessary downloads. For OCI proprietary cost reports, Torvix uses `reports/cost-csv/` candidates, seeks near the recent metadata window, sorts the bounded candidate set newest-first, skips already processed reports, and stops after `max_zero_yield_files` consecutive processed reports contain zero rows inside the lookback window. Record-level lookback filtering is the correctness boundary for dashboard data: records older than `lookback_days` are skipped before insertion. Retention remains a storage lifecycle safety net, not the primary ingestion lookback filter.
-- **Logging:** Torvix writes file-only JSON logs split by subsystem.
+- **Logging:** Torvix writes JSON logs split by subsystem and can optionally mirror them to stdout.
   ```yaml
   logging:
     level: info
     dir: logs
     retention_days: 14
+    stdout: false
   ```
-  The files are `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `aws.log`, `scheduler.log`, `alerting.log`, `waste.log`, and `ai.log`. Files older than `retention_days` are deleted from the configured log directory.
+  The files are `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `aws.log`, `scheduler.log`, `alerting.log`, `waste.log`, and `ai.log`. Files older than `retention_days` are deleted from the configured log directory. Set `stdout: true` or `TORVIX_LOG_STDOUT=true` to mirror logs to stdout for container log collectors.
 - **Scheduler:** Torvix includes an in-process scheduler to run ingestion automatically.
   ```yaml
   scheduler:

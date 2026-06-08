@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/crypticani/torvix/internal/version"
 )
 
 func TestComposeFilesPassThroughAPIBearerToken(t *testing.T) {
@@ -105,8 +107,8 @@ func TestSwaggerDocumentsCurrentVersionAndBearerAuth(t *testing.T) {
 	if err := json.Unmarshal(b, &swagger); err != nil {
 		t.Fatalf("parse swagger JSON: %v", err)
 	}
-	if swagger.Info.Version != "0.10.0" {
-		t.Fatalf("expected swagger version 0.10.0, got %q", swagger.Info.Version)
+	if swagger.Info.Version != version.Version {
+		t.Fatalf("expected swagger version %s, got %q", version.Version, swagger.Info.Version)
 	}
 	bearer, ok := swagger.SecurityDefinitions["BearerAuth"]
 	if !ok {

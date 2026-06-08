@@ -29,6 +29,16 @@ func TestLoggingDefaults(t *testing.T) {
 	}
 }
 
+func TestLogStdoutEnvOverride(t *testing.T) {
+	t.Setenv(EnvLogStdout, "true")
+
+	cfg := loadTestConfig(t, "{}\n")
+
+	if !cfg.Logging.Stdout {
+		t.Fatalf("expected %s=true to enable stdout log mirroring", EnvLogStdout)
+	}
+}
+
 func TestLoggingEnvOverrides(t *testing.T) {
 	t.Setenv(EnvLogLevel, "debug")
 	t.Setenv(EnvLogDir, "/var/log/torvix")

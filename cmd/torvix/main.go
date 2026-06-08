@@ -10,10 +10,11 @@ import (
 	"syscall"
 	"time"
 
-	_ "github.com/crypticani/torvix/docs"
+	"github.com/crypticani/torvix/docs"
 	"github.com/crypticani/torvix/internal/app"
 	"github.com/crypticani/torvix/internal/config"
 	"github.com/crypticani/torvix/internal/logging"
+	"github.com/crypticani/torvix/internal/version"
 )
 
 //	@title			Torvix API
@@ -32,6 +33,8 @@ import (
 //	@schemes		http
 
 func main() {
+	docs.SwaggerInfo.Version = version.Version
+
 	cfgPath := flag.String("config", "configs/config.yaml", "path to YAML config")
 	flag.Parse()
 
@@ -44,6 +47,7 @@ func main() {
 		Level:         cfg.Logging.Level,
 		Dir:           cfg.Logging.Dir,
 		RetentionDays: cfg.Logging.RetentionDays,
+		Stdout:        cfg.Logging.Stdout,
 	})
 	if err != nil {
 		panic(err)

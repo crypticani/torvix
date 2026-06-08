@@ -231,11 +231,11 @@ Runtime precedence is:
 4. `http.address` in the YAML config
 5. default `:8080`
 
-The production Compose healthcheck checks `http://127.0.0.1:${TORVIX_HTTP_PORT:-8080}/healthz` and also understands `TORVIX_API_PORT`. If you use `TORVIX_HTTP_ADDRESS`, the healthcheck derives the port from that value when no port variable is set.
+The Compose healthcheck checks `http://127.0.0.1:${TORVIX_HTTP_PORT:-8080}/healthz` and also understands `TORVIX_API_PORT`. If you use `TORVIX_HTTP_ADDRESS`, the healthcheck derives the port from that value when no port variable is set. `TORVIX_HEALTH_START_PERIOD` defaults to `120s` to avoid marking first-run migration bootstrap unhealthy too early.
 
 If you change only `http.address` in `configs/config.prod.yaml`, also set `TORVIX_HTTP_PORT` to the same port or update the healthcheck command in `docker-compose.prod.yml`. Compose cannot read the mounted YAML value into its healthcheck automatically.
 
-Torvix writes file-only JSON logs and does not emit normal application logs to stdout. Logs are split by subsystem into `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `aws.log`, `scheduler.log`, `alerting.log`, `waste.log`, and `ai.log`. The bundled Compose files mount `./logs` to `/app/logs`; set `TORVIX_LOG_DIR=/app/logs` or keep `logging.dir: logs` while the container runs from `/app`.
+Torvix writes JSON logs split by subsystem into `app.log`, `http.log`, `ingestion.log`, `db.log`, `oci.log`, `aws.log`, `scheduler.log`, `alerting.log`, `waste.log`, and `ai.log`. The bundled Compose files mount `./logs` to `/app/logs`; set `TORVIX_LOG_DIR=/app/logs` or keep `logging.dir: logs` while the container runs from `/app`. By default logs are file-only. Set `TORVIX_LOG_STDOUT=true` if your container platform relies on `docker logs` or stdout log shipping.
 
 Logging runtime controls:
 
@@ -243,6 +243,7 @@ Logging runtime controls:
 TORVIX_LOG_LEVEL=debug
 TORVIX_LOG_RETENTION_DAYS=14
 TORVIX_LOG_DIR=/app/logs
+TORVIX_LOG_STDOUT=false
 ```
 
 Torvix deletes `.log` files in the configured log directory whose modification time is older than the retention window.
